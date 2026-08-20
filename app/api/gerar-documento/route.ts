@@ -105,19 +105,24 @@ export async function POST(request: Request) {
 
     if (!user) return Response.json({ error: 'unauthorized' }, { status: 401 })
 
-    const { data: adv, error: advError } = await supabaseAdmin
+    const { data: lawyer, error: lawyerError } = await supabaseAdmin
       .from('lawyers')
       .select('*')
       .eq('id', user.id)
-      .single()
+      .maybeSingle()
 
-    if (advError) {
-      console.error('[GERAR_DOCUMENTO][ADV_ERROR]', advError)
+    if (lawyerError) {
+      console.error('[GERAR_DOCUMENTO][LAWYER_ERROR]', lawyerError)
     }
 
-    if (!adv) {
+    // Sem perfil, o restante depende de office/nome/trial/snapshot — melhor 400 claro
+    // do que TypeError em trial_expires_at / campos do snapshot.
+    if (!lawyer) {
       return Response.json(
-        { error: 'Usuário não está cadastrado como advogado no sistema.' },
+        {
+          error:
+            'Perfil do advogado não encontrado. Faça login novamente.',
+        },
         { status: 400 },
       )
     }
@@ -135,14 +140,14 @@ export async function POST(request: Request) {
     // aqui, senão secretária/estagiário geraria peça com o cadastro completo do
     // cliente no prompt. Base sem a coluna `cargo` (migração não aplicada) segue
     // o comportamento anterior.
-    if ('cargo' in adv && !temAcessoTotal((adv as any).cargo)) {
+    if ('cargo' in lawyer && !temAcessoTotal((lawyer as any).cargo)) {
       return Response.json({ error: 'cargo_sem_permissao' }, { status: 403 })
     }
 
     const inTrial =
-      new Date((adv as any).trial_expires_at || 0) > new Date()
-    const hasQuota = ((adv as any).docs_trial_used ?? 0) < 5
-    const isPaid = ((adv as any).plan || 'trial') !== 'trial'
+      new Date((lawyer as any).trial_expires_at || 0) > new Date()
+    const hasQuota = ((lawyer as any).docs_trial_used ?? 0) < 5
+    const isPaid = ((lawyer as any).plan || 'trial') !== 'trial'
     if (!((inTrial && hasQuota) || isPaid)) {
       return Response.json({ error: 'trial_expired' }, { status: 403 })
     }
@@ -162,7 +167,7 @@ export async function POST(request: Request) {
       return Response.json({ error: 'ANTHROPIC_API_KEY não configurada' }, { status: 500 })
     }
 
-    const systemPrompt = getSystemPrompt(agentType, adv, cli)
+    const systemPrompt = getSystemPrompt(agentType, lawyer, cli)
     const anthropic = new Anthropic({ apiKey })
     const encoder = new TextEncoder()
     let fullText = ''
@@ -206,21 +211,21 @@ export async function POST(request: Request) {
               form_data: normalizedFormData,
               status: 'generated',
               lawyer_snapshot: {
-                name: (adv as any).name,
-                oab_number: (adv as any).oab_number,
-                oab_uf: (adv as any).oab_uf,
-                email: (adv as any).email,
-                whatsapp: (adv as any).whatsapp,
-                cidade: (adv as any).cidade,
-                estado: (adv as any).estado || (adv as any).oab_uf,
-                logo_url: (adv as any).logo_url,
-                signature_url: (adv as any).signature_url,
-                banner_url: (adv as any).banner_url,
-                honorarios_pct: (adv as any).honorarios_pct,
-                vara_padrao: (adv as any).vara_padrao,
-                cor_peticao: (adv as any).cor_peticao,
+                name: (lawyer as any).name,
+                oab_number: (lawyer as any).oab_number,
+                oab_uf: (lawyer as any).oab_uf,
+                email: (lawyer as any).email,
+                whatsapp: (lawyer as any).whatsapp,
+                cidade: (lawyer as any).cidade,
+                estado: (lawyer as any).estado || (lawyer as any).oab_uf,
+                logo_url: (lawyer as any).logo_url,
+                signature_url: (lawyer as any).signature_url,
+                banner_url: (lawyer as any).banner_url,
+                honorarios_pct: (lawyer as any).honorarios_pct,
+                vara_padrao: (lawyer as any).vara_padrao,
+                cor_peticao: (lawyer as any).cor_peticao,
                 estilo_peticao:
-                  (adv as any).estilo_peticao === 'classico'
+                  (lawyer as any).estilo_peticao === 'classico'
                     ? 'classico'
                     : 'moderno',
               },
