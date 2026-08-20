@@ -105,7 +105,7 @@ export async function POST(request: Request) {
 
     if (!user) return Response.json({ error: 'unauthorized' }, { status: 401 })
 
-    const { data: lawyer, error: lawyerError } = await supabaseAdmin
+    const { data: lawyerRow, error: lawyerError } = await supabaseAdmin
       .from('lawyers')
       .select('*')
       .eq('id', user.id)
@@ -115,39 +115,107 @@ export async function POST(request: Request) {
       console.error('[GERAR_DOCUMENTO][LAWYER_ERROR]', lawyerError)
     }
 
-    // Sem perfil, o restante depende de office/nome/trial/snapshot — melhor 400 claro
-    // do que TypeError em trial_expires_at / campos do snapshot.
-    if (!lawyer) {
-      return Response.json(
-        {
-          error:
-            'Perfil do advogado não encontrado. Faça login novamente.',
-        },
-        { status: 400 },
-      )
+    // Perfil ausente ou parcial: segue com defaults para não crashar em 500.
+    if (!lawyerRow) {
+      console.warn('[GERAR_DOCUMENTO] Perfil do advogado não encontrado; usando defaults.')
     }
 
-    const { data: cli } = normalizedClientId
+    const lawyer = lawyerRow as Record<string, any> | null
+
+    // Defaults seguros — qualquer campo null/undefined no banco não quebra a rota.
+    const trialExpiresAt = lawyer?.trial_expires_at ?? null
+    const docsTrialUsed = Number(lawyer?.docs_trial_used ?? 0) || 0
+    const plan = String(lawyer?.plan ?? lawyer?.plano ?? 'trial')
+    const officeId = lawyer?.office_id ?? null
+    const modulosAtivos = Array.isArray(lawyer?.modulos_ativos)
+      ? lawyer.modulos_ativos
+      : []
+    const isSuperAdmin = Boolean(lawyer?.is_super_admin ?? false)
+    const cargo = lawyer?.cargo ?? null
+    const lawyerName = String(lawyer?.name ?? 'Advogado')
+    const oabNumber = String(lawyer?.oab_number ?? '')
+    const oabUf = String(lawyer?.oab_uf ?? '')
+    const lawyerEmail = String(lawyer?.email ?? '')
+    const lawyerWhatsapp = String(lawyer?.whatsapp ?? '')
+    const lawyerCidade = String(lawyer?.cidade ?? lawyer?.city ?? '')
+    const lawyerEstado = String(lawyer?.estado ?? lawyer?.state ?? oabUf)
+    const logoUrl = lawyer?.logo_url ?? null
+    const signatureUrl = lawyer?.signature_url ?? null
+    const bannerUrl = lawyer?.banner_url ?? null
+    const honorariosPct = lawyer?.honorarios_pct ?? null
+    const varaPadrao = String(lawyer?.vara_padrao ?? '')
+    const corPeticao = lawyer?.cor_peticao ?? null
+    const estiloPeticao =
+      lawyer?.estilo_peticao === 'classico' ? 'classico' : 'moderno'
+
+    // Objeto normalizado para o prompt (nome/OAB etc. nunca undefined).
+    const lawyerForPrompt = {
+      ...(lawyer ?? {}),
+      name: lawyerName,
+      oab_number: oabNumber,
+      oab_uf: oabUf,
+      email: lawyerEmail,
+      whatsapp: lawyerWhatsapp,
+      cidade: lawyerCidade,
+      estado: lawyerEstado,
+      city: lawyerCidade,
+      state: lawyerEstado,
+      logo_url: logoUrl,
+      signature_url: signatureUrl,
+      banner_url: bannerUrl,
+      honorarios_pct: honorariosPct,
+      vara_padrao: varaPadrao,
+      cor_peticao: corPeticao,
+      estilo_peticao: estiloPeticao,
+      trial_expires_at: trialExpiresAt,
+      docs_trial_used: docsTrialUsed,
+      plan,
+      plano: plan,
+      office_id: officeId,
+      modulos_ativos: modulosAtivos,
+      is_super_admin: isSuperAdmin,
+      cargo,
+    }
+
+    const { data: cliRow } = normalizedClientId
       ? await supabaseAdmin
           .from('clients')
           .select('*')
           .eq('id', normalizedClientId)
           .eq('lawyer_id', user.id)
-          .single()
+          .maybeSingle()
       : { data: null }
+
+    const cli = cliRow as Record<string, any> | null
+    const cliForPrompt = cli
+      ? {
+          ...cli,
+          id: cli?.id ?? null,
+          name: String(cli?.name ?? ''),
+          email: cli?.email ?? null,
+          phone: cli?.phone ?? cli?.telefone ?? null,
+          cpf: cli?.cpf ?? null,
+        }
+      : null
 
     // Esta rota usa a service role, que ignora RLS. O cargo precisa ser conferido
     // aqui, senão secretária/estagiário geraria peça com o cadastro completo do
-    // cliente no prompt. Base sem a coluna `cargo` (migração não aplicada) segue
-    // o comportamento anterior.
-    if ('cargo' in lawyer && !temAcessoTotal((lawyer as any).cargo)) {
+    // cliente no prompt. Base sem a coluna `cargo` (migração não aplicada) ou
+    // cargo null segue o comportamento anterior (não bloqueia).
+    if (
+      lawyer != null &&
+      'cargo' in lawyer &&
+      cargo != null &&
+      !temAcessoTotal(cargo)
+    ) {
       return Response.json({ error: 'cargo_sem_permissao' }, { status: 403 })
     }
 
+    // trial_expires_at null = trial ainda válido (cadastro incompleto); não trata como expirado.
     const inTrial =
-      new Date((lawyer as any).trial_expires_at || 0) > new Date()
-    const hasQuota = ((lawyer as any).docs_trial_used ?? 0) < 5
-    const isPaid = ((lawyer as any).plan || 'trial') !== 'trial'
+      trialExpiresAt == null || new Date(trialExpiresAt) > new Date()
+    const hasQuota = docsTrialUsed < 5
+    const isPaid = plan !== 'trial' || isSuperAdmin
     if (!((inTrial && hasQuota) || isPaid)) {
       return Response.json({ error: 'trial_expired' }, { status: 403 })
     }
@@ -158,16 +226,16 @@ export async function POST(request: Request) {
       normalizedClientName || (normalizedFormData as any)?.nome || '',
     ).trim()
 
-    const resolvedClientId = cli?.id || null
+    const resolvedClientId = cliForPrompt?.id ?? null
     const resolvedClientName =
-      cli?.name || manualClientName || 'Cliente não informado'
+      cliForPrompt?.name || manualClientName || 'Cliente não informado'
 
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) {
       return Response.json({ error: 'ANTHROPIC_API_KEY não configurada' }, { status: 500 })
     }
 
-    const systemPrompt = getSystemPrompt(agentType, lawyer, cli)
+    const systemPrompt = getSystemPrompt(agentType, lawyerForPrompt, cliForPrompt)
     const anthropic = new Anthropic({ apiKey })
     const encoder = new TextEncoder()
     let fullText = ''
@@ -204,34 +272,35 @@ export async function POST(request: Request) {
               client_id: resolvedClientId,
               client_name: resolvedClientName,
               agent_type: agentType,
-              title: (normalizedFormData as any).nome
+              title: (normalizedFormData as any)?.nome
                 ? `Petição — ${(normalizedFormData as any).nome}`
                 : agentType,
               content: fullText,
               form_data: normalizedFormData,
               status: 'generated',
               lawyer_snapshot: {
-                name: (lawyer as any).name,
-                oab_number: (lawyer as any).oab_number,
-                oab_uf: (lawyer as any).oab_uf,
-                email: (lawyer as any).email,
-                whatsapp: (lawyer as any).whatsapp,
-                cidade: (lawyer as any).cidade,
-                estado: (lawyer as any).estado || (lawyer as any).oab_uf,
-                logo_url: (lawyer as any).logo_url,
-                signature_url: (lawyer as any).signature_url,
-                banner_url: (lawyer as any).banner_url,
-                honorarios_pct: (lawyer as any).honorarios_pct,
-                vara_padrao: (lawyer as any).vara_padrao,
-                cor_peticao: (lawyer as any).cor_peticao,
-                estilo_peticao:
-                  (lawyer as any).estilo_peticao === 'classico'
-                    ? 'classico'
-                    : 'moderno',
+                name: lawyerName,
+                oab_number: oabNumber,
+                oab_uf: oabUf,
+                email: lawyerEmail,
+                whatsapp: lawyerWhatsapp,
+                cidade: lawyerCidade,
+                estado: lawyerEstado || oabUf,
+                logo_url: logoUrl,
+                signature_url: signatureUrl,
+                banner_url: bannerUrl,
+                honorarios_pct: honorariosPct,
+                vara_padrao: varaPadrao,
+                cor_peticao: corPeticao,
+                estilo_peticao: estiloPeticao,
+                office_id: officeId,
+                plan,
+                modulos_ativos: modulosAtivos,
+                is_super_admin: isSuperAdmin,
               },
             })
             .select('id')
-            .single()
+            .maybeSingle()
 
           if (resolvedClientId) {
             await registrarContato(resolvedClientId, { db: supabaseAdmin })
