@@ -217,13 +217,14 @@ function AgentesPageContent() {
       try {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
-        const { data: lawyer } = await supabase.from('lawyers').select('*').eq('id', user.id).single()
+        const { data: lawyerRaw } = await supabase.from('lawyers').select('*').eq('id', user.id).single()
+        const lawyer = lawyerRaw as Record<string, any> | null
         setCorPeticao(lawyer?.cor_peticao || '#1d4ed8')
         setEstiloPeticao(normalizarEstiloPeticao(lawyer?.estilo_peticao))
         setAdvPeticao({
-          name: lawyer?.name,
+          name: lawyer?.nome_completo || lawyer?.name || '',
           office_name: lawyer?.office_name,
-          oab_number: lawyer?.oab_number,
+          oab_number: lawyer?.oab_number || lawyer?.oab || '',
           oab_uf: lawyer?.oab_uf,
           email: lawyer?.email,
           whatsapp: lawyer?.whatsapp || lawyer?.phone,

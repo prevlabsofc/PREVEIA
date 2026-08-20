@@ -397,7 +397,7 @@ export function renderTimelineSvg(data: TimelineData): string {
   })
 
   return `
-    <div class="sm-timeline keep-together">
+    <div class="sm-timeline keep-together" data-pdf-keep="1" style="page-break-inside:avoid;break-inside:avoid;">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="100%" height="${h}" role="img" aria-label="${escapar(title)}">
         <rect x="0" y="0" width="${w}" height="${h}" rx="12" ry="12" fill="#EEF1F5" stroke="#D0D7E2"/>
         <text x="16" y="28" fill="#0A2540" font-size="12" font-family="Arial,sans-serif" font-weight="700">${escapar(title)}</text>
@@ -426,7 +426,7 @@ export function renderTimelineVertical(data: TimelineData): string {
     .join('')
 
   return `
-    <div class="sm-timeline sm-timeline-vertical keep-together">
+    <div class="sm-timeline sm-timeline-vertical keep-together" data-pdf-keep="1" style="page-break-inside:avoid;break-inside:avoid;">
       <div class="sm-tl-title">${escapar(title)}</div>
       <table class="sm-tl-table" cellpadding="0" cellspacing="0">
         <tbody>${items}</tbody>
@@ -451,13 +451,12 @@ function cabecalhoSm(adv: DadosAdvogadoPeticao): string {
   const oabNum = String(adv.oab_number || '')
   const email = String(adv.email || '')
   const logoSrc = adv.logo_url ? String(adv.logo_url) : ''
-  // data-URL não deve passar por escapar (quebraria base64); URLs http usam aspas seguras
+  // Só renderiza <img> com data-URL (já convertida via /api/logo-data-url).
+  // Sem logo / falha → espaço em branco (sem asterisco / broken-image / iniciais).
   const logo =
     logoSrc && logoSrc.startsWith('data:')
-      ? `<img src="${logoSrc}" class="sm-logo" width="110" height="36" alt="Logo" style="height:36px;max-width:110px;width:auto;display:block;border:0;"/>`
-      : logoSrc
-        ? `<img src="${escapar(logoSrc)}" class="sm-logo" width="110" height="36" alt="Logo" style="height:36px;max-width:110px;width:auto;display:block;border:0;"/>`
-        : `<table cellpadding="0" cellspacing="0" style="width:36px;height:36px;background:#D4AF37;"><tr><td style="width:36px;height:36px;text-align:center;vertical-align:middle;font-weight:bold;font-size:11px;color:#000;">${escapar(nome.slice(0, 2).toUpperCase())}</td></tr></table>`
+      ? `<img src="${logoSrc}" class="sm-logo" width="110" height="36" alt="" style="height:36px;max-width:110px;width:auto;display:block;border:0;"/>`
+      : `<div class="sm-logo-slot" style="width:110px;height:36px;display:block;" aria-hidden="true"></div>`
 
   const mailLine = email
     ? `<br/><span style="font-size:9px;color:#1d4ed8;line-height:1.4;">${escapar(email)}</span>`
@@ -604,12 +603,12 @@ function notaDocumentoGeradoHtml(): string {
 }
 
 function planilhaHtml(_raw: string): string {
-  // Compacta + sem page-break — prioriza ficar na mesma página da assinatura.
+  // Compacta — rodapé/nota logo abaixo, sem espaço morto na última página.
   return `
-    <div class="sm-anexo" style="margin-top:10pt;padding-top:4pt;border-top:0.5pt solid #ccc;page-break-before:auto;break-before:auto;page-break-inside:avoid;break-inside:avoid;">
-      <div class="sm-anexo-title" style="margin:4px 0 10px;font-size:13px;">ANEXO – PLANILHA DE CÁLCULO</div>
-      <div class="sm-table-wrap" style="margin:6px 0 8px;">
-        <div class="sm-table-caption" style="padding:6px 10px;">PLANILHA DE CÁLCULO</div>
+    <div class="sm-anexo" style="margin-top:8pt;margin-bottom:0;padding-top:4pt;padding-bottom:0;border-top:0.5pt solid #ccc;page-break-before:auto;break-before:auto;page-break-inside:avoid;break-inside:avoid;">
+      <div class="sm-anexo-title" style="margin:2px 0 6px;font-size:13px;">ANEXO – PLANILHA DE CÁLCULO</div>
+      <div class="sm-table-wrap" style="margin:4px 0 0;">
+        <div class="sm-table-caption" style="padding:5px 10px;">PLANILHA DE CÁLCULO</div>
         <table class="sm-planilha" cellpadding="0" cellspacing="0" width="100%" border="0" style="width:100%;max-width:100%;border-collapse:collapse;table-layout:fixed;">
           <colgroup>
             <col style="width:65%;" />
@@ -623,7 +622,7 @@ function planilhaHtml(_raw: string): string {
             <tr class="total"><td style="padding:5px 10px;background:#c8a951;font-weight:bold;color:#1a1a1a;">TOTAL</td><td align="right" style="padding:5px 10px;text-align:right;background:#c8a951;font-weight:bold;color:#1a1a1a;white-space:nowrap;">R$ 6.072,00</td></tr>
           </tbody>
         </table>
-        <p class="sm-nota" style="margin-top:4px;">Referência do valor: quantia devida por fato gerador (cada nascimento) — salário mínimo vigente</p>
+        <p class="sm-nota" style="margin-top:4px;margin-bottom:0;">Referência do valor: quantia devida por fato gerador (cada nascimento) — salário mínimo vigente</p>
       </div>
     </div>
   `
@@ -631,9 +630,6 @@ function planilhaHtml(_raw: string): string {
 
 function assinaturasHtml(adv: DadosAdvogadoPeticao, fechamentoRaw: string): string {
   const localData = formatarLocalData(adv)
-  const oabLines = fechamentoRaw.match(
-    /^[A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç\s.]+\nOAB\/.+$/gm,
-  )
 
   const cardHtml = (nome: string, oab: string) => `
     <td class="sm-sign-card">
@@ -642,20 +638,34 @@ function assinaturasHtml(adv: DadosAdvogadoPeticao, fechamentoRaw: string): stri
       <div class="sm-sign-oab">${escapar(oab)}</div>
     </td>`
 
+  // Prioriza dados do lawyer logado (Supabase) — evita "ADVOGADO / OAB/MA nº" vazio do texto da IA.
+  const nomeAdv = String(adv.name || '').trim()
+  const oabUf = String(adv.oab_uf || adv.estado || '').trim().toUpperCase()
+  const oabNum = String(adv.oab_number || '').trim()
+
   let cards = ''
-  if (oabLines && oabLines.length) {
-    cards = oabLines
-      .slice(0, 2)
-      .map((block) => {
-        const [nome, oab] = block.split('\n')
-        return cardHtml(nome.trim(), oab.trim())
-      })
-      .join('')
+  if (nomeAdv || oabNum) {
+    const oabLabel = oabUf
+      ? `OAB/${oabUf}${oabNum ? ` nº ${oabNum}` : ''}`
+      : oabNum
+        ? `OAB nº ${oabNum}`
+        : 'OAB'
+    cards = cardHtml(nomeAdv || 'Advogado(a)', oabLabel)
   } else {
-    const nome = String(adv.name || 'Advogado(a)')
-    const oabUf = String(adv.oab_uf || adv.estado || '').toUpperCase()
-    const oabNum = String(adv.oab_number || '')
-    cards = cardHtml(nome, `OAB/${oabUf} nº ${oabNum}`)
+    const oabLines = fechamentoRaw.match(
+      /^[A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç\s.]+\nOAB\/.+$/gm,
+    )
+    if (oabLines && oabLines.length) {
+      cards = oabLines
+        .slice(0, 2)
+        .map((block) => {
+          const [nome, oab] = block.split('\n')
+          return cardHtml(nome.trim(), oab.trim())
+        })
+        .join('')
+    } else {
+      cards = cardHtml('Advogado(a)', 'OAB')
+    }
   }
 
   let body = fechamentoRaw
@@ -734,7 +744,7 @@ export function cssSmRural(comMargens: boolean): string {
     }
     /* Evitar page-break-before no fluxo — causa páginas em branco com html2canvas */
     .page-break-before { page-break-before: auto; break-before: auto; }
-    .keep-together { page-break-inside: auto; break-inside: auto; }
+    .keep-together { page-break-inside: avoid !important; break-inside: avoid !important; }
 
     /* —— Cabeçalho: TABLE logo | dados (sem flex) —— */
     .sm-header { margin-bottom: 18px; width: 100%; }
@@ -742,15 +752,7 @@ export function cssSmRural(comMargens: boolean): string {
     .sm-header-logo { width: 24%; vertical-align: middle; text-align: left; padding: 0 8px 0 0; }
     .sm-header-info { width: 76%; vertical-align: middle; text-align: right; padding: 0; }
     .sm-logo { height: 36px; max-height: 36px; max-width: 120px; width: auto; display: block; }
-    .sm-logo-fallback {
-      height: 36px; width: 36px; border-collapse: collapse;
-      background: #D4AF37;
-    }
-    .sm-logo-fallback td {
-      height: 36px; width: 36px; text-align: center; vertical-align: middle;
-      font-weight: bold; font-size: 11px; color: #000;
-      background: #D4AF37;
-    }
+    .sm-logo-slot { width: 110px; height: 36px; display: block; }
     .sm-office-name {
       font-weight: bold; font-size: 11.5px; color: #0A2540;
       text-transform: uppercase; letter-spacing: 0.3px; line-height: 1.35;
@@ -923,12 +925,21 @@ export function cssSmRural(comMargens: boolean): string {
     }
     .sm-anexo-title {
       text-align: center; font-weight: bold; font-size: 14px;
-      text-transform: uppercase; margin: 8px 0 16px; color: #0A2540;
+      text-transform: uppercase; margin: 4px 0 8px; color: #0A2540;
       background: none; padding: 0;
     }
 
-    .sm-timeline { margin: 14px 0 18px; page-break-inside: auto; }
-    .sm-timeline svg { display: block; width: 100%; height: auto; }
+    .sm-timeline {
+      margin: 14px 0 18px;
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+      -webkit-column-break-inside: avoid;
+    }
+    .sm-timeline svg {
+      display: block; width: 100%; height: auto;
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+    }
     .sm-timeline-vertical { background: #EEF1F5; border: 1px solid #D0D7E2; padding: 12px 14px; }
     .sm-tl-title { font-weight: bold; font-size: 11.5px; color: #0A2540; margin-bottom: 10px; text-transform: uppercase; }
     .sm-tl-table { width: 100%; border-collapse: collapse; }
@@ -963,8 +974,8 @@ export function cssSmRural(comMargens: boolean): string {
     .sm-pedidos-intro { margin-bottom: 8px; }
     .sm-rom { font-weight: bold; margin-right: 4px; }
 
-    .sm-fechamento { margin-top: 18px; }
-    .sm-fecho-bloco { page-break-inside: auto; break-inside: auto; }
+    .sm-fechamento { margin-top: 12px; margin-bottom: 0; }
+    .sm-fecho-bloco { page-break-inside: auto; break-inside: auto; margin-bottom: 0; }
     .sm-local-data { text-align: right; font-size: 12px; margin: 14px 0 16px; font-weight: 500; }
     table.sm-sign-row {
       width: 100%; border-collapse: collapse; table-layout: fixed;
@@ -976,9 +987,9 @@ export function cssSmRural(comMargens: boolean): string {
     .sm-sign-oab { font-size: 10px; color: #333; margin-top: 2px; }
 
     .sm-doc-fecho-wrap {
-      margin-top: 48pt;
-      padding-top: 24pt;
-      min-height: 72pt;
+      margin-top: 10pt;
+      padding-top: 8pt;
+      min-height: 0;
       width: 100%;
       box-sizing: border-box;
     }

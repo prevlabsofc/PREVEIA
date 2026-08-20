@@ -132,8 +132,8 @@ export async function POST(request: Request) {
       : []
     const isSuperAdmin = Boolean(lawyer?.is_super_admin ?? false)
     const cargo = lawyer?.cargo ?? null
-    const lawyerName = String(lawyer?.name ?? 'Advogado')
-    const oabNumber = String(lawyer?.oab_number ?? '')
+    const lawyerName = String(lawyer?.nome_completo ?? lawyer?.name ?? 'Advogado')
+    const oabNumber = String(lawyer?.oab_number ?? lawyer?.oab ?? '')
     const oabUf = String(lawyer?.oab_uf ?? '')
     const lawyerEmail = String(lawyer?.email ?? '')
     const lawyerWhatsapp = String(lawyer?.whatsapp ?? '')

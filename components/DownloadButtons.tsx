@@ -55,21 +55,22 @@ type Props = {
 }
 
 function asAdv(raw: Record<string, unknown> | DadosAdvogadoPeticao): DadosAdvogadoPeticao {
+  const r = raw as Record<string, unknown>
   return {
-    name: (raw.name as string) || '',
-    office_name: (raw.office_name as string) || '',
-    oab_number: (raw.oab_number as string) || '',
-    oab_uf: (raw.oab_uf as string) || '',
-    email: (raw.email as string) || '',
-    whatsapp: (raw.whatsapp as string) || (raw.phone as string) || '',
-    phone: (raw.phone as string) || '',
-    cidade: (raw.cidade as string) || (raw.city as string) || '',
-    estado: (raw.estado as string) || (raw.state as string) || (raw.oab_uf as string) || '',
-    logo_url: (raw.logo_url as string) || null,
-    banner_url: (raw.banner_url as string) || null,
-    signature_url: (raw.signature_url as string) || null,
-    cor_peticao: (raw.cor_peticao as string) || '#1d4ed8',
-    estilo_peticao: (raw.estilo_peticao as string) || 'moderno',
+    name: String(r.nome_completo || r.name || ''),
+    office_name: String(r.office_name || ''),
+    oab_number: String(r.oab_number || r.oab || ''),
+    oab_uf: String(r.oab_uf || ''),
+    email: String(r.email || ''),
+    whatsapp: String(r.whatsapp || r.phone || ''),
+    phone: String(r.phone || ''),
+    cidade: String(r.cidade || r.city || ''),
+    estado: String(r.estado || r.state || r.oab_uf || ''),
+    logo_url: (r.logo_url as string) || null,
+    banner_url: (r.banner_url as string) || null,
+    signature_url: (r.signature_url as string) || null,
+    cor_peticao: String(r.cor_peticao || '#1d4ed8'),
+    estilo_peticao: String(r.estilo_peticao || 'moderno'),
   }
 }
 
@@ -249,7 +250,7 @@ function desenharRodapesPdf(
  */
 function coletarZonasKeep(pageEl: HTMLElement, scale: number): { top: number; bottom: number }[] {
   const rootRect = pageEl.getBoundingClientRect()
-  const nodes = pageEl.querySelectorAll('[data-pdf-keep], table.sm-pedido-item')
+  const nodes = pageEl.querySelectorAll('[data-pdf-keep], table.sm-pedido-item, .sm-timeline')
   return Array.from(nodes)
     .map((node) => {
       const el = node as HTMLElement
