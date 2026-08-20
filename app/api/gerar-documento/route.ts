@@ -7,52 +7,19 @@ import { temAcessoTotal } from '@/lib/permissions/cargos'
 import { rateLimit } from '@/lib/rateLimit'
 import { registrarContato } from '@/lib/registrar-contato'
 
-const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+  process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+)
 
 export const runtime = 'nodejs'
 
-function safeJsonStringify(value: unknown) {
-  const seen = new WeakSet<object>()
-  return JSON.stringify(
-    value,
-    (_key, v) => {
-      if (typeof v === 'bigint') return v.toString()
-      if (v && typeof v === 'object') {
-        if (seen.has(v)) return '[Circular]'
-        seen.add(v)
-      }
-      if (v instanceof Error) return { name: v.name, message: v.message, stack: v.stack }
-      return v
-    },
-    2,
-  )
-}
-
-function serializeError(err: unknown) {
-  if (err instanceof Error) {
-    return {
-      name: err.name,
-      message: err.message,
-      stack: err.stack,
-    }
-  }
-
-  return {
-    message: typeof err === 'string' ? err : 'Erro desconhecido',
-    raw: err,
-  }
-}
-
-export async function POST(req: Request) {
-  let requestBody: any = null
+export async function POST(request: Request) {
   try {
+    let body: any
     try {
-      requestBody = await req.json()
-    } catch (parseErr) {
-      console.error('[GERAR_DOCUMENTO][JSON_PARSE]', {
-        err: serializeError(parseErr),
-        contentType: req.headers.get('content-type'),
-      })
+      body = await request.json()
+    } catch {
       return Response.json(
         { error: 'Body JSON inválido. Envie application/json com agentType, formData e clientId/clientName.' },
         { status: 400 },
@@ -61,50 +28,60 @@ export async function POST(req: Request) {
 
     // Payload esperado (alinhado com app/(dashboard)/agentes/page.tsx):
     // { agentType, formData, clientId, clientName }
-    const { agentType: rawAgentType, formData, clientId, clientName } = requestBody ?? {}
-    const agentType = typeof rawAgentType === 'string' && rawAgentType.trim()
-      ? rawAgentType.trim()
-      : 'peticao'
+    const {
+      agentType: rawAgentType,
+      formData = {},
+      clientId = null,
+      clientName = null,
+    } = body ?? {}
 
-    // Log do body recebido (para comparar payload frontend/rota)
-    // Obs.: safeJsonStringify lida com BigInt/ciclos caso existam.
-    console.log(
-      '[GERAR_DOCUMENTO][BODY_RECEBIDO]',
-      safeJsonStringify({
-        agentType,
-        rawAgentType,
-        clientId,
-        clientName,
-        formData,
-      }),
-    )
+    const agentType =
+      typeof rawAgentType === 'string' && rawAgentType.trim()
+        ? rawAgentType.trim()
+        : 'peticao'
 
-    const normalizedFormData = (formData && typeof formData === 'object' ? formData : {}) as Record<string, unknown>
+    const normalizedFormData = (
+      formData && typeof formData === 'object' ? formData : {}
+    ) as Record<string, unknown>
     const normalizedClientId =
-      typeof clientId === 'string' && clientId.trim() ? clientId.trim() : clientId || null
+      typeof clientId === 'string' && clientId.trim()
+        ? clientId.trim()
+        : clientId || null
     const normalizedClientName =
       typeof clientName === 'string' && clientName.trim()
         ? clientName.trim()
         : clientName || null
 
-    const ip = req.headers.get('x-forwarded-for') || 'unknown'
+    const ip = request.headers.get('x-forwarded-for') || 'unknown'
     if (!rateLimit(ip, 20, 60000)) {
-      return Response.json({ error: 'Muitas requisições. Tente novamente em 1 minuto.' }, { status: 429 })
+      return Response.json(
+        { error: 'Muitas requisições. Tente novamente em 1 minuto.' },
+        { status: 429 },
+      )
+    }
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+
+    if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceKey) {
+      return Response.json(
+        { error: 'Variáveis de ambiente do Supabase ausentes no servidor.' },
+        { status: 500 },
+      )
     }
 
     // Valida sessão via cookies (SSR) — mais robusto que ler o JWT do header,
     // pois funciona mesmo quando o access_token está sendo rotacionado.
     const cookieStore = await cookies()
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll: () => cookieStore.getAll(),
-          setAll: () => { /* read-only em Route Handler */ },
+    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+      cookies: {
+        getAll: () => cookieStore.getAll(),
+        setAll: () => {
+          /* read-only em Route Handler */
         },
-      }
-    )
+      },
+    })
 
     // Fallback: aceitar token Bearer caso o cookie não esteja presente
     // (ex.: chamadas de testes ou clientes que não enviam cookies).
@@ -113,12 +90,11 @@ export async function POST(req: Request) {
     if (sessionData?.user) {
       user = sessionData.user
     } else {
-      const token = (req.headers.get('Authorization') || '').replace('Bearer ', '').trim()
+      const token = (request.headers.get('Authorization') || '')
+        .replace('Bearer ', '')
+        .trim()
       if (token) {
-        const adminClient = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.SUPABASE_SERVICE_ROLE_KEY!
-        )
+        const adminClient = createClient(supabaseUrl, supabaseServiceKey)
         const { data: ud } = await adminClient.auth.getUser(token)
         user = ud?.user ?? null
       }
@@ -137,7 +113,6 @@ export async function POST(req: Request) {
     }
 
     if (!adv) {
-      console.error('[GERAR_DOCUMENTO][ADV_MISSING]', { lawyerId: user.id })
       return Response.json(
         { error: 'Usuário não está cadastrado como advogado no sistema.' },
         { status: 400 },
@@ -161,9 +136,10 @@ export async function POST(req: Request) {
       return Response.json({ error: 'cargo_sem_permissao' }, { status: 403 })
     }
 
-    const inTrial = new Date((adv as any).trial_expires_at) > new Date()
-    const hasQuota = (adv as any).docs_trial_used < 5
-    const isPaid = (adv as any).plan !== 'trial'
+    const inTrial =
+      new Date((adv as any).trial_expires_at || 0) > new Date()
+    const hasQuota = ((adv as any).docs_trial_used ?? 0) < 5
+    const isPaid = ((adv as any).plan || 'trial') !== 'trial'
     if (!((inTrial && hasQuota) || isPaid)) {
       return Response.json({ error: 'trial_expired' }, { status: 403 })
     }
@@ -173,32 +149,18 @@ export async function POST(req: Request) {
     const manualClientName = String(
       normalizedClientName || (normalizedFormData as any)?.nome || '',
     ).trim()
-    if (normalizedClientId && !cli) {
-      console.warn('[GERAR_DOCUMENTO][CLIENTE_NAO_ENCONTRADO_FALLBACK]', {
-        normalizedClientId,
-        manualClientName,
-      })
-    }
 
     const resolvedClientId = cli?.id || null
     const resolvedClientName =
       cli?.name || manualClientName || 'Cliente não informado'
 
-    const anthropicApiKey = process.env.ANTHROPIC_API_KEY
-    if (!anthropicApiKey) {
-      console.error('[GERAR_DOCUMENTO][ANTHROPIC_API_KEY_MISSING]', {
-        message: 'ANTHROPIC_API_KEY não está definida em process.env',
-        agentType,
-        lawyerId: user.id,
-      })
-      return Response.json(
-        { error: 'Serviço de IA indisponível. Contate o suporte.' },
-        { status: 500 },
-      )
+    const apiKey = process.env.ANTHROPIC_API_KEY
+    if (!apiKey) {
+      return Response.json({ error: 'ANTHROPIC_API_KEY não configurada' }, { status: 500 })
     }
 
     const systemPrompt = getSystemPrompt(agentType, adv, cli)
-    const anthropic = new Anthropic({ apiKey: anthropicApiKey })
+    const anthropic = new Anthropic({ apiKey })
     const encoder = new TextEncoder()
     let fullText = ''
 
@@ -209,38 +171,59 @@ export async function POST(req: Request) {
             model: 'claude-sonnet-4-6',
             max_tokens: 6000,
             system: systemPrompt,
-            messages: [{ role: 'user', content: JSON.stringify(normalizedFormData) }],
+            messages: [
+              {
+                role: 'user',
+                content: JSON.stringify(normalizedFormData ?? {}),
+              },
+            ],
           })
 
           for await (const chunk of stream) {
-            if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+            if (
+              chunk.type === 'content_block_delta' &&
+              chunk.delta.type === 'text_delta'
+            ) {
               fullText += chunk.delta.text
               controller.enqueue(encoder.encode(chunk.delta.text))
             }
           }
 
-          const { data: novoDoc } = await supabaseAdmin.from('documents').insert({
-            lawyer_id: user.id,
-            client_id: resolvedClientId,
-            client_name: resolvedClientName,
-            agent_type: agentType,
-            title: (normalizedFormData as any).nome ? `Petição — ${(normalizedFormData as any).nome}` : agentType,
-            content: fullText,
-            form_data: normalizedFormData,
-            status: 'generated',
-            lawyer_snapshot: {
-              name: (adv as any).name, oab_number: (adv as any).oab_number,
-              oab_uf: (adv as any).oab_uf, email: (adv as any).email,
-              whatsapp: (adv as any).whatsapp,
-              cidade: (adv as any).cidade,
-              estado: (adv as any).estado || (adv as any).oab_uf,
-              logo_url: (adv as any).logo_url, signature_url: (adv as any).signature_url,
-              banner_url: (adv as any).banner_url,
-              honorarios_pct: (adv as any).honorarios_pct, vara_padrao: (adv as any).vara_padrao,
-              cor_peticao: (adv as any).cor_peticao,
-              estilo_peticao: (adv as any).estilo_peticao === 'classico' ? 'classico' : 'moderno',
-            }
-          }).select('id').single()
+          const { data: novoDoc } = await supabaseAdmin
+            .from('documents')
+            .insert({
+              lawyer_id: user.id,
+              client_id: resolvedClientId,
+              client_name: resolvedClientName,
+              agent_type: agentType,
+              title: (normalizedFormData as any).nome
+                ? `Petição — ${(normalizedFormData as any).nome}`
+                : agentType,
+              content: fullText,
+              form_data: normalizedFormData,
+              status: 'generated',
+              lawyer_snapshot: {
+                name: (adv as any).name,
+                oab_number: (adv as any).oab_number,
+                oab_uf: (adv as any).oab_uf,
+                email: (adv as any).email,
+                whatsapp: (adv as any).whatsapp,
+                cidade: (adv as any).cidade,
+                estado: (adv as any).estado || (adv as any).oab_uf,
+                logo_url: (adv as any).logo_url,
+                signature_url: (adv as any).signature_url,
+                banner_url: (adv as any).banner_url,
+                honorarios_pct: (adv as any).honorarios_pct,
+                vara_padrao: (adv as any).vara_padrao,
+                cor_peticao: (adv as any).cor_peticao,
+                estilo_peticao:
+                  (adv as any).estilo_peticao === 'classico'
+                    ? 'classico'
+                    : 'moderno',
+              },
+            })
+            .select('id')
+            .single()
 
           if (resolvedClientId) {
             await registrarContato(resolvedClientId, { db: supabaseAdmin })
@@ -252,12 +235,14 @@ export async function POST(req: Request) {
             type: 'success',
           }
 
-          const { error: notifError } = await supabaseAdmin.from('notifications').insert({
-            ...notificacao,
-            document_id: novoDoc?.id ?? null,
-            status: 'done',
-            progress: 100,
-          })
+          const { error: notifError } = await supabaseAdmin
+            .from('notifications')
+            .insert({
+              ...notificacao,
+              document_id: novoDoc?.id ?? null,
+              status: 'done',
+              progress: 100,
+            })
 
           // Fallback para bases onde a migração de document_id/status/progress ainda não foi aplicada
           if (notifError) {
@@ -268,49 +253,24 @@ export async function POST(req: Request) {
             lawyer_id: user.id,
             action: 'GERAR_PETICAO',
             resource: 'documents',
-            details: { tipo: (normalizedFormData as any)?.agente || 'petição' },
+            details: {
+              tipo: (normalizedFormData as any)?.agente || 'petição',
+            },
           })
         } catch (err) {
-          console.error(
-            '[GERAR_DOCUMENTO][STREAM_ERRO]',
-            {
-              err: serializeError(err),
-              agentType,
-              clientId: resolvedClientId,
-            },
-          )
-          console.error('[GERAR_DOCUMENTO][STREAM_BODY]', safeJsonStringify(requestBody))
-          controller.enqueue(encoder.encode('[ERRO_GERACAO]'))
+          console.error('ERRO GERAR-DOCUMENTO (stream):', err)
+          controller.enqueue(encoder.encode(`[ERRO_GERACAO] ${String(err)}`))
         } finally {
           controller.close()
         }
-      }
+      },
     })
 
     return new Response(readable, {
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     })
   } catch (err) {
-    const serialized = serializeError(err)
-    console.error('[GERAR_DOCUMENTO][POST_ERRO]', {
-      ...serialized,
-      message: serialized.message,
-      stack: 'stack' in serialized ? serialized.stack : undefined,
-      body: requestBody ? safeJsonStringify(requestBody) : requestBody,
-    })
-    console.error('[GERAR_DOCUMENTO][POST_ERRO_STACK]', serialized)
-    if (requestBody) {
-      console.error('[GERAR_DOCUMENTO][POST_BODY]', safeJsonStringify(requestBody))
-    } else {
-      console.error('[GERAR_DOCUMENTO][POST_BODY]', String(requestBody))
-    }
-
-    return Response.json(
-      {
-        error: 'Erro interno ao gerar petição. Tente novamente ou contate o suporte.',
-        detail: serialized.message,
-      },
-      { status: 500 },
-    )
+    console.error('ERRO GERAR-DOCUMENTO:', err)
+    return Response.json({ error: String(err) }, { status: 500 })
   }
 }
