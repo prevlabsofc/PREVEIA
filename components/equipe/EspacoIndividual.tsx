@@ -155,6 +155,10 @@ export function EspacoIndividual({ lawyerId, officeId, membros, isLight }: Props
 
       } catch (err) {
         console.error('[EspacoIndividual] carregar:', err)
+        setDocs([])
+        setMeusModelos([])
+        setModelosEquipe([])
+        setSemMigracao(true)
       } finally {
         setCarregando(false)
       }

@@ -89,62 +89,86 @@ function SecaoTitulo({
   )
 }
 
+const RESUMO_ZERADO = calcularControladoria([], [], [])
+
 export function ControladoriaDashboard() {
   const isLight = useIsLight()
   const [loading, setLoading] = useState(true)
-  const [erro, setErro] = useState<string | null>(null)
-  const [resumo, setResumo] = useState<ResumoControladoria | null>(null)
+  const [aviso, setAviso] = useState<string | null>(null)
+  const [resumo, setResumo] = useState<ResumoControladoria>(RESUMO_ZERADO)
 
   useEffect(() => {
     let cancelado = false
 
     async function load() {
       setLoading(true)
-      setErro(null)
+      setAviso(null)
       try {
         const {
           data: { user },
         } = await supabase.auth.getUser()
         if (!user) {
-          setErro('Sessão expirada. Faça login novamente.')
+          if (!cancelado) {
+            setAviso('Sessão expirada. Faça login novamente.')
+            setResumo(RESUMO_ZERADO)
+          }
           return
         }
 
         const { data: me, error: meErr } = await supabase
           .from('lawyers')
-          .select('id, office_id')
+          .select('id, office_id, name')
           .eq('id', user.id)
           .maybeSingle()
 
         if (meErr || !me) {
-          setErro('Não foi possível carregar o perfil.')
+          console.error('[controladoria] lawyers:', meErr?.message)
+          if (!cancelado) {
+            setAviso('Não foi possível carregar o perfil. Exibindo métricas zeradas.')
+            setResumo(RESUMO_ZERADO)
+          }
           return
         }
         if (!me.office_id) {
-          setResumo(
-            calcularControladoria([], [], [{ id: me.id, name: 'Você' }])
-          )
+          if (!cancelado) {
+            setResumo(
+              calcularControladoria([], [], [{ id: me.id, name: (me.name as string) || 'Você' }])
+            )
+          }
           return
         }
 
-        const { data: team, error: teamErr } = await supabase
+        let team: { id: string; name: string | null }[] = []
+        const { data: teamData, error: teamErr } = await supabase
           .from('lawyers')
           .select('id, name')
           .eq('office_id', me.office_id)
           .order('name')
 
         if (teamErr) {
-          setErro('Não foi possível carregar a equipe.')
-          return
+          console.error('[controladoria] team order:', teamErr.message)
+          const { data: teamFallback, error: teamFallbackErr } = await supabase
+            .from('lawyers')
+            .select('id, name')
+            .eq('office_id', me.office_id)
+          if (teamFallbackErr) {
+            console.error('[controladoria] team fallback:', teamFallbackErr.message)
+            team = [{ id: me.id, name: (me.name as string) || 'Você' }]
+            setAviso('Equipe indisponível. Exibindo métricas do seu usuário.')
+          } else {
+            team = (teamFallback as typeof team) || []
+          }
+        } else {
+          team = (teamData as typeof team) || []
         }
 
-        const membros = (team || []).map((m) => ({
+        const membros = team.map((m) => ({
           id: m.id as string,
           name: (m.name as string) || null,
         }))
         const memberIds = membros.map((m) => m.id)
         if (memberIds.length === 0) {
-          setResumo(calcularControladoria([], [], []))
+          if (!cancelado) setResumo(calcularControladoria([], [], []))
           return
         }
 
@@ -163,39 +187,55 @@ export function ControladoriaDashboard() {
 
         if (cancelado) return
 
+        let clientes: any[] = []
         if (clientsRes.error) {
+          console.error('[controladoria] clients:', clientsRes.error.message)
           // Coluna `stage` ainda não migrada — tenta sem ela.
-          if (clientsRes.error.code === '42703') {
+          if (clientsRes.error.code === '42703' || /column|does not exist|stage/i.test(clientsRes.error.message || '')) {
             const fallback = await supabase
               .from('clients')
               .select('id, status, lawyer_id, created_at, updated_at')
               .in('lawyer_id', memberIds)
             if (fallback.error) {
-              setErro('Não foi possível carregar os clientes do escritório.')
-              return
+              console.error('[controladoria] clients fallback:', fallback.error.message)
+              setAviso('Clientes indisponíveis. Exibindo métricas zeradas.')
+              clientes = []
+            } else {
+              clientes = (fallback.data as any[]) || []
             }
-            setResumo(
-              calcularControladoria(
-                (fallback.data as any[]) || [],
-                (docsRes.data as any[]) || [],
-                membros
-              )
-            )
-            return
+          } else {
+            setAviso('Clientes indisponíveis. Exibindo métricas zeradas.')
+            clientes = []
           }
-          setErro('Não foi possível carregar os clientes do escritório.')
-          return
+        } else {
+          clientes = (clientsRes.data as any[]) || []
         }
 
-        setResumo(
-          calcularControladoria(
-            (clientsRes.data as any[]) || [],
-            (docsRes.data as any[]) || [],
-            membros
-          )
-        )
-      } catch {
-        if (!cancelado) setErro('Falha inesperada ao montar a controladoria.')
+        let documentos: any[] = []
+        if (docsRes.error) {
+          console.error('[controladoria] documents:', docsRes.error.message)
+          const fallbackDocs = await supabase
+            .from('documents')
+            .select('id, lawyer_id, client_id')
+            .in('lawyer_id', memberIds)
+          if (fallbackDocs.error) {
+            console.error('[controladoria] documents fallback:', fallbackDocs.error.message)
+            documentos = []
+            setAviso((prev) => prev || 'Documentos indisponíveis. Petições exibidas como R$ 0,00 / 0.')
+          } else {
+            documentos = (fallbackDocs.data as any[]) || []
+          }
+        } else {
+          documentos = (docsRes.data as any[]) || []
+        }
+
+        setResumo(calcularControladoria(clientes, documentos, membros))
+      } catch (err) {
+        console.error('[controladoria] load:', err)
+        if (!cancelado) {
+          setAviso('Falha ao montar a controladoria. Exibindo métricas zeradas.')
+          setResumo(RESUMO_ZERADO)
+        }
       } finally {
         if (!cancelado) setLoading(false)
       }
@@ -214,34 +254,6 @@ export function ControladoriaDashboard() {
           className="w-8 h-8 rounded-full border-2 animate-spin"
           style={{ borderColor: '#D4AF37', borderTopColor: 'transparent' }}
         />
-      </div>
-    )
-  }
-
-  if (erro) {
-    return (
-      <div className="max-w-[1100px] mx-auto px-4 py-16 text-center">
-        <AlertTriangle className="mx-auto mb-3" size={28} color="#F59E0B" />
-        <p style={{ color: isLight ? '#4F4F4F' : '#9ca3af' }}>{erro}</p>
-      </div>
-    )
-  }
-
-  if (!resumo || (resumo.totalClientes === 0 && resumo.totalDocumentos === 0)) {
-    return (
-      <div className="max-w-[1100px] mx-auto px-4 pb-8">
-        <Cabecalho isLight={isLight} />
-        <GlassCard intensity={1.1} style={{ padding: 28 }}>
-          <div className="text-center py-10">
-            <BarChart3 size={32} color="#D4AF37" className="mx-auto mb-3 opacity-80" />
-            <p className="font-semibold mb-1" style={{ color: isLight ? '#1E1E1E' : '#fff' }}>
-              Sem dados operacionais ainda
-            </p>
-            <p className="text-sm" style={{ color: isLight ? '#6B6B6B' : '#888' }}>
-              Cadastre clientes no funil e gere petições para ver retrabalho, permanência e gargalos.
-            </p>
-          </div>
-        </GlassCard>
       </div>
     )
   }
@@ -265,6 +277,7 @@ export function ControladoriaDashboard() {
     fill: e.color,
   }))
 
+  // Sem dados: cards continuam visíveis com zeros (nunca página em branco).
   const stats: {
     icon: LucideIcon
     label: string
@@ -290,7 +303,7 @@ export function ControladoriaDashboard() {
     {
       icon: RefreshCw,
       label: 'Retrabalho geral',
-      value: formatarPct(resumo.taxaRetrabalhoGeralPct),
+      value: formatarPct(resumo.taxaRetrabalhoGeralPct ?? 0),
       growth: 'Clientes com 2+ petições',
       color: '#F59E0B',
       growthColor: '#F59E0B',
@@ -298,7 +311,7 @@ export function ControladoriaDashboard() {
     {
       icon: Clock,
       label: 'Permanência média',
-      value: formatarHoras(resumo.permanenciaMediaGeralHoras),
+      value: resumo.permanenciaMediaGeralHoras == null ? '0 h' : formatarHoras(resumo.permanenciaMediaGeralHoras),
       growth: 'Casos abertos (≠ concluído)',
       color: '#A855F7',
     },
@@ -315,6 +328,35 @@ export function ControladoriaDashboard() {
   return (
     <div className="max-w-[1100px] mx-auto px-4 pb-8">
       <Cabecalho isLight={isLight} />
+
+      {aviso ? (
+        <div
+          className="mb-4 flex items-start gap-2 rounded-xl px-3 py-2.5 text-sm"
+          style={{
+            background: 'rgba(245,158,11,0.12)',
+            border: '1px solid rgba(245,158,11,0.35)',
+            color: isLight ? '#92400E' : '#FBBF24',
+          }}
+        >
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span>{aviso}</span>
+        </div>
+      ) : null}
+
+      {resumo.totalClientes === 0 && resumo.totalDocumentos === 0 ? (
+        <GlassCard intensity={1.05} style={{ padding: 16, marginBottom: 16 }}>
+          <div className="flex items-center gap-3">
+            <BarChart3 size={22} color="#D4AF37" className="shrink-0 opacity-80" />
+            <p className="text-sm" style={{ color: isLight ? '#6B6B6B' : '#888' }}>
+              Sem dados operacionais ainda — cards abaixo em{' '}
+              <span className="font-semibold" style={{ color: isLight ? '#1E1E1E' : '#fff' }}>
+                0 / 0% / R$ 0,00
+              </span>
+              . Cadastre clientes e gere petições para popular as métricas.
+            </p>
+          </div>
+        </GlassCard>
+      ) : null}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         {stats.map((s, i) => (
@@ -371,7 +413,7 @@ export function ControladoriaDashboard() {
                     <span className="ml-1 opacity-60">({e.clientes})</span>
                   </span>
                   <span className="font-semibold tabular-nums" style={{ color: e.color }}>
-                    {formatarPct(e.taxaRetrabalhoPct)}
+                    {formatarPct(e.taxaRetrabalhoPct ?? 0)}
                     {e.comRetrabalho > 0 ? (
                       <span className="ml-1 font-normal opacity-70">· {e.comRetrabalho} c/ retrabalho</span>
                     ) : null}
@@ -413,7 +455,7 @@ export function ControladoriaDashboard() {
                   <div className="flex items-center justify-between gap-2 text-xs mb-1">
                     <span style={{ color: isLight ? '#4F4F4F' : '#bbb' }}>{e.label}</span>
                     <span className="font-semibold tabular-nums" style={{ color: e.color }}>
-                      {formatarHoras(e.permanenciaMediaHoras)}
+                      {e.permanenciaMediaHoras == null ? '0 h' : formatarHoras(e.permanenciaMediaHoras)}
                     </span>
                   </div>
                   <BarraHorizontal
@@ -522,13 +564,13 @@ export function ControladoriaDashboard() {
                         {m.clientes}
                       </td>
                       <td className="py-3 text-right tabular-nums" style={{ color: '#F59E0B' }}>
-                        {formatarPct(m.taxaRetrabalhoPct)}
+                        {formatarPct(m.taxaRetrabalhoPct ?? 0)}
                       </td>
                       <td
                         className="py-3 text-right tabular-nums pr-1"
                         style={{ color: isLight ? '#4F4F4F' : '#bbb' }}
                       >
-                        {formatarHoras(m.permanenciaMediaHoras)}
+                        {m.permanenciaMediaHoras == null ? '0 h' : formatarHoras(m.permanenciaMediaHoras)}
                       </td>
                     </tr>
                   ))}

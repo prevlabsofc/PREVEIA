@@ -46,8 +46,25 @@ function serializeError(err: unknown) {
 export async function POST(req: Request) {
   let requestBody: any = null
   try {
-    requestBody = await req.json()
-    const { agentType, formData, clientId, clientName } = requestBody ?? {}
+    try {
+      requestBody = await req.json()
+    } catch (parseErr) {
+      console.error('[GERAR_DOCUMENTO][JSON_PARSE]', {
+        err: serializeError(parseErr),
+        contentType: req.headers.get('content-type'),
+      })
+      return Response.json(
+        { error: 'Body JSON inválido. Envie application/json com agentType, formData e clientId/clientName.' },
+        { status: 400 },
+      )
+    }
+
+    // Payload esperado (alinhado com app/(dashboard)/agentes/page.tsx):
+    // { agentType, formData, clientId, clientName }
+    const { agentType: rawAgentType, formData, clientId, clientName } = requestBody ?? {}
+    const agentType = typeof rawAgentType === 'string' && rawAgentType.trim()
+      ? rawAgentType.trim()
+      : 'peticao'
 
     // Log do body recebido (para comparar payload frontend/rota)
     // Obs.: safeJsonStringify lida com BigInt/ciclos caso existam.
@@ -55,6 +72,7 @@ export async function POST(req: Request) {
       '[GERAR_DOCUMENTO][BODY_RECEBIDO]',
       safeJsonStringify({
         agentType,
+        rawAgentType,
         clientId,
         clientName,
         formData,
@@ -62,8 +80,12 @@ export async function POST(req: Request) {
     )
 
     const normalizedFormData = (formData && typeof formData === 'object' ? formData : {}) as Record<string, unknown>
-    const normalizedClientId = clientId ?? null
-    const normalizedClientName = clientName ?? null
+    const normalizedClientId =
+      typeof clientId === 'string' && clientId.trim() ? clientId.trim() : clientId || null
+    const normalizedClientName =
+      typeof clientName === 'string' && clientName.trim()
+        ? clientName.trim()
+        : clientName || null
 
     const ip = req.headers.get('x-forwarded-for') || 'unknown'
     if (!rateLimit(ip, 20, 60000)) {
@@ -146,22 +168,21 @@ export async function POST(req: Request) {
       return Response.json({ error: 'trial_expired' }, { status: 403 })
     }
 
-    const manualClientName = (normalizedClientName || (normalizedFormData as any)?.nome || '').trim()
-    if (!normalizedClientId && !manualClientName) {
-      console.warn('[GERAR_DOCUMENTO][VALIDACAO_CLIENTE_FALTANTE]', {
-        normalizedClientId,
-        normalizedClientName,
-        formDataNome: (normalizedFormData as any)?.nome,
-      })
-      return Response.json({ error: 'Informe um cliente cadastrado ou o nome manual do cliente.' }, { status: 400 })
-    }
+    // Campos de cliente são opcionais: sem cadastro/nome, segue com fallback
+    // para não quebrar a geração por undefined/null.
+    const manualClientName = String(
+      normalizedClientName || (normalizedFormData as any)?.nome || '',
+    ).trim()
     if (normalizedClientId && !cli) {
-      console.warn('[GERAR_DOCUMENTO][VALIDACAO_CLIENTE_NAO_ENCONTRADO]', { normalizedClientId })
-      return Response.json({ error: 'Cliente não encontrado.' }, { status: 400 })
+      console.warn('[GERAR_DOCUMENTO][CLIENTE_NAO_ENCONTRADO_FALLBACK]', {
+        normalizedClientId,
+        manualClientName,
+      })
     }
 
     const resolvedClientId = cli?.id || null
-    const resolvedClientName = cli?.name || manualClientName
+    const resolvedClientName =
+      cli?.name || manualClientName || 'Cliente não informado'
 
     const anthropicApiKey = process.env.ANTHROPIC_API_KEY
     if (!anthropicApiKey) {
@@ -270,8 +291,14 @@ export async function POST(req: Request) {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' }
     })
   } catch (err) {
-    console.error('[GERAR_DOCUMENTO][POST_ERRO]', serializeError(err))
-
+    const serialized = serializeError(err)
+    console.error('[GERAR_DOCUMENTO][POST_ERRO]', {
+      ...serialized,
+      message: serialized.message,
+      stack: 'stack' in serialized ? serialized.stack : undefined,
+      body: requestBody ? safeJsonStringify(requestBody) : requestBody,
+    })
+    console.error('[GERAR_DOCUMENTO][POST_ERRO_STACK]', serialized)
     if (requestBody) {
       console.error('[GERAR_DOCUMENTO][POST_BODY]', safeJsonStringify(requestBody))
     } else {
@@ -279,7 +306,10 @@ export async function POST(req: Request) {
     }
 
     return Response.json(
-      { error: 'Erro interno ao gerar petição. Tente novamente ou contate o suporte.' },
+      {
+        error: 'Erro interno ao gerar petição. Tente novamente ou contate o suporte.',
+        detail: serialized.message,
+      },
       { status: 500 },
     )
   }

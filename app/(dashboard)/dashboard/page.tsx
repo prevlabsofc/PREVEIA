@@ -102,15 +102,33 @@ export default function Dashboard() {
         }
       }
 
-      const [{ data: d }, { data: c }, { data: n }] = await Promise.all([
+      const [{ data: d, error: docsErr }, { data: c, error: clientsErr }, { data: n, error: notifErr }] = await Promise.all([
         supabase.from('documents').select('*').in('lawyer_id', memberIds).order('created_at', { ascending: false }),
         supabase.from('clients').select('id, lawyer_id').in('lawyer_id', memberIds),
         supabase.from('notifications').select('*').eq('lawyer_id', user.id).order('created_at', { ascending: false }).limit(6),
       ])
 
-      setTeamDocs((d as Doc[]) || [])
+      let docsData = d
+      if (docsErr) {
+        console.error('[dashboard] documents order:', docsErr.message)
+        const { data: fallback } = await supabase.from('documents').select('*').in('lawyer_id', memberIds)
+        docsData = fallback
+      }
+
+      let notifData = n
+      if (notifErr) {
+        console.error('[dashboard] notifications order:', notifErr.message)
+        const { data: fallbackN } = await supabase.from('notifications').select('*').eq('lawyer_id', user.id).limit(6)
+        notifData = fallbackN
+      }
+
+      if (clientsErr) {
+        console.error('[dashboard] clients:', clientsErr.message)
+      }
+
+      setTeamDocs((docsData as Doc[]) || [])
       setTeamClients((c as { id: string; lawyer_id: string }[]) || [])
-      setNotificacoes((n as Notificacao[]) || [])
+      setNotificacoes((notifData as Notificacao[]) || [])
       setLoading(false)
     }
     load()
