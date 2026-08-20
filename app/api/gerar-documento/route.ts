@@ -163,8 +163,21 @@ export async function POST(req: Request) {
     const resolvedClientId = cli?.id || null
     const resolvedClientName = cli?.name || manualClientName
 
+    const anthropicApiKey = process.env.ANTHROPIC_API_KEY
+    if (!anthropicApiKey) {
+      console.error('[GERAR_DOCUMENTO][ANTHROPIC_API_KEY_MISSING]', {
+        message: 'ANTHROPIC_API_KEY não está definida em process.env',
+        agentType,
+        lawyerId: user.id,
+      })
+      return Response.json(
+        { error: 'Serviço de IA indisponível. Contate o suporte.' },
+        { status: 500 },
+      )
+    }
+
     const systemPrompt = getSystemPrompt(agentType, adv, cli)
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+    const anthropic = new Anthropic({ apiKey: anthropicApiKey })
     const encoder = new TextEncoder()
     let fullText = ''
 
@@ -257,12 +270,7 @@ export async function POST(req: Request) {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' }
     })
   } catch (err) {
-    console.error(
-      '[GERAR_DOCUMENTO][POST_ERRO]',
-      {
-        err: serializeError(err),
-      },
-    )
+    console.error('[GERAR_DOCUMENTO][POST_ERRO]', serializeError(err))
 
     if (requestBody) {
       console.error('[GERAR_DOCUMENTO][POST_BODY]', safeJsonStringify(requestBody))
@@ -270,6 +278,9 @@ export async function POST(req: Request) {
       console.error('[GERAR_DOCUMENTO][POST_BODY]', String(requestBody))
     }
 
-    return Response.json({ error: 'Erro ao gerar petição. Verifique os dados do cliente.' }, { status: 400 })
+    return Response.json(
+      { error: 'Erro interno ao gerar petição. Tente novamente ou contate o suporte.' },
+      { status: 500 },
+    )
   }
 }

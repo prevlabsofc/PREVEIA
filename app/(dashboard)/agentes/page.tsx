@@ -214,31 +214,56 @@ function AgentesPageContent() {
 
   useEffect(() => {
     async function loadUserAndCustomAgents() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: lawyer } = await supabase.from('lawyers').select('*').eq('id', user.id).single()
-      setCorPeticao(lawyer?.cor_peticao || '#1d4ed8')
-      setEstiloPeticao(normalizarEstiloPeticao(lawyer?.estilo_peticao))
-      setAdvPeticao({
-        name: lawyer?.name,
-        office_name: lawyer?.office_name,
-        oab_number: lawyer?.oab_number,
-        oab_uf: lawyer?.oab_uf,
-        email: lawyer?.email,
-        whatsapp: lawyer?.whatsapp || lawyer?.phone,
-        phone: lawyer?.phone,
-        cidade: lawyer?.cidade,
-        estado: lawyer?.estado || lawyer?.oab_uf,
-        logo_url: lawyer?.logo_url,
-        banner_url: lawyer?.banner_url,
-        signature_url: lawyer?.signature_url,
-        cor_peticao: lawyer?.cor_peticao,
-        estilo_peticao: lawyer?.estilo_peticao,
-      })
-      const { data: clis } = await supabase.from('clients').select('*').eq('lawyer_id', user.id).order('name')
-      setClientes(clis || [])
-      const { data: cAgents } = await supabase.from('custom_agents').select('*').eq('lawyer_id', user.id).order('created_at', { ascending: false })
-      setCustomAgents(cAgents || [])
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        const { data: lawyer } = await supabase.from('lawyers').select('*').eq('id', user.id).single()
+        setCorPeticao(lawyer?.cor_peticao || '#1d4ed8')
+        setEstiloPeticao(normalizarEstiloPeticao(lawyer?.estilo_peticao))
+        setAdvPeticao({
+          name: lawyer?.name,
+          office_name: lawyer?.office_name,
+          oab_number: lawyer?.oab_number,
+          oab_uf: lawyer?.oab_uf,
+          email: lawyer?.email,
+          whatsapp: lawyer?.whatsapp || lawyer?.phone,
+          phone: lawyer?.phone,
+          cidade: lawyer?.cidade,
+          estado: lawyer?.estado || lawyer?.oab_uf,
+          logo_url: lawyer?.logo_url,
+          banner_url: lawyer?.banner_url,
+          signature_url: lawyer?.signature_url,
+          cor_peticao: lawyer?.cor_peticao,
+          estilo_peticao: lawyer?.estilo_peticao,
+        })
+        const { data: clis } = await supabase.from('clients').select('*').eq('lawyer_id', user.id).order('name')
+        setClientes(clis || [])
+
+        const { data: cAgents, error: cAgentsError } = await supabase
+          .from('custom_agents')
+          .select('*')
+          .eq('lawyer_id', user.id)
+          .order('created_at', { ascending: false })
+
+        if (cAgentsError) {
+          console.error('[agentes] custom_agents order by created_at:', cAgentsError.message)
+          const { data: fallback, error: fallbackError } = await supabase
+            .from('custom_agents')
+            .select('*')
+            .eq('lawyer_id', user.id)
+          if (fallbackError) {
+            console.error('[agentes] custom_agents fallback:', fallbackError.message)
+            setCustomAgents([])
+          } else {
+            setCustomAgents(fallback || [])
+          }
+        } else {
+          setCustomAgents(cAgents || [])
+        }
+      } catch (err) {
+        console.error('[agentes] loadUserAndCustomAgents:', err)
+        setCustomAgents([])
+      }
     }
     loadUserAndCustomAgents()
   }, [])
@@ -549,7 +574,9 @@ function AgentesPageContent() {
     id: agent.id,
     nome: agent.name,
     resumo: `${(agent.fields || []).length} campos identificados`,
-    meta: `Criado em ${new Date(agent.created_at).toLocaleDateString('pt-BR')}`,
+    meta: agent.created_at
+      ? `Criado em ${new Date(agent.created_at).toLocaleDateString('pt-BR')}`
+      : undefined,
   }))
 
   function alternarCustomAgent(item: AgenteCardItem) {

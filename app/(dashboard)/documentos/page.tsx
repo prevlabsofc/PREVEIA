@@ -80,23 +80,39 @@ export default function DocumentosPage() {
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const membros = await carregarMembrosEscritorio(supabase, user.id)
-      const memberIds = membros.map((m) => m.id)
-      const [{ data }, { data: clientList }, { data: procs }] = await Promise.all([
-        supabase.from('documents').select('*').in('lawyer_id', memberIds).order('created_at', { ascending: false }),
-        supabase.from('clients').select('id, name, cpf, status').in('lawyer_id', memberIds).order('name'),
-        supabase.from('processos').select('id, numero, tribunal, cliente_id').in('lawyer_id', memberIds),
-      ])
-      setDocs((data as Doc[]) || [])
-      setClients((clientList as Client[]) || [])
-      setProcessos((procs as ProcessoParaPasta[]) || [])
-      setLoading(false)
-      const termoBusca = localStorage.getItem('marple_search')
-      if (termoBusca) {
-        setSearch(termoBusca)
-        localStorage.removeItem('marple_search')
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        const membros = await carregarMembrosEscritorio(supabase, user.id)
+        const memberIds = membros.map((m) => m.id)
+
+        const docsQuery = supabase.from('documents').select('*').in('lawyer_id', memberIds).order('created_at', { ascending: false })
+        const [{ data, error: docsError }, { data: clientList }, { data: procs }] = await Promise.all([
+          docsQuery,
+          supabase.from('clients').select('id, name, cpf, status').in('lawyer_id', memberIds).order('name'),
+          supabase.from('processos').select('id, numero, tribunal, cliente_id').in('lawyer_id', memberIds),
+        ])
+
+        if (docsError) {
+          console.error('[documentos] order by created_at:', docsError.message)
+          const { data: fallback } = await supabase.from('documents').select('*').in('lawyer_id', memberIds)
+          setDocs((fallback as Doc[]) || [])
+        } else {
+          setDocs((data as Doc[]) || [])
+        }
+
+        setClients((clientList as Client[]) || [])
+        setProcessos((procs as ProcessoParaPasta[]) || [])
+      } catch (err) {
+        console.error('[documentos] load:', err)
+        setDocs([])
+      } finally {
+        setLoading(false)
+        const termoBusca = localStorage.getItem('marple_search')
+        if (termoBusca) {
+          setSearch(termoBusca)
+          localStorage.removeItem('marple_search')
+        }
       }
     }
     load()
