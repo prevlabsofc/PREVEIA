@@ -1,0 +1,399 @@
+﻿@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; padding: 0; margin: 0; }
+
+:root {
+  --bg-primary: #050505;
+  --bg-secondary: #0A0A0A;
+  --bg-card: rgba(255,255,255,0.025);
+  --text-primary: #ffffff;
+  --text-secondary: #999999;
+  --border-color: rgba(255,255,255,0.08);
+  --scrollbar-track: rgba(255,255,255,0.07);
+  --scrollbar-thumb: rgba(212,175,55,0.55);
+  --scrollbar-thumb-hover: rgba(212,175,55,0.9);
+  --scroll-fade: #0B0B0B;
+}
+
+html.light {
+  --bg-primary: #F8F8F8;
+  --bg-secondary: #FFFFFF;
+  --bg-card: #FFFFFF;
+  --text-primary: #1E1E1E;
+  --text-secondary: #4F4F4F;
+  --text-muted: #9E9E9E;
+  --border-color: #EDEDED;
+  --gold-primary: #F4C430;
+  --gold-light: #F7D34A;
+  --gold-soft: #FFF4D6;
+  --gold-ultra-soft: #FFF9EC;
+}
+
+html.light body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+html.light body::before {
+  background: #F8F8F8 !important;
+}
+
+html.light .glass-card,
+html.light .glass {
+  background: #FFFFFF !important;
+  border: 1px solid #EDEDED !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
+  backdrop-filter: none !important;
+}
+
+html.light .glass-gold {
+  background: linear-gradient(90deg, #FFF4D6, #FFF8E8) !important;
+  border: 1px solid #F0D890 !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03) !important;
+  backdrop-filter: none !important;
+}
+
+html.light .text-white {
+  color: #1E1E1E !important;
+}
+
+html.light .text-gray-300,
+html.light .text-gray-400 {
+  color: #4F4F4F !important;
+}
+
+html.light .text-gray-500,
+html.light .text-gray-600 {
+  color: #9E9E9E !important;
+}
+
+html.light .text-gradient-gold {
+  background: linear-gradient(135deg, #F4C430, #F7D34A);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+html.light .btn-gold {
+  background: linear-gradient(90deg, #F4C430, #F7D34A) !important;
+  color: #1F1F1F !important;
+}
+
+html.light .input-glass {
+  background: #FFFFFF !important;
+  color: #1E1E1E !important;
+  border: 1px solid #EDEDED !important;
+}
+
+html.light .input-glass::placeholder {
+  color: #9E9E9E !important;
+}
+
+html.light {
+  --scrollbar-track: #ECECEC;
+  --scrollbar-thumb: #D9A520;
+  --scrollbar-thumb-hover: #B8891A;
+  --scroll-fade: #FFFFFF;
+}
+
+html, body {
+  font-family: var(--font-inter), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: var(--bg-primary, #050505);
+  color: var(--text-primary, #ffffff);
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 60% 50% at 15% 5%, rgba(212,175,55,0.1) 0%, transparent 50%),
+    radial-gradient(ellipse 50% 45% at 85% 95%, rgba(212,175,55,0.07) 0%, transparent 50%),
+    radial-gradient(ellipse 40% 35% at 95% 15%, rgba(180,140,40,0.05) 0%, transparent 50%),
+    #050505;
+  pointer-events: none;
+}
+
+/* ===== SCROLLBARS VISÍVEIS =====
+   Barras discretas demais escondiam conteúdo: o usuário não percebia que havia
+   mais para rolar. Trilho sempre visível + polegar dourado com contraste alto. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  min-height: 44px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* Containers internos: reserva a calha para o conteúdo não “pular” ao rolar */
+.scroll-area { scrollbar-gutter: stable; }
+
+/* Barra compacta para menus/dropdowns estreitos, ainda assim perceptível */
+.scroll-area-sm::-webkit-scrollbar { width: 9px; height: 9px; }
+.scroll-area-sm::-webkit-scrollbar-thumb { border-width: 2px; min-height: 28px; }
+
+/* Indicador “há mais conteúdo” — some quando chega ao fim (ver ScrollFade) */
+@keyframes scroll-hint-y { 0%,100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
+@keyframes scroll-hint-x { 0%,100% { transform: translateX(0); } 50% { transform: translateX(3px); } }
+.animate-scroll-hint-y { animation: scroll-hint-y 1.8s ease-in-out infinite; }
+.animate-scroll-hint-x { animation: scroll-hint-x 1.8s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-scroll-hint-y,
+  .animate-scroll-hint-x { animation: none; }
+}
+
+.text-gradient-gold {
+  background: linear-gradient(135deg, #F5DC82, #D4AF37, #B8941F);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* BOTÃO DOURADO LIQUID GLASS */
+.btn-gold {
+  position: relative;
+  background: linear-gradient(135deg, #D4AF37 0%, #F0D060 50%, #D4AF37 100%);
+  background-size: 200% auto;
+  color: #000;
+  font-weight: 700;
+  transition: all 0.4s cubic-bezier(0.4,0,0.2,1);
+  box-shadow: 0 4px 24px rgba(212,175,55,0.35), inset 0 1px 0 rgba(255,255,255,0.4), inset 0 -1px 2px rgba(0,0,0,0.2);
+  overflow: hidden;
+}
+.btn-gold::after {
+  content: '';
+  position: absolute;
+  top: 0; left: -100%;
+  width: 100%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent);
+  transition: left 0.6s ease;
+}
+.btn-gold:hover::after { left: 100%; }
+.btn-gold:hover:not(:disabled) {
+  background-position: right center;
+  box-shadow: 0 6px 36px rgba(212,175,55,0.55), inset 0 1px 0 rgba(255,255,255,0.5);
+  transform: translateY(-2px);
+}
+/* Sem isto o botão desabilitado fica idêntico ao habilitado e o clique parece
+   não ter efeito nenhum. */
+.btn-gold:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: saturate(0.7);
+  box-shadow: none;
+  transform: none;
+}
+.btn-gold:disabled::after { content: none; }
+
+/* BOTÃO GLASS SECUNDÁRIO */
+.btn-glass {
+  position: relative;
+  background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.03));
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: #fff;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3), inset 0 1px 1px rgba(255,255,255,0.2);
+}
+.btn-glass:hover {
+  background: linear-gradient(135deg, rgba(255,255,255,0.16), rgba(255,255,255,0.06));
+  border-color: rgba(212,175,55,0.3);
+  transform: translateY(-1px);
+}
+
+/* CARDS GLASS */
+.glass {
+  background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.025));
+  backdrop-filter: blur(22px) saturate(170%);
+  -webkit-backdrop-filter: blur(22px) saturate(170%);
+  border: 1px solid rgba(255,255,255,0.1);
+  box-shadow: 0 8px 36px rgba(0,0,0,0.45), inset 0 1px 1px rgba(255,255,255,0.18), inset 0 -1px 2px rgba(0,0,0,0.25);
+}
+
+.glass-gold {
+  background: linear-gradient(135deg, rgba(212,175,55,0.12), rgba(212,175,55,0.03));
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  border: 1px solid rgba(212,175,55,0.22);
+  box-shadow: 0 8px 36px rgba(0,0,0,0.45), inset 0 1px 1px rgba(255,255,255,0.15), 0 0 50px rgba(212,175,55,0.08);
+}
+
+.glass-card {
+  background: linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02));
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 18px;
+  box-shadow: 0 6px 28px rgba(0,0,0,0.4), inset 0 1px 1px rgba(255,255,255,0.15);
+  transition: all 0.35s cubic-bezier(0.4,0,0.2,1);
+}
+.glass-card:hover {
+  border-color: rgba(212,175,55,0.3);
+  box-shadow: 0 12px 48px rgba(0,0,0,0.55), 0 0 40px rgba(212,175,55,0.1), inset 0 1px 1px rgba(255,255,255,0.2);
+}
+
+/* INPUTS LIQUID GLASS — aplicado globalmente */
+.input-glass {
+  background: linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02));
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 14px;
+  color: #fff;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.1);
+  transition: all 0.3s ease;
+  outline: none;
+}
+.input-glass::placeholder { color: rgba(255,255,255,0.3); }
+.input-glass:focus {
+  border-color: rgba(212,175,55,0.5);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.2), 0 0 0 3px rgba(212,175,55,0.12), 0 0 20px rgba(212,175,55,0.1);
+  background: linear-gradient(135deg, rgba(255,255,255,0.09), rgba(255,255,255,0.03));
+}
+
+/* Estado de erro de validação — o seletor com html.light precisa vencer o
+   `border ... !important` do tema claro. */
+.input-glass.input-erro,
+html.light .input-glass.input-erro {
+  border-color: rgba(239,68,68,0.55) !important;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.2), 0 0 0 3px rgba(239,68,68,0.12);
+}
+.input-glass.input-erro:focus,
+html.light .input-glass.input-erro:focus {
+  border-color: rgba(239,68,68,0.8) !important;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.2), 0 0 0 3px rgba(239,68,68,0.18);
+}
+
+@keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+@keyframes glow-pulse { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
+.animate-float { animation: float 6s ease-in-out infinite; }
+
+html.light main {
+  background: #F8F8F8;
+}
+
+html.light,
+html.light body,
+html.light #__next {
+  background: #F8F8F8 !important;
+}
+
+html.light * {
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+/* Admin — tipografia legível para tabelas, KPIs e textos pequenos */
+.admin-panel {
+  font-family: var(--font-inter), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  text-rendering: optimizeLegibility;
+}
+
+.admin-panel table {
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-panel th {
+  font-weight: 600 !important;
+  line-height: 1.45 !important;
+  letter-spacing: 0.015em;
+  color: #9ca3af !important;
+}
+
+.admin-panel td {
+  font-weight: 400;
+  line-height: 1.55 !important;
+}
+
+.admin-panel .font-black {
+  font-weight: 700 !important;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+
+.admin-panel .font-bold {
+  font-weight: 600;
+}
+
+.admin-panel .font-medium {
+  font-weight: 500;
+}
+
+.admin-panel .text-\[10px\] {
+  font-size: 0.6875rem !important;
+  line-height: 1.45 !important;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.admin-panel .text-xs {
+  line-height: 1.5;
+}
+
+.admin-panel .text-sm {
+  line-height: 1.55;
+}
+
+.admin-panel .text-xl {
+  line-height: 1.3;
+}
+
+.admin-panel .text-2xl {
+  line-height: 1.25;
+}
+
+.admin-panel .text-gray-400 {
+  color: #a3a3a3 !important;
+}
+
+.admin-panel .text-gray-500 {
+  color: #8a8a8a !important;
+}
+
+.admin-panel .text-gray-600 {
+  color: #737373 !important;
+}
+
+.admin-panel .input-glass,
+.admin-panel select.input-glass {
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.admin-panel button.text-xs,
+.admin-panel select.text-xs {
+  line-height: 1.45;
+}
+
+.admin-panel .recharts-default-tooltip {
+  font-family: var(--font-inter), 'Inter', sans-serif !important;
+  font-size: 12px !important;
+  font-weight: 500;
+}
+

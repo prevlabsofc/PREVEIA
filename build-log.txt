@@ -1,0 +1,69 @@
+﻿
+> preveia@0.1.0 build
+> next build
+
+   Ôû▓ Next.js 15.3.1
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+node.exe : Failed to compile.
+No linha:1 caractere:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Failed to compile.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+app\(dashboard)\layout.tsx
+An error occurred in `next/font`.
+
+Error: Cannot find module '@tailwindcss/postcss'
+Require stack:
+- C:\Users\User\preveia\node_modules\next\dist\build\webpack\config\blocks\css\plugins.js
+- C:\Users\User\preveia\node_modules\next\dist\build\webpack\config\blocks\css\index.js
+- C:\Users\User\preveia\node_modules\next\dist\build\webpack\config\index.js
+- C:\Users\User\preveia\node_modules\next\dist\build\webpack-config.js
+- C:\Users\User\preveia\node_modules\next\dist\build\webpack-build\impl.js
+- C:\Users\User\preveia\node_modules\next\dist\compiled\jest-worker\processChild.js
+    at Module.<anonymous> (node:internal/modules/cjs/loader:1476:15)
+    at C:\Users\User\preveia\node_modules\next\dist\server\require-hook.js:55:36
+    at wrapResolveFilename (node:internal/modules/cjs/loader:1049:27)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1094:12)
+    at require.resolve (node:internal/modules/helpers:171:31)
+    at loadPlugin (C:\Users\User\preveia\node_modules\next\dist\build\webpack\config\blocks\css\plugins.js:53:32)
+    at C:\Users\User\preveia\node_modules\next\dist\build\webpack\config\blocks\css\plugins.js:185:56
+    at Array.map (<anonymous>)
+    at getPostCssPlugins 
+(C:\Users\User\preveia\node_modules\next\dist\build\webpack\config\blocks\css\plugins.js:185:47)
+    at async C:\Users\User\preveia\node_modules\next\dist\build\webpack\config\blocks\css\index.js:125:36
+
+app\layout.tsx
+An error occurred in `next/font`.
+
+Error: Cannot find module '@tailwindcss/postcss'
+Require stack:
+- C:\Users\User\preveia\node_modules\next\dist\build\webpack\config\blocks\css\plugins.js
+- C:\Users\User\preveia\node_modules\next\dist\build\webpack\config\blocks\css\index.js
+- C:\Users\User\preveia\node_modules\next\dist\build\webpack\config\index.js
+- C:\Users\User\preveia\node_modules\next\dist\build\webpack-config.js
+- C:\Users\User\preveia\node_modules\next\dist\build\webpack-build\impl.js
+- C:\Users\User\preveia\node_modules\next\dist\compiled\jest-worker\processChild.js
+    at Module.<anonymous> (node:internal/modules/cjs/loader:1476:15)
+    at C:\Users\User\preveia\node_modules\next\dist\server\require-hook.js:55:36
+    at wrapResolveFilename (node:internal/modules/cjs/loader:1049:27)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1094:12)
+    at require.resolve (node:internal/modules/helpers:171:31)
+    at loadPlugin (C:\Users\User\preveia\node_modules\next\dist\build\webpack\config\blocks\css\plugins.js:53:32)
+    at C:\Users\User\preveia\node_modules\next\dist\build\webpack\config\blocks\css\plugins.js:185:56
+    at Array.map (<anonymous>)
+    at getPostCssPlugins 
+(C:\Users\User\preveia\node_modules\next\dist\build\webpack\config\blocks\css\plugins.js:185:47)
+    at async C:\Users\User\preveia\node_modules\next\dist\build\webpack\config\blocks\css\index.js:125:36
+
+./app/(dashboard)/layout.tsx
+Module not found: Can't resolve './globals.css'
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+> Build failed because of webpack errors

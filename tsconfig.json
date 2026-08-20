@@ -1,0 +1,76 @@
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "**/*.mts",
+    ".next-leva-a/types/**/*.ts",
+    ".next-leva-a/dev/types/**/*.ts",
+    ".next-auto-archive/types/**/*.ts",
+    ".next-auto-archive/dev/types/**/*.ts",
+    ".next-aceite-build/types/**/*.ts",
+    ".next-aceite-build/dev/types/**/*.ts",
+    ".next-modulos/types/**/*.ts",
+    ".next-modulos/dev/types/**/*.ts",
+    ".next-aprovacoes-hist/types/**/*.ts",
+    ".next-aprovacoes-hist/dev/types/**/*.ts",
+    ".next-pastas-docs/types/**/*.ts",
+    ".next-pastas-docs/dev/types/**/*.ts",
+    ".next-alertas-v2/types/**/*.ts",
+    ".next-alertas-v2/dev/types/**/*.ts",
+    ".next-consulta-erros/types/**/*.ts",
+    ".next-consulta-erros/dev/types/**/*.ts",
+    ".next-honorarios-tipo-acao/types/**/*.ts",
+    ".next-honorarios-tipo-acao/dev/types/**/*.ts",
+    ".next-export-dropdown/types/**/*.ts",
+    ".next-export-dropdown/dev/types/**/*.ts",
+    ".next-acesso-rapido2/types/**/*.ts",
+    ".next-acesso-rapido2/dev/types/**/*.ts",
+    ".next-config-plano/types/**/*.ts",
+    ".next-config-plano/dev/types/**/*.ts",
+    ".next-contratos-honorarios/types/**/*.ts",
+    ".next-contratos-honorarios/dev/types/**/*.ts",
+    ".next-ferramentas-calc/types/**/*.ts",
+    ".next-ferramentas-calc/dev/types/**/*.ts",
+    ".next-endereco-cliente/types/**/*.ts",
+    ".next-endereco-cliente/dev/types/**/*.ts",
+    ".next-lembrete/types/**/*.ts",
+    ".next-lembrete/dev/types/**/*.ts",
+    ".next-dashboard/types/**/*.ts",
+    ".next-dashboard/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

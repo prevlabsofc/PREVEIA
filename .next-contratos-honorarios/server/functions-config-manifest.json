@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "functions": {
+    "/api/aceite/[token]": {},
+    "/api/adicionar-inscrito": {},
+    "/api/aprovacoes-cliente": {},
+    "/api/aprovacoes-cliente/[id]/revogar": {},
+    "/api/aprovacoes-cliente/enviar-email": {},
+    "/api/clientes": {},
+    "/api/clientes/[id]": {},
+    "/api/consulta-processo": {},
+    "/api/criar-agente-custom": {},
+    "/api/extrair-documento-pdf": {
+      "maxDuration": 300
+    },
+    "/api/extrair-pdf": {},
+    "/api/gerar-agente-custom": {},
+    "/api/gerar-documento": {},
+    "/api/gerar-sugestao-newsletter": {},
+    "/api/gerar-titulo-conversa": {},
+    "/api/monitorar-processos": {
+      "maxDuration": 60
+    },
+    "/api/sync-jurisprudencias": {
+      "maxDuration": 60
+    },
+    "/api/validar-convite": {},
+    "/api/webhook-resend": {}
+  }
+}

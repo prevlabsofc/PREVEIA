@@ -1,0 +1,17 @@
+{
+  "regions": ["gru1"],
+  "crons": [
+    {
+      "path": "/api/sync-jurisprudencias",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/monitorar-processos",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/lembretes-contato",
+      "schedule": "30 7 * * *"
+    }
+  ]
+}

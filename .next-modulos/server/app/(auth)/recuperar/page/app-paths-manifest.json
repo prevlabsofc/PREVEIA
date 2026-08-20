@@ -1,0 +1,3 @@
+{
+  "/(auth)/recuperar/page": "app/(auth)/recuperar/page.js"
+}

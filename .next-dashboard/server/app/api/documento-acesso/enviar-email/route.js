@@ -1,0 +1,11 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/documento-acesso/enviar-email/route.js")
+R.c("server/chunks/[root-of-the-server]__06uaso0._.js")
+R.c("server/chunks/05m__next_0esk-b2._.js")
+R.c("server/chunks/05m__13vc3vt._.js")
+R.c("server/chunks/05m__next_dist_046c9-6._.js")
+R.c("server/chunks/[root-of-the-server]__1ls0rub._.js")
+R.c("server/chunks/05m__@supabase_supabase-js_dist_index_mjs_14t80kj._.js")
+R.c("server/chunks/05m__0xmt9ju._.js")
+R.c("server/chunks/08p8_server_app_api_documento-acesso_enviar-email_route_actions_0fd4vnd.js")
+R.m(240564)
+module.exports=R.m(240564).exports

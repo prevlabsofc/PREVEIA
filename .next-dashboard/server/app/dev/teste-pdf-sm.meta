@@ -1,0 +1,16 @@
+{
+  "headers": {
+    "x-nextjs-stale-time": "300",
+    "x-nextjs-prerender": "1",
+    "x-next-cache-tags": "_N_T_/layout,_N_T_/dev/layout,_N_T_/dev/teste-pdf-sm/layout,_N_T_/dev/teste-pdf-sm/page,_N_T_/dev/teste-pdf-sm"
+  },
+  "segmentPaths": [
+    "/_tree",
+    "/_full",
+    "/dev/teste-pdf-sm/__PAGE__",
+    "/dev/teste-pdf-sm",
+    "/dev",
+    "/_index",
+    "/_head"
+  ]
+}
