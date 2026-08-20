@@ -16,6 +16,7 @@ import {
   Bell,
   Search,
   Moon,
+  Sun,
   LogOut,
   Zap,
   Sparkles,
@@ -985,7 +986,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 className="w-9 h-9 rounded-full flex items-center justify-center transition-all hover:bg-white/5"
                 style={{ color: isLight ? '#2C2C2C' : '#999' }}
               >
-                <Moon size={17} />
+                {isLight ? <Sun size={17} /> : <Moon size={17} />}
               </button>
 
               <div className="relative">

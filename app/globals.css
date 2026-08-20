@@ -387,8 +387,45 @@ html.light * {
 }
 
 .admin-panel button.text-xs,
+.admin-panel button.text-\[10px\],
 .admin-panel select.text-xs {
+  letter-spacing: 0.01em;
   line-height: 1.45;
+}
+
+/* Admin — modo claro (respeita html.light do toggle) */
+html.light .admin-panel {
+  background: #F8F8F8 !important;
+  color: #1E1E1E;
+}
+
+html.light .admin-panel .admin-theme-root {
+  background: #F8F8F8 !important;
+}
+
+html.light .admin-panel th {
+  color: #6B7280 !important;
+}
+
+html.light .admin-panel .text-gray-400 {
+  color: #4F4F4F !important;
+}
+
+html.light .admin-panel .text-gray-500,
+html.light .admin-panel .text-gray-600 {
+  color: #6B7280 !important;
+}
+
+html.light .admin-panel select,
+html.light .admin-panel input:not([type='checkbox']):not([type='radio']),
+html.light .admin-panel textarea {
+  background: #FFFFFF !important;
+  color: #1E1E1E !important;
+  border-color: #EDEDED !important;
+}
+
+html.light .admin-panel table tr:hover {
+  background: rgba(212, 175, 55, 0.06) !important;
 }
 
 .admin-panel .recharts-default-tooltip {

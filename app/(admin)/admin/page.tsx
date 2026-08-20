@@ -28,6 +28,8 @@ import {
   Menu,
   X,
   ArrowLeft,
+  Moon,
+  Sun,
 } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -113,6 +115,33 @@ export default function AdminPanel() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [newsletterSubs, setNewsletterSubs] = useState<any[]>([])
   const [newsletterEnvios, setNewsletterEnvios] = useState<any[]>([])
+  const [darkMode, setDarkMode] = useState(true)
+  const [isLight, setIsLight] = useState(false)
+
+  useEffect(() => {
+    const saved = localStorage.getItem('theme')
+    if (saved === 'light') { setDarkMode(false); return }
+    if (saved === 'dark') { setDarkMode(true); return }
+    setDarkMode(window.matchMedia('(prefers-color-scheme: dark)').matches)
+  }, [])
+
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.remove('light')
+      localStorage.setItem('theme', 'dark')
+    } else {
+      document.documentElement.classList.add('light')
+      localStorage.setItem('theme', 'light')
+    }
+  }, [darkMode])
+
+  useEffect(() => {
+    const check = () => setIsLight(document.documentElement.classList.contains('light'))
+    check()
+    const observer = new MutationObserver(check)
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     async function init() {
@@ -285,7 +314,7 @@ export default function AdminPanel() {
     return (
       <div
         className="min-h-screen flex items-center justify-center"
-        style={{ background: '#0A0A0A' }}
+        style={{ background: isLight ? '#F8F8F8' : '#0A0A0A' }}
       >
         <div
           className="w-8 h-8 rounded-full border-2 animate-spin"
@@ -493,14 +522,14 @@ export default function AdminPanel() {
   }
 
   return (
-    <div className="flex min-h-screen" style={{ background: '#0A0A0A' }}>
+    <div className="flex min-h-screen admin-theme-root" style={{ background: isLight ? '#F8F8F8' : '#0A0A0A' }}>
       {/* SIDEBAR */}
       <aside
         className={`fixed top-0 left-0 bottom-0 z-50 flex flex-col transition-transform duration-300 ${menuOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}
         style={{
           width: 240,
-          background: '#111',
-          borderRight: '1px solid #1A1A1A',
+          background: isLight ? '#FFFFFF' : '#111',
+          borderRight: isLight ? '1px solid #EDEDED' : '1px solid #1A1A1A',
           margin: '0.75rem',
           borderRadius: 24,
           bottom: '0.75rem',
@@ -628,26 +657,43 @@ export default function AdminPanel() {
         <header
           className="sticky top-0 z-30 flex items-center gap-4 px-8 py-4"
           style={{
-            background: 'rgba(15,13,8,0.85)',
+            background: isLight ? 'rgba(255,255,255,0.92)' : 'rgba(15,13,8,0.85)',
             backdropFilter: 'blur(20px)',
-            borderBottom: '1px solid rgba(212,175,55,0.12)',
+            borderBottom: isLight ? '1px solid #EDEDED' : '1px solid rgba(212,175,55,0.12)',
           }}
         >
           <button
             className="lg:hidden flex items-center justify-center w-9 h-9 rounded-xl"
             onClick={() => setMenuOpen(true)}
-            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+            style={{
+              background: isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)',
+              border: isLight ? '1px solid #EDEDED' : '1px solid rgba(255,255,255,0.1)',
+              color: isLight ? '#1E1E1E' : '#fff',
+            }}
             aria-label="Abrir menu"
           >
             <Menu size={18} />
           </button>
           <div>
             <h2 className="text-lg font-bold text-white leading-none">{tabLabel}</h2>
-            <p className="text-[10px] mt-1" style={{ color: '#666' }}>
+            <p className="text-[10px] mt-1" style={{ color: isLight ? '#6B7280' : '#666' }}>
               Atualizado: {lastUpdate.toLocaleTimeString('pt-BR')}
             </p>
           </div>
           <div className="ml-auto flex items-center gap-3">
+            <button
+              type="button"
+              aria-label="Alternar tema"
+              onClick={() => setDarkMode((d) => !d)}
+              className="w-9 h-9 rounded-full flex items-center justify-center transition-all"
+              style={{
+                color: isLight ? '#2C2C2C' : '#999',
+                background: isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)',
+                border: isLight ? '1px solid #EDEDED' : '1px solid rgba(255,255,255,0.08)',
+              }}
+            >
+              {isLight ? <Sun size={17} /> : <Moon size={17} />}
+            </button>
             <span
               className="text-xs px-3 py-1.5 rounded-full font-bold"
               style={{ background: 'rgba(168,85,247,0.15)', color: '#A855F7' }}
@@ -1194,7 +1240,7 @@ export default function AdminPanel() {
 
             {selectedTicket && (
               <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)' }} onClick={() => setSelectedTicket(null)}>
-                <div className="w-full max-w-lg rounded-2xl p-6" style={{ background: '#0A0A0A', border: '1px solid rgba(212,175,55,0.2)' }} onClick={e => e.stopPropagation()}>
+                <div className="w-full max-w-lg rounded-2xl p-6" style={{ background: isLight ? '#FFFFFF' : '#0A0A0A', border: '1px solid rgba(212,175,55,0.2)' }} onClick={e => e.stopPropagation()}>
                   <h2 className="text-lg font-bold text-white mb-1">{selectedTicket.title}</h2>
                   <p className="text-xs text-gray-500 mb-4">{selectedTicket.lawyer_name} · {selectedTicket.lawyer_email}</p>
                   <div className="p-3 rounded-xl mb-4" style={{ background: 'rgba(255,255,255,0.03)' }}>
