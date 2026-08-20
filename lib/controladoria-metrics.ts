@@ -7,11 +7,16 @@ import {
 
 export type ClienteFunil = {
   id: string;
-  stage?: string | null;
-  status?: string | null;
+  nome?: string | null;
+  office_id?: string | null;
   lawyer_id?: string | null;
-  assigned_lawyer_id?: string | null;
+  tipo_beneficio?: string | null;
+  /** Coluna canônica do funil no banco atual. */
+  etapa_funil?: string | null;
   created_at?: string | null;
+  /** Legado — ignorado se `etapa_funil` estiver presente. */
+  stage?: string | null;
+  assigned_lawyer_id?: string | null;
   updated_at?: string | null;
   last_contact_at?: string | null;
 };
@@ -119,7 +124,8 @@ export function calcularControladoria(
   membros: MembroEquipe[],
   agora: number = Date.now()
 ): ResumoControladoria {
-  const ativos = clientes.filter((c) => (c.status ?? "active") !== "archived");
+  // `clients.status` não existe neste schema — todos os clientes entram no funil.
+  const ativos = clientes;
 
   const docsPorCliente = new Map<string, number>();
   for (const d of documentos) {
@@ -130,7 +136,7 @@ export function calcularControladoria(
   const porEtapaMap = new Map<ClientStage, ClienteFunil[]>();
   for (const id of STAGE_IDS) porEtapaMap.set(id, []);
   for (const c of ativos) {
-    porEtapaMap.get(normalizeStage(c.stage))!.push(c);
+    porEtapaMap.get(normalizeStage(c.etapa_funil ?? c.stage))!.push(c);
   }
 
   const porEtapa: MetricasEtapa[] = STAGES.map((meta) => {
@@ -195,7 +201,7 @@ export function calcularControladoria(
 
   const comRetrabalhoGeral = ativos.filter((c) => (docsPorCliente.get(c.id) || 0) >= 2).length;
   const permanenciasGerais = ativos
-    .filter((c) => normalizeStage(c.stage) !== "concluido")
+    .filter((c) => normalizeStage(c.etapa_funil ?? c.stage) !== "concluido")
     .map((c) => horasDesde(c.updated_at || c.created_at, agora))
     .filter((h): h is number => h !== null);
 

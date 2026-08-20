@@ -26,6 +26,9 @@ export async function POST(request: Request) {
       )
     }
 
+    console.log('BODY RECEBIDO:', JSON.stringify(body))
+    console.log('API KEY existe:', !!process.env.ANTHROPIC_API_KEY)
+
     // Payload esperado (alinhado com app/(dashboard)/agentes/page.tsx):
     // { agentType, formData, clientId, clientName }
     const {

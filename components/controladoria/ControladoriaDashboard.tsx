@@ -172,61 +172,51 @@ export function ControladoriaDashboard() {
           return
         }
 
-        const [clientsRes, docsRes] = await Promise.all([
-          supabase
-            .from('clients')
-            .select(
-              'id, stage, status, lawyer_id, assigned_lawyer_id, created_at, updated_at, last_contact_at'
-            )
-            .in('lawyer_id', memberIds),
-          supabase
-            .from('documents')
-            .select('id, lawyer_id, client_id, created_at')
-            .in('lawyer_id', memberIds),
+        const [clientes, documentos] = await Promise.all([
+          Promise.resolve(
+            supabase
+              .from('clients')
+              .select(
+                'id, nome, created_at, office_id, lawyer_id, tipo_beneficio, etapa_funil'
+              )
+              .in('lawyer_id', memberIds)
+          )
+            .then(({ data, error }) => {
+              if (error) {
+                console.error('[controladoria] clients:', error.message)
+                return [] as any[]
+              }
+              return (data as any[]) || []
+            })
+            .catch((err) => {
+              console.error('[controladoria] clients catch:', err)
+              return [] as any[]
+            }),
+          Promise.resolve(
+            supabase
+              .from('documents')
+              .select('id, lawyer_id, client_id, created_at')
+              .in('lawyer_id', memberIds)
+          )
+            .then(({ data, error }) => {
+              if (error) {
+                console.error('[controladoria] documents:', error.message)
+                return [] as any[]
+              }
+              return (data as any[]) || []
+            })
+            .catch((err) => {
+              console.error('[controladoria] documents catch:', err)
+              return [] as any[]
+            }),
         ])
 
         if (cancelado) return
 
-        let clientes: any[] = []
-        if (clientsRes.error) {
-          console.error('[controladoria] clients:', clientsRes.error.message)
-          // Coluna `stage` ainda não migrada — tenta sem ela.
-          if (clientsRes.error.code === '42703' || /column|does not exist|stage/i.test(clientsRes.error.message || '')) {
-            const fallback = await supabase
-              .from('clients')
-              .select('id, status, lawyer_id, created_at, updated_at')
-              .in('lawyer_id', memberIds)
-            if (fallback.error) {
-              console.error('[controladoria] clients fallback:', fallback.error.message)
-              setAviso('Clientes indisponíveis. Exibindo métricas zeradas.')
-              clientes = []
-            } else {
-              clientes = (fallback.data as any[]) || []
-            }
-          } else {
-            setAviso('Clientes indisponíveis. Exibindo métricas zeradas.')
-            clientes = []
-          }
-        } else {
-          clientes = (clientsRes.data as any[]) || []
-        }
-
-        let documentos: any[] = []
-        if (docsRes.error) {
-          console.error('[controladoria] documents:', docsRes.error.message)
-          const fallbackDocs = await supabase
-            .from('documents')
-            .select('id, lawyer_id, client_id')
-            .in('lawyer_id', memberIds)
-          if (fallbackDocs.error) {
-            console.error('[controladoria] documents fallback:', fallbackDocs.error.message)
-            documentos = []
-            setAviso((prev) => prev || 'Documentos indisponíveis. Petições exibidas como R$ 0,00 / 0.')
-          } else {
-            documentos = (fallbackDocs.data as any[]) || []
-          }
-        } else {
-          documentos = (docsRes.data as any[]) || []
+        if (clientes.length === 0 && documentos.length === 0) {
+          setAviso((prev) => prev || 'Sem dados operacionais ou consultas indisponíveis.')
+        } else if (documentos.length === 0) {
+          setAviso((prev) => prev || 'Documentos indisponíveis. Petições exibidas como 0.')
         }
 
         setResumo(calcularControladoria(clientes, documentos, membros))
