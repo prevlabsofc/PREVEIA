@@ -15,7 +15,7 @@
 
 # next.js
 /.next/
-.next-lembrete/
+.next-*/
 /out/
 
 # production

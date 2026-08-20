@@ -1,3 +1,0 @@
-{
-  "/api/documento/[token]/route": "app/api/documento/[token]/route.js"
-}
