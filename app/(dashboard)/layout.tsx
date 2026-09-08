@@ -403,7 +403,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         type: 'Cliente',
         label: c.name,
         href: '/clientes',
-        arquivado: c.status === 'archived',
+        arquivado: c.status === 'arquivado' || c.status === 'archived',
       })),
       ...(juris.data || []).map((j: any) => ({
         type: 'Jurisprudência',

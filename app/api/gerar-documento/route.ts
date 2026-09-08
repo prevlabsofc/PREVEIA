@@ -189,12 +189,20 @@ export async function POST(request: Request) {
     const cli = cliRow as Record<string, any> | null
     const cliForPrompt = cli
       ? {
-          ...cli,
           id: cli?.id ?? null,
           name: String(cli?.name ?? ''),
           email: cli?.email ?? null,
-          phone: cli?.phone ?? cli?.telefone ?? null,
+          phone: cli?.phone ?? null,
+          whatsapp: cli?.whatsapp ?? null,
           cpf: cli?.cpf ?? null,
+          rg: cli?.rg ?? null,
+          birth_date: cli?.birth_date ?? null,
+          profession: cli?.profession ?? null,
+          zone: cli?.zone ?? null,
+          address: cli?.address ?? null,
+          city: cli?.city ?? null,
+          state: cli?.state ?? null,
+          notes: cli?.notes ?? null,
         }
       : null
 

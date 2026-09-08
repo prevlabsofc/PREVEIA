@@ -219,7 +219,19 @@ export function ControladoriaDashboard() {
           setAviso((prev) => prev || 'Documentos indisponíveis. Petições exibidas como 0.')
         }
 
-        setResumo(calcularControladoria(clientes, documentos, membros))
+        setResumo(
+          calcularControladoria(
+            (clientes as any[]).map((c) => ({
+              ...c,
+              nome: c.name,
+              last_contact_at: c.ultimo_contato ?? null,
+              etapa_funil: null,
+              stage: null,
+            })),
+            documentos,
+            membros,
+          ),
+        )
       } catch (err) {
         console.error('[controladoria] load:', err)
         if (!cancelado) {

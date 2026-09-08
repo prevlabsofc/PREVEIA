@@ -1,8 +1,7 @@
 /**
- * Auto-arquivamento ao atingir etapa final do funil.
- *
- * Produção remota hoje: só `clients.status` ('active' | 'archived').
- * Colunas `etapa_funil` / `stage` / `arquivado` ainda não existem no projeto.
+ * Auto-arquivamento / status do cliente.
+ * Banco: `clients.status` com valores `ativo` | `arquivado`.
+ * Sem colunas `etapa_funil` / `arquivado` / `stage`.
  */
 
 import {
@@ -11,7 +10,10 @@ import {
   type ClientStage,
   type FinalStage,
 } from '@/lib/client-stages'
-import { updateArquivadoPayload } from '@/lib/clients-schema'
+import {
+  isStatusArquivado,
+  updateArquivadoPayload,
+} from '@/lib/clients-schema'
 
 export type StatusFinal = FinalStage
 
@@ -27,10 +29,10 @@ export function isClienteArquivado(cliente: {
   status?: string | null
   arquivado?: boolean | null
 }): boolean {
-  return cliente.arquivado === true || cliente.status === 'archived'
+  return cliente.arquivado === true || isStatusArquivado(cliente.status)
 }
 
-/** Patch otimista ao mudar a etapa do funil. */
+/** Patch otimista ao mudar a etapa do funil (UI only para etapa). */
 export function patchPorTransicaoEtapa(destino: unknown): PatchArquivamento {
   const stage = normalizeStage(destino)
   if (isFinalStage(stage)) {
@@ -53,9 +55,9 @@ export function patchPorTransicaoEtapa(destino: unknown): PatchArquivamento {
 
 /**
  * Payload enviado ao Supabase.
- * Sem coluna de etapa no remoto: só sincroniza arquivamento via `status`.
+ * Sem coluna de etapa: só sincroniza arquivamento via `status`.
  */
-export function updateEtapaPayload(destino: unknown): { status: 'active' | 'archived' } {
+export function updateEtapaPayload(destino: unknown): { status: string } {
   return updateArquivadoPayload(isFinalStage(normalizeStage(destino)))
 }
 

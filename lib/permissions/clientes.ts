@@ -1,4 +1,3 @@
-import { isClientStage } from "@/lib/client-stages";
 import { mascararCpf, rotuloCargo, type Cargo } from "./cargos";
 
 /**
@@ -26,11 +25,8 @@ export const CAMPOS_BASICOS = [
   "zone",
   "profession",
   "status",
-  "status_contato",
-  "stage",
-  "status_final",
-  /** Operacional — checklist INSS (não sensível). */
-  "tipo_beneficio",
+  "ultimo_contato",
+  "lembrete_enviado_em",
   "created_at",
 ] as const;
 
@@ -45,8 +41,6 @@ export const CAMPOS_EDITAVEIS_BASICO = [
   "address",
   "city",
   "state",
-  "status_contato",
-  "stage",
 ] as const;
 
 /** Campos que um cargo com acesso total pode gravar. */
@@ -60,7 +54,7 @@ export const CAMPOS_EDITAVEIS_TOTAL = [
   "zone",
   "notes",
   "status",
-  "tipo_beneficio",
+  "ultimo_contato",
 ] as const;
 
 export const STATUS_CONTATO = [
@@ -92,12 +86,12 @@ export type ClienteVisivel = {
   city: string | null;
   state: string | null;
   status: string | null;
+  ultimo_contato: string | null;
+  lembrete_enviado_em: string | null;
+  /** Sem coluna no banco — sempre null. */
   status_contato: string | null;
-  /** Etapa do funil (`clients.stage`). Dado operacional básico. */
   stage: string | null;
-  /** Rótulo da etapa final quando arquivado (concluido | protocolado). */
   status_final: string | null;
-  /** Tipo de benefício/caso para a checklist INSS (dado operacional). */
   tipo_beneficio: string | null;
   notes: string | null;
   created_at: string | null;
@@ -139,10 +133,12 @@ export function sanitizarCliente(
     city: texto(linha.city),
     state: texto(linha.state),
     status: texto(linha.status),
-    status_contato: texto(linha.status_contato),
-    stage: texto(linha.stage),
-    status_final: texto(linha.status_final),
-    tipo_beneficio: texto(linha.tipo_beneficio),
+    ultimo_contato: texto(linha.ultimo_contato),
+    lembrete_enviado_em: texto(linha.lembrete_enviado_em),
+    status_contato: null,
+    stage: null,
+    status_final: null,
+    tipo_beneficio: null,
     notes: acessoTotal ? texto(linha.notes) : null,
     created_at: texto(linha.created_at),
     acesso_total: acessoTotal,
@@ -226,14 +222,11 @@ export function filtrarCamposEditaveis(
   for (const campo of permitidos) {
     if (campo in payload) saida[campo] = payload[campo];
   }
-  if (
-    typeof saida.status_contato === "string" &&
-    !STATUS_CONTATO_VALORES.includes(saida.status_contato)
-  ) {
-    delete saida.status_contato;
-  }
-  if (typeof saida.stage === "string" && !isClientStage(saida.stage)) {
-    delete saida.stage;
+  // Normaliza status para valores reais do banco.
+  if (typeof saida.status === "string") {
+    const s = saida.status.toLowerCase();
+    if (s === "archived" || s === "arquivado") saida.status = "arquivado";
+    else if (s === "active" || s === "ativo") saida.status = "ativo";
   }
   return saida;
 }

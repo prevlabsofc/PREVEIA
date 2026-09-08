@@ -93,21 +93,14 @@ export async function definirUltimoContato(
   }
 }
 
-/** Define o responsável pelo atendimento. `null` deixa o cliente sem responsável. */
+/** Define o responsável pelo atendimento — coluna não existe no remoto; no-op. */
 export async function definirResponsavel(
-  clientId: string,
-  lawyerId: string | null,
-  opts: { db?: Db } = {}
+  _clientId: string,
+  _lawyerId: string | null,
+  _opts: { db?: Db } = {}
 ): Promise<{ ok: boolean; erro?: string }> {
-  try {
-    const db = opts.db ?? clienteNavegador()
-    const { error } = await db
-      .from('clients')
-      .update({ [COLUNA_RESPONSAVEL]: lawyerId })
-      .eq('id', clientId)
-    if (error) return { ok: false, erro: 'Não foi possível salvar o responsável. Tente novamente.' }
-    return { ok: true }
-  } catch {
-    return { ok: false, erro: 'Não foi possível salvar o responsável. Tente novamente.' }
+  return {
+    ok: false,
+    erro: 'Responsável pelo atendimento indisponível neste banco (coluna assigned_lawyer_id ausente).',
   }
 }

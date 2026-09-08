@@ -181,7 +181,7 @@ export default function DocumentosPage() {
   }
 
   const archivedClientIds = useMemo(
-    () => new Set(clients.filter((c) => c.status === 'archived').map((c) => c.id)),
+    () => new Set(clients.filter((c) => c.status === 'arquivado' || c.status === 'archived').map((c) => c.id)),
     [clients]
   )
 

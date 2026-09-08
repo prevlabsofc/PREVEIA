@@ -353,7 +353,7 @@ Forneça:
   }
 
   const archivedClientIds = useMemo(
-    () => new Set(clientes.filter((c: any) => c.status === 'archived').map((c: any) => c.id as string)),
+    () => new Set(clientes.filter((c: any) => c.status === 'arquivado' || c.status === 'archived').map((c: any) => c.id as string)),
     [clientes]
   )
 

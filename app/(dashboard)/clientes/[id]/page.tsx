@@ -143,12 +143,30 @@ export default function ClienteDetalhesPage() {
 
   async function salvar() {
     setSaving(true)
-    // Mantém `address` (legado) em sincronia com rua+número+bairro, para não
-    // quebrar telas que ainda só leem esse campo — ver comentário na migração
-    // 20260801_clients_endereco_estruturado.sql.
-    const payload = { ...form, address: juntarEnderecoLegado(form) || form.address || '' }
-    await supabase.from('clients').update(payload).eq('id', id)
-    setClient(payload); setForm(payload); setEditing(false); setSaving(false)
+    const payload = {
+      name: form.name,
+      cpf: form.cpf,
+      rg: form.rg || null,
+      birth_date: form.birth_date || null,
+      phone: form.phone,
+      whatsapp: form.whatsapp,
+      email: form.email,
+      profession: form.profession,
+      zone: form.zone,
+      cep: form.cep,
+      address: juntarEnderecoLegado(form) || form.address || '',
+      city: form.city,
+      state: form.state,
+      notes: form.notes,
+    }
+    const { error } = await supabase.from('clients').update(payload).eq('id', id)
+    if (error) {
+      console.error('[clientes/id] salvar:', error.message)
+      setSaving(false)
+      return
+    }
+    const next = { ...client, ...payload, address: payload.address }
+    setClient(next); setForm(next); setEditing(false); setSaving(false)
   }
 
   async function arquivar() {
@@ -382,12 +400,11 @@ export default function ClienteDetalhesPage() {
           clientId={id as string}
           clientName={client.name}
           phone={client.whatsapp || client.phone}
-          tipoBeneficio={client.tipo_beneficio}
+          tipoBeneficio={client.zone === 'rural' ? 'rural' : client.zone === 'urban' || client.zone === 'urbano' ? 'urbano' : null}
           documentos={metaDocs(docs)}
           isLight={isLight}
-          onTipoBeneficioChange={(valor) => {
-            setClient((c: any) => ({ ...c, tipo_beneficio: valor || null }))
-            setForm((f: any) => ({ ...f, tipo_beneficio: valor || null }))
+          onTipoBeneficioChange={() => {
+            /* sem coluna tipo_beneficio — ResumoDocumentosCliente grava em zone */
           }}
           onDocsAtualizados={(docsAtuais) => {
             // Mantém ids/created_at dos docs já carregados; anexa os novos metadados.

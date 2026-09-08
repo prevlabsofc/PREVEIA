@@ -8,17 +8,19 @@ import {
 export type ClienteFunil = {
   id: string;
   nome?: string | null;
-  office_id?: string | null;
+  name?: string | null;
   lawyer_id?: string | null;
+  zone?: string | null;
+  /** Sem coluna no banco — métricas de etapa ficam vazias/default. */
   tipo_beneficio?: string | null;
-  /** Coluna canônica do funil no banco atual. */
   etapa_funil?: string | null;
   created_at?: string | null;
-  /** Legado — ignorado se `etapa_funil` estiver presente. */
   stage?: string | null;
   assigned_lawyer_id?: string | null;
   updated_at?: string | null;
   last_contact_at?: string | null;
+  ultimo_contato?: string | null;
+  status?: string | null;
 };
 
 export type DocumentoFunil = {
@@ -146,7 +148,7 @@ export function calcularControladoria(
       .map((c) => horasDesde(c.updated_at || c.created_at, agora))
       .filter((h): h is number => h !== null);
     const atrasos = lista
-      .map((c) => horasDesde(c.last_contact_at, agora))
+      .map((c) => horasDesde(c.ultimo_contato ?? c.last_contact_at, agora))
       .filter((h): h is number => h !== null);
 
     return {

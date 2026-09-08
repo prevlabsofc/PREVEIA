@@ -172,25 +172,12 @@ export default function ClientesPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    // Preferência PT-BR (produção); fallback EN se a base for legada.
-    const payloadPt = {
-      lawyer_id: user.id,
-      nome: form.name,
-      cpf: form.cpf.replace(/\D/g, ''),
-      telefone: form.phone,
-      email: form.email,
-      endereco: juntarEnderecoLegado(form),
-      cidade: form.city,
-      estado: form.state,
-      zona_rural: form.zone === 'rural',
-      etapa_funil: 'atendimento_triagem',
-      arquivado: false,
-    }
-    const payloadEn = {
+    // Preferência: somente colunas reais de `clients`.
+    const payload = {
       lawyer_id: user.id,
       name: form.name,
       cpf: form.cpf.replace(/\D/g, ''),
-      rg: form.rg,
+      rg: form.rg || null,
       birth_date: form.birth_date || null,
       phone: form.phone,
       whatsapp: form.whatsapp,
@@ -198,24 +185,16 @@ export default function ClientesPage() {
       profession: form.profession,
       zone: form.zone,
       cep: form.cep,
-      rua: form.rua,
-      numero: form.numero,
-      bairro: form.bairro,
       address: juntarEnderecoLegado(form),
       city: form.city,
       state: form.state,
       notes: form.notes,
-      etapa_funil: 'atendimento_triagem',
-      arquivado: false,
+      status: 'ativo',
     }
 
-    let { error } = await supabase.from('clients').insert(payloadPt)
+    const { error } = await supabase.from('clients').insert(payload)
     if (error) {
-      console.error('[clientes] insert PT falhou, tentando EN:', error.message)
-      ;({ error } = await supabase.from('clients').insert(payloadEn))
-    }
-    if (error) {
-      console.error('[clientes] insert EN falhou:', error.message)
+      console.error('[clientes] insert falhou:', error.message)
       setSaving(false)
       return
     }
@@ -259,12 +238,14 @@ export default function ClientesPage() {
         if (obj.nome && obj.cpf) {
           await supabase.from('clients').insert({
             lawyer_id: user.id,
-            name: obj.nome,
+            name: obj.nome || obj.name,
             cpf: obj.cpf,
-            phone: obj.telefone || obj.whatsapp || '',
+            phone: obj.telefone || obj.phone || obj.whatsapp || '',
+            whatsapp: obj.whatsapp || obj.telefone || obj.phone || '',
             email: obj.email || '',
             address: obj.endereco || obj.endereço || '',
             notes: obj.historico || obj.observacoes || obj.notas || '',
+            status: 'ativo',
           })
           if (obj.processo || obj.numero_processo) {
             const { data: cli } = await supabase.from('clients').select('id').eq('lawyer_id', user.id).eq('cpf', obj.cpf).single()
@@ -568,7 +549,7 @@ export default function ClientesPage() {
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <div className="font-bold text-sm" style={{ color: isLight ? '#1E1E1E' : '#fff' }}>{client.name}</div>
-                        {client.status === 'archived' && (
+                        {isClienteArquivado(client) && (
                           <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold" style={{ background: 'rgba(136,136,136,0.18)', color: '#888' }}>
                             Arquivado
                           </span>

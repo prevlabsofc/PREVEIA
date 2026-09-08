@@ -65,6 +65,7 @@ export async function gerarLembretesSemContato(opts?: {
       .from('clients')
       .select(`id, name, lawyer_id, created_at, ${COLUNA_ULTIMO_CONTATO}`)
       .eq('lawyer_id', law.id)
+      .neq('status', 'arquivado')
       .neq('status', 'archived')
 
     for (const cli of clients || []) {

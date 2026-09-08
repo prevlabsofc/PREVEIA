@@ -98,8 +98,8 @@ export default function ClientesTabela({
         ? patchPorTransicaoEtapa(valor)
         : campo.key === 'status'
           ? {
-              status: valor === 'archived' ? 'archived' : 'active',
-              arquivado: valor === 'archived',
+              status: valor === 'archived' || valor === 'arquivado' ? 'archived' : 'active',
+              arquivado: valor === 'archived' || valor === 'arquivado',
             }
           : ({ [campo.key]: valor } as Record<string, unknown>)
     onPatch(cliente.id, patch)
@@ -108,8 +108,22 @@ export default function ClientesTabela({
       campo.key === 'stage'
         ? updateEtapaPayload(valor)
         : campo.key === 'status'
-          ? { arquivado: valor === 'archived' }
-          : { [campo.key]: valor }
+          ? { status: valor === 'archived' || valor === 'arquivado' ? 'arquivado' : 'ativo' }
+          : campo.key === 'last_contact_at'
+            ? { ultimo_contato: valor }
+            : campo.key === 'tipo_beneficio' || campo.key === 'etapa_funil' || campo.key === 'arquivado' || campo.key === 'office_id'
+              ? null
+              : { [campo.key]: valor }
+
+    if (!payload || Object.keys(payload).length === 0) {
+      setSalvando((p) => {
+        const n = { ...p }
+        delete n[ck]
+        return n
+      })
+      marcarSalvo(ck)
+      return
+    }
 
     const { error } = await supabaseBrowser
       .from('clients')
