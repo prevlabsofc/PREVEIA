@@ -346,7 +346,7 @@ function normalizarEspacos(s: string): string {
 
 function parasHtml(raw: string, extraClass = ''): string {
   const cls = extraClass ? `sm-para ${extraClass}` : 'sm-para'
-  return raw
+  return limparMarkdownResidual(raw)
     .split(/\n\s*\n/)
     .map((p) => p.trim())
     .filter(Boolean)
@@ -358,7 +358,7 @@ function parasHtml(raw: string, extraClass = ''): string {
         )
         .replace(/(\d{4})-(\d{2})-(\d{2})/g, (piece) => sanitizarDataPeticao(piece))
       const inner = escapar(comDatas).replace(/\n/g, '<br/>')
-      return `<p class="${cls}">${inner}</p>`
+      return `<p class="${cls}" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">${inner}</p>`
     })
     .join('')
 }
@@ -721,10 +721,38 @@ export function cssSmRural(comMargens: boolean): string {
       max-width: 794px;
       height: auto;
       min-height: 0;
-      overflow: hidden;
+      overflow-x: clip;
+      overflow-y: visible;
       word-wrap: break-word;
-      overflow-wrap: anywhere;
+      overflow-wrap: break-word;
+      white-space: normal;
       ${pad}
+    }
+    .pdf-page.sm-rural,
+    .pdf-page.sm-rural p,
+    .pdf-page.sm-rural div,
+    .pdf-page.sm-rural td,
+    .pdf-page.sm-rural span,
+    .pdf-page.sm-rural li,
+    .sm-para,
+    .sm-para-qualif,
+    .sm-endereco,
+    .sm-main-title,
+    .sm-sub-title,
+    .sm-section-bar,
+    .sm-subhead,
+    .sm-meta-inner,
+    .sm-meta-tipo,
+    .sm-fechamento,
+    .sm-pedido-item td,
+    .sm-prova-txt,
+    .sm-quadro td,
+    .sm-planilha td {
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      max-width: 100%;
+      white-space: normal;
+      box-sizing: border-box;
     }
     .sm-sheet {
       position: relative;
@@ -1015,8 +1043,13 @@ export function montarHtmlSmRural(opts: {
   comMargens?: boolean
   estilo?: EstiloPeticao
 }): string | null {
-  const text = corrigirLocalNoTexto(opts.text, opts.adv)
-  if (!isSmRuralStructured(text)) return null
+  if (!isSmRuralStructured(opts.text)) return null
+  // Sanitiza só o miolo dos blocos (mantém delimitadores <<<...>>> intactos)
+  const text = corrigirLocalNoTexto(opts.text, opts.adv).replace(
+    /(<<<[A-Z0-9_]+>>>)([\s\S]*?)(<<<END_[A-Z0-9_]+>>>)/g,
+    (_m, open: string, body: string, close: string) =>
+      `${open}${limparMarkdownResidual(body)}${close}`,
+  )
 
   const meta = parseMeta(bloco(text, '<<<META>>>', '<<<END_META>>>'))
   const endereco = bloco(text, '<<<ENDERECO>>>', '<<<END_ENDERECO>>>')

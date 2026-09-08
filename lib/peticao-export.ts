@@ -212,15 +212,39 @@ function escaparHtml(s: string): string {
     .replace(/"/g, '&quot;')
 }
 
-/** Remove marcadores markdown residuais do texto já parseado. */
+/** Remove marcadores markdown, HTML de revisão e emojis do texto jurídico. */
 export function limparMarkdownResidual(s: string): string {
-  return s
+  return String(s || '')
+    // HTML de marcação / highlights / comentários da IA
+    .replace(/<(?:script|style)[\s\S]*?<\/(?:script|style)>/gi, '')
+    .replace(/<\/?(?:mark|span|div|font|section|aside|sup|sub|u|b|i|em|strong|a|p|br|hr)[^>]*>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    // Markdown
     .replace(/^#{1,6}\s+/gm, '')
     .replace(/\*\*(.+?)\*\*/g, '$1')
     .replace(/\*(.+?)\*/g, '$1')
     .replace(/__(.+?)__/g, '$1')
     .replace(/_(.+?)_/g, '$1')
-    .replace(/`([^`]+)`/g, '$1')
+    .replace(/`{1,3}([^`]+)`{1,3}/g, '$1')
+    .replace(/~~(.+?)~~/g, '$1')
+    .replace(/^\s*>+\s?/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    // Emojis e pictogramas (clipboard, etc.)
+    .replace(/\p{Extended_Pictographic}/gu, '')
+    .replace(/[\u{1F000}-\u{1FAFF}]/gu, '')
+    .replace(/[\u{2600}-\u{27BF}]/gu, '')
+    .replace(/[\u{FE00}-\u{FE0F}]/gu, '')
+    .replace(/[\u{200D}\u{20E3}]/gu, '')
+    // Espaços residual
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
 }
 
 /** Marca o bloco final (pede deferimento + local + assinatura) para alinhamento. */

@@ -124,24 +124,35 @@ export function PeticaoEditorComPreview({
             minHeight: 320,
           }}
         >
-          {editable && !streaming ? (
+          {editable ? (
             <textarea
               value={draft}
               onChange={(e) => handleEdit(e.target.value)}
-              className="w-full h-full min-h-[320px] max-h-[70vh] p-4 font-mono text-xs leading-relaxed resize-y outline-none"
+              readOnly={Boolean(streaming)}
+              aria-label="Editar petição gerada"
+              className="w-full h-full min-h-[420px] max-h-[70vh] p-4 font-mono text-xs leading-relaxed resize-y outline-none"
               style={{
                 background: 'transparent',
                 color: isLight ? '#374151' : '#ccc',
-              }} spellCheck={true} />
+                opacity: streaming ? 0.85 : 1,
+              }}
+              spellCheck={true}
+            />
           ) : (
             <div
               className="p-4 font-mono text-xs leading-relaxed overflow-auto max-h-[70vh] whitespace-pre-wrap"
               style={{ color: isLight ? '#374151' : '#ccc' }}
+              contentEditable={false}
             >
               {draft}
               {streaming && (
                 <span className="inline-block w-2 h-4 bg-yellow-500 ml-1 animate-pulse" />
               )}
+            </div>
+          )}
+          {streaming && editable && (
+            <div className="px-4 pb-2 text-[10px]" style={{ color: '#D4AF37' }}>
+              Gerando… a edição fica liberada ao concluir.
             </div>
           )}
         </div>

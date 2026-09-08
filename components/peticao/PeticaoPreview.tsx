@@ -35,13 +35,13 @@ export function PeticaoPreview({
   const [scale, setScale] = useState(0.55)
   const [innerH, setInnerH] = useState(1100)
 
-  // 1x1 transparente para evitar "broken image" (asterisco) enquanto a logo é convertida.
-  const EMPTY_LOGO_DATA_URL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='
+  // 1x1 transparente — só enquanto carrega; falha → null (slot vazio, sem *).
+  const LOADING_LOGO_DATA_URL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='
 
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null)
   const [bannerDataUrl, setBannerDataUrl] = useState<string | null>(null)
 
-  async function urlToDataUrlPreview(src: string, kind: 'logo' | 'banner'): Promise<string | null> {
+  async function urlToDataUrlPreview(src: string, _kind: 'logo' | 'banner'): Promise<string | null> {
     const trimmed = src.trim()
     if (!trimmed) return null
     if (trimmed.startsWith('data:')) return trimmed
@@ -53,13 +53,13 @@ export function PeticaoPreview({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: trimmed }),
       })
-      if (!res.ok) return kind === 'logo' ? EMPTY_LOGO_DATA_URL : null
+      if (!res.ok) return null
 
       const json = (await res.json().catch(() => ({}))) as { dataUrl?: string }
       if (json.dataUrl?.startsWith('data:')) return json.dataUrl
-      return kind === 'logo' ? EMPTY_LOGO_DATA_URL : null
+      return null
     } catch {
-      return kind === 'logo' ? EMPTY_LOGO_DATA_URL : null
+      return null
     }
   }
 
@@ -75,19 +75,25 @@ export function PeticaoPreview({
       const logoNeedsProxy = Boolean(rawLogo) && !rawLogo.startsWith('data:') && /^https?:\/\//i.test(rawLogo)
       const bannerNeedsProxy = Boolean(rawBanner) && !rawBanner.startsWith('data:') && /^https?:\/\//i.test(rawBanner)
 
-      // Estado inicial: esconde o que depende de conversão.
-      setLogoDataUrl(logoNeedsProxy ? EMPTY_LOGO_DATA_URL : (rawLogo || null))
+      // Enquanto carrega: placeholder transparente. Em falha: null → slot vazio.
+      setLogoDataUrl(logoNeedsProxy ? LOADING_LOGO_DATA_URL : (rawLogo.startsWith('data:') ? rawLogo : null))
       setBannerDataUrl(bannerNeedsProxy ? null : (rawBanner || null))
 
-      if (!logoNeedsProxy && !bannerNeedsProxy) return
+      if (!logoNeedsProxy && !bannerNeedsProxy) {
+        // URL relativa (/logo.png) ou ausente — não forçar img quebrada
+        if (rawLogo && !rawLogo.startsWith('data:') && !/^https?:\/\//i.test(rawLogo)) {
+          setLogoDataUrl(null)
+        }
+        return
+      }
 
       const [convertedLogo, convertedBanner] = await Promise.all([
-        logoNeedsProxy ? urlToDataUrlPreview(rawLogo, 'logo') : Promise.resolve(rawLogo || null),
+        logoNeedsProxy ? urlToDataUrlPreview(rawLogo, 'logo') : Promise.resolve(rawLogo.startsWith('data:') ? rawLogo : null),
         bannerNeedsProxy ? urlToDataUrlPreview(rawBanner, 'banner') : Promise.resolve(rawBanner || null),
       ])
 
       if (cancelled) return
-      setLogoDataUrl(convertedLogo)
+      setLogoDataUrl(convertedLogo) // null se falhou → cabeçalho SM deixa espaço vazio
       setBannerDataUrl(convertedBanner)
     }
 

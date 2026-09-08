@@ -186,9 +186,15 @@ async function inlineImagesAsDataUrls(root: HTMLElement): Promise<void> {
         img.setAttribute('src', dataUrl)
         img.removeAttribute('crossorigin')
       } else {
-        // Remove img quebrada — o asterisco/ícone de broken image no PDF
+        // Remove img quebrada — espaço vazio, sem asterisco/broken-image
         img.style.display = 'none'
         img.removeAttribute('src')
+        img.alt = ''
+        const slot = document.createElement('div')
+        slot.className = 'sm-logo-slot'
+        slot.setAttribute('aria-hidden', 'true')
+        slot.style.cssText = 'width:110px;height:36px;display:block;'
+        img.replaceWith(slot)
       }
     }),
   )

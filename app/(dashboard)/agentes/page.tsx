@@ -770,6 +770,7 @@ function AgentesPageContent() {
                       fileName={`peticao-${selectedCustom?.name?.replace(/\s/g, '-').toLowerCase() || 'custom'}`}
                       estilo={estiloPeticao}
                       streaming={loadingCustom}
+                      editable
                       isLight={isLight}
                       adv={advPeticao}
                       corPeticao={corPeticao}
@@ -1298,6 +1299,7 @@ function AgentesPageContent() {
                       )}
                       estilo={estiloPeticao}
                       streaming={streaming}
+                      editable
                       isLight={isLight}
                       adv={advPeticao}
                       corPeticao={corPeticao}
