@@ -189,7 +189,7 @@ export default function ClientesPage() {
       city: form.city,
       state: form.state,
       notes: form.notes,
-      status: 'ativo',
+      status: 'active',
     }
 
     const { error } = await supabase.from('clients').insert(payload)
@@ -245,7 +245,7 @@ export default function ClientesPage() {
             email: obj.email || '',
             address: obj.endereco || obj.endereço || '',
             notes: obj.historico || obj.observacoes || obj.notas || '',
-            status: 'ativo',
+            status: 'active',
           })
           if (obj.processo || obj.numero_processo) {
             const { data: cli } = await supabase.from('clients').select('id').eq('lawyer_id', user.id).eq('cpf', obj.cpf).single()
@@ -364,12 +364,12 @@ export default function ClientesPage() {
 
     // Com busca ativa, arquivados continuam encontráveis (exceto no filtro
     // Arquivados, que restringe só a eles). Sem busca, Ativos exclui arquivados.
-    if (filter === 'Arquivados') return isClienteArquivado(c)
+    if (filter === 'Arquivados') return c.status === 'archived'
     if (filter === 'Rural') return c.zone === 'rural'
     if (filter === 'Urbano') return c.zone === 'urban'
     if (filter === 'Ativos') {
       if (temBusca) return true
-      return !isClienteArquivado(c)
+      return c.status === 'active'
     }
     // Todos
     return true

@@ -1,5 +1,6 @@
 import type { PostgrestError } from "@supabase/supabase-js";
 
+import { normalizeStatusToDb } from "@/lib/clients-schema";
 import { permissoesDoCargo, sanitizarCliente } from "@/lib/permissions/clientes";
 import { sessaoComAcesso } from "@/lib/permissions/sessao";
 
@@ -62,9 +63,13 @@ export async function POST(req: Request) {
     return Response.json({ error: "payload_invalido" }, { status: 400 });
   }
 
+  // CHECK clients_status_check: só 'active' | 'archived'
+  const statusFinal = normalizeStatusToDb(corpo.status ?? "active");
+
   const { error } = await sessao.supabase.from("clients").insert({
     ...corpo,
     lawyer_id: sessao.user.id,
+    status: statusFinal,
   });
 
   if (error) return Response.json({ error: "erro_gravacao" }, { status: 500 });

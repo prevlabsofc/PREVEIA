@@ -21,9 +21,9 @@ export const CLIENTS_SELECT_PT = CLIENTS_SELECT_SAFE
 /** @deprecated use CLIENTS_SELECT_SAFE */
 export const CLIENTS_SELECT_EN = CLIENTS_SELECT_SAFE
 
-/** Valores de `clients.status` em produção. */
-export const STATUS_ATIVO = 'ativo'
-export const STATUS_ARQUIVADO = 'arquivado'
+/** Valores canônicos de `clients.status` (CHECK no banco). */
+export const STATUS_ATIVO = 'active'
+export const STATUS_ARQUIVADO = 'archived'
 
 export type ClienteNormalizado = Record<string, unknown> & {
   id: string
@@ -36,7 +36,7 @@ export type ClienteNormalizado = Record<string, unknown> & {
   /** Alias de UI — funil não existe no banco; sempre default. */
   stage: string
   etapa_funil: string
-  /** Alias de UI: 'active' | 'archived' (banco usa ativo/arquivado). */
+  /** Espelha o banco: 'active' | 'archived'. */
   status: 'active' | 'archived'
   arquivado: boolean
   address: string
@@ -60,21 +60,27 @@ function zonaUi(v: unknown): string {
   return 'rural'
 }
 
+/** Normaliza qualquer valor legado para o CHECK do banco. */
+export function normalizeStatusToDb(status: unknown): 'active' | 'archived' {
+  const s = String(status ?? '').toLowerCase().trim()
+  if (s === 'archived' || s === 'arquivado') return STATUS_ARQUIVADO
+  // ativo, active, inativo, inactive, vazio ou qualquer outro → active
+  return STATUS_ATIVO
+}
+
 export function isStatusArquivado(status: unknown): boolean {
-  const s = String(status ?? '').toLowerCase()
-  return s === STATUS_ARQUIVADO || s === 'archived' || s === 'inactive' || s === 'inativo'
+  return normalizeStatusToDb(status) === STATUS_ARQUIVADO
 }
 
 export function isStatusAtivo(status: unknown): boolean {
-  const s = String(status ?? '').toLowerCase()
-  if (!s) return true
-  return s === STATUS_ATIVO || s === 'active' || s === 'aberto'
+  return normalizeStatusToDb(status) === STATUS_ATIVO
 }
 
 /** Une linha do banco num objeto estável para a UI. */
 export function normalizeCliente(row: Record<string, unknown> | null | undefined): ClienteNormalizado {
   const r = row ?? {}
-  const arquivado = isStatusArquivado(r.status) || r.arquivado === true || r.arquivado === 'true'
+  const statusDb = normalizeStatusToDb(r.status)
+  const arquivado = statusDb === STATUS_ARQUIVADO || r.arquivado === true || r.arquivado === 'true'
   const nome = String(r.name ?? '')
   const telefone = String(r.phone ?? '')
   const zone = zonaUi(r.zone)
@@ -92,7 +98,7 @@ export function normalizeCliente(row: Record<string, unknown> | null | undefined
     // Funil não existe no remoto — UI usa default sem gravar.
     stage: 'atendimento_triagem',
     etapa_funil: 'atendimento_triagem',
-    status: arquivado ? 'archived' : 'active',
+    status: arquivado ? STATUS_ARQUIVADO : STATUS_ATIVO,
     arquivado,
     address: String(r.address ?? ''),
     city: String(r.city ?? ''),
@@ -144,8 +150,8 @@ export function updateEtapaFunilPayload(_destino: string): Record<string, never>
   return {}
 }
 
-/** Arquivamento via `status` (ativo | arquivado). */
-export function updateArquivadoPayload(arquivado: boolean): { status: string } {
+/** Arquivamento via `status` (`active` | `archived`). */
+export function updateArquivadoPayload(arquivado: boolean): { status: 'active' | 'archived' } {
   return { status: arquivado ? STATUS_ARQUIVADO : STATUS_ATIVO }
 }
 

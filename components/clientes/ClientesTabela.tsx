@@ -18,6 +18,7 @@ import {
 import FeedbackToast from './FeedbackToast'
 import { getStageMeta } from '@/lib/client-stages'
 import { isClienteArquivado, patchPorTransicaoEtapa, updateEtapaPayload } from '@/lib/client-archive'
+import { normalizeStatusToDb } from '@/lib/clients-schema'
 
 type Props = {
   clients: Cliente[]
@@ -98,8 +99,8 @@ export default function ClientesTabela({
         ? patchPorTransicaoEtapa(valor)
         : campo.key === 'status'
           ? {
-              status: valor === 'archived' || valor === 'arquivado' ? 'archived' : 'active',
-              arquivado: valor === 'archived' || valor === 'arquivado',
+              status: normalizeStatusToDb(valor),
+              arquivado: normalizeStatusToDb(valor) === 'archived',
             }
           : ({ [campo.key]: valor } as Record<string, unknown>)
     onPatch(cliente.id, patch)
@@ -108,7 +109,7 @@ export default function ClientesTabela({
       campo.key === 'stage'
         ? updateEtapaPayload(valor)
         : campo.key === 'status'
-          ? { status: valor === 'archived' || valor === 'arquivado' ? 'arquivado' : 'ativo' }
+          ? { status: normalizeStatusToDb(valor) }
           : campo.key === 'last_contact_at'
             ? { ultimo_contato: valor }
             : campo.key === 'tipo_beneficio' || campo.key === 'etapa_funil' || campo.key === 'arquivado' || campo.key === 'office_id'

@@ -1,6 +1,6 @@
 /**
  * Auto-arquivamento / status do cliente.
- * Banco: `clients.status` com valores `ativo` | `arquivado`.
+ * Banco: `clients.status` com CHECK (`active` | `archived`).
  * Sem colunas `etapa_funil` / `arquivado` / `stage`.
  */
 
@@ -57,7 +57,7 @@ export function patchPorTransicaoEtapa(destino: unknown): PatchArquivamento {
  * Payload enviado ao Supabase.
  * Sem coluna de etapa: só sincroniza arquivamento via `status`.
  */
-export function updateEtapaPayload(destino: unknown): { status: string } {
+export function updateEtapaPayload(destino: unknown): { status: 'active' | 'archived' } {
   return updateArquivadoPayload(isFinalStage(normalizeStage(destino)))
 }
 

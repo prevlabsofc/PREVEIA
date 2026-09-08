@@ -1,3 +1,4 @@
+import { normalizeStatusToDb } from "@/lib/clients-schema";
 import { mascararCpf, rotuloCargo, type Cargo } from "./cargos";
 
 /**
@@ -222,11 +223,9 @@ export function filtrarCamposEditaveis(
   for (const campo of permitidos) {
     if (campo in payload) saida[campo] = payload[campo];
   }
-  // Normaliza status para valores reais do banco.
-  if (typeof saida.status === "string") {
-    const s = saida.status.toLowerCase();
-    if (s === "archived" || s === "arquivado") saida.status = "arquivado";
-    else if (s === "active" || s === "ativo") saida.status = "ativo";
+  // Normaliza status para o CHECK do banco (`active` | `archived`).
+  if ("status" in saida) {
+    saida.status = normalizeStatusToDb(saida.status);
   }
   return saida;
 }

@@ -8,6 +8,7 @@ import {
   type PecaCliente,
   type TarefaCliente,
 } from "@/lib/permissions/clientes";
+import { normalizeStatusToDb } from "@/lib/clients-schema";
 import { sessaoComAcesso } from "@/lib/permissions/sessao";
 
 export const runtime = "nodejs";
@@ -110,6 +111,9 @@ export async function PATCH(req: Request, ctx: RouteContext<"/api/clientes/[id]"
   }
 
   const alteracoes = filtrarCamposEditaveis(corpo, acesso.acessoTotal);
+  if ("status" in alteracoes) {
+    alteracoes.status = normalizeStatusToDb(alteracoes.status);
+  }
   if (Object.keys(alteracoes).length === 0) {
     return Response.json({ error: "nada_para_atualizar" }, { status: 400 });
   }
