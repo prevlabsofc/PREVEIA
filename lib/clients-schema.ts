@@ -6,12 +6,15 @@
  * Sempre normalize o resultado para o formato EN esperado pela UI.
  */
 
-export const CLIENTS_SELECT_PT =
-  'id, nome, cpf, telefone, email, created_at, office_id, lawyer_id, tipo_beneficio, etapa_funil, ultimo_contato, arquivado, endereco, cidade, estado, zona_rural'
+export const CLIENTS_SELECT_SAFE =
+  'id, nome, cpf, telefone, email, whatsapp, created_at, lawyer_id, tipo_beneficio, address, city, state, zone, rg, birth_date, last_contact_at, etapa_funil, arquivado, profession, notes, cep'
 
-/** Legado EN — sem stage/status (causam 400 quando não existem). */
+/** @deprecated use CLIENTS_SELECT_SAFE — mantido como alias. */
+export const CLIENTS_SELECT_PT = CLIENTS_SELECT_SAFE
+
+/** Fallback se a base ainda usar `name`/`phone` em vez de `nome`/`telefone`. */
 export const CLIENTS_SELECT_EN =
-  'id, name, cpf, phone, email, created_at, office_id, lawyer_id, tipo_beneficio, address, city, state, zone, whatsapp, profession, notes, cep, rg, birth_date, last_contact_at, etapa_funil, arquivado'
+  'id, name, cpf, phone, email, whatsapp, created_at, lawyer_id, tipo_beneficio, address, city, state, zone, rg, birth_date, last_contact_at, etapa_funil, arquivado, profession, notes, cep'
 
 export type ClienteNormalizado = Record<string, unknown> & {
   id: string
@@ -32,7 +35,6 @@ export type ClienteNormalizado = Record<string, unknown> & {
   last_contact_at: string | null
   tipo_beneficio: string | null
   lawyer_id?: string | null
-  office_id?: string | null
   created_at?: string | null
 }
 
@@ -74,12 +76,13 @@ export function normalizeCliente(row: Record<string, unknown> | null | undefined
     last_contact_at: (r.ultimo_contato ?? r.last_contact_at ?? null) as string | null,
     tipo_beneficio: (r.tipo_beneficio as string | null) ?? null,
     lawyer_id: (r.lawyer_id as string | null) ?? null,
-    office_id: (r.office_id as string | null) ?? null,
     created_at: (r.created_at as string | null) ?? null,
     whatsapp: String(r.whatsapp ?? telefone ?? ''),
     profession: String(r.profession ?? ''),
     notes: String(r.notes ?? ''),
     cep: String(r.cep ?? ''),
+    rg: String(r.rg ?? ''),
+    birth_date: (r.birth_date as string | null) ?? null,
   }
 }
 
@@ -96,7 +99,7 @@ export async function fetchClientsByLawyer(
   lawyerId: string,
 ): Promise<ClienteNormalizado[]> {
   try {
-    const tentativas = [CLIENTS_SELECT_PT, CLIENTS_SELECT_EN, '*'] as const
+    const tentativas = [CLIENTS_SELECT_SAFE, CLIENTS_SELECT_EN, '*'] as const
     for (const cols of tentativas) {
       const { data, error } = await supabase
         .from('clients')

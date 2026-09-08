@@ -38,7 +38,7 @@ const supabase = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, proc
 function metaDocs(rows: any[]): DocChecklist[] {
   return (rows || []).map((d) => ({
     title: d.title,
-    type: d.type,
+    type: d.agent_type ?? d.type,
     agent_type: d.agent_type,
     form_data: d.form_data,
     file_name: d.form_data?.file_name ?? null,
@@ -112,7 +112,7 @@ export default function ClienteDetalhesPage() {
       try {
         const docsRes = await supabase
           .from('documents')
-          .select('id, title, type, agent_type, form_data, status, created_at, client_id, client_name')
+          .select('id, title, agent_type, form_data, status, created_at, client_id, client_name')
           .in('lawyer_id', memberIds)
           .order('created_at', { ascending: false })
         d = (docsRes.data as any[]) || []
@@ -199,7 +199,7 @@ export default function ClienteDetalhesPage() {
     const memberIds = membros.map((m) => m.id)
     const { data: d } = await supabase
       .from('documents')
-      .select('id, title, type, agent_type, form_data, status, created_at, client_id, client_name')
+      .select('id, title, agent_type, form_data, status, created_at, client_id, client_name')
       .in('lawyer_id', memberIds)
       .order('created_at', { ascending: false })
     const clientDocs = (d || []).filter((doc: any) => doc.client_id === id || doc.client_name === client?.name)
@@ -560,7 +560,7 @@ export default function ClienteDetalhesPage() {
                     <FileText size={15} color="#D4AF37"/>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate" style={{ color: isLight ? '#1E1E1E' : '#fff' }}>{d.title || d.type || 'Petição'}</div>
+                    <div className="text-sm font-medium truncate" style={{ color: isLight ? '#1E1E1E' : '#fff' }}>{d.title || d.agent_type || 'Petição'}</div>
                     <div className="text-xs text-gray-500">{new Date(d.created_at).toLocaleDateString('pt-BR')}</div>
                   </div>
                   <span className="text-[10px] px-2 py-1 rounded-full font-bold" style={{ background: 'rgba(34,197,94,0.12)', color: '#22C55E' }}>Concluído</span>

@@ -177,7 +177,7 @@ export function ControladoriaDashboard() {
             supabase
               .from('clients')
               .select(
-                'id, nome, created_at, office_id, lawyer_id, tipo_beneficio, etapa_funil'
+                'id, nome, created_at, lawyer_id, tipo_beneficio, etapa_funil'
               )
               .in('lawyer_id', memberIds)
           )

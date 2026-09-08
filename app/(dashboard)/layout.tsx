@@ -297,7 +297,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       setDocModalOpen(true)
       const { data, error } = await supabase
         .from('documents')
-        .select('id, title, agent_type, type, client_name, content, created_at')
+        .select('id, title, agent_type, client_name, content, created_at')
         .eq('id', n.document_id)
         .maybeSingle()
       setNotifDocLoading(false)
@@ -353,7 +353,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const [docsTitulo, docsConteudo, clients, juris] = await Promise.all([
       supabase
         .from('documents')
-        .select('id, title, type, client_id, client_name')
+        .select('id, title, agent_type, client_id, client_name')
         .in('lawyer_id', memberIds)
         .ilike('title', `%${term}%`)
         .limit(4),
@@ -361,7 +361,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       // (coluna `content`), não só no título.
       supabase
         .from('documents')
-        .select('id, title, type, client_id, client_name, content')
+        .select('id, title, agent_type, client_id, client_name, content')
         .in('lawyer_id', memberIds)
         .ilike('content', `%${term}%`)
         .limit(4),

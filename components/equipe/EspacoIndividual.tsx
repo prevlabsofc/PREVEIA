@@ -22,11 +22,11 @@ interface DocPessoal {
 interface ModeloPessoal {
   id: string
   lawyer_id: string
-  office_id: string | null
   titulo: string
   categoria: string | null
   conteudo: string
   compartilhado: boolean
+  created_at?: string
   updated_at: string
 }
 
@@ -40,10 +40,10 @@ interface Props {
 const MODELO_VAZIO = { titulo: '', categoria: '', conteudo: '', compartilhado: false }
 
 function docTitulo(d: DocPessoal) {
-  return d.title || d.agent_type || d.type || 'Petição'
+  return d.title || d.agent_type || 'Petição'
 }
 
-export function EspacoIndividual({ lawyerId, officeId, membros, isLight }: Props) {
+export function EspacoIndividual({ lawyerId, officeId: _officeId, membros, isLight }: Props) {
   const [aba, setAba] = useState<'peticoes' | 'modelos'>('peticoes')
   const [docs, setDocs] = useState<DocPessoal[]>([])
   const [meusModelos, setMeusModelos] = useState<ModeloPessoal[]>([])
@@ -66,25 +66,27 @@ export function EspacoIndividual({ lawyerId, officeId, membros, isLight }: Props
   useEffect(() => {
     async function carregar() {
       try {
+        const MODELOS_COLS = 'id, lawyer_id, titulo, categoria, conteudo, compartilhado, created_at, updated_at'
+        const idsEquipe = membros.map((m) => m.id).filter((id) => id !== lawyerId)
+
         const { data: docsData, error: docsErro } = await supabase
           .from('documents')
-          .select('id, title, type, agent_type, created_at, pasta')
+          .select('id, title, agent_type, created_at, pasta')
           .eq('lawyer_id', lawyerId)
           .order('created_at', { ascending: false })
 
         if (docsErro) {
-          console.error('[EspacoIndividual] documents order by created_at:', docsErro.message)
-          setSemMigracao(true)
+          console.error('[EspacoIndividual] documents:', docsErro.message)
           const { data: fallback, error: fallbackErro } = await supabase
             .from('documents')
-            .select('id, title, type, agent_type, created_at')
+            .select('id, title, agent_type, created_at')
             .eq('lawyer_id', lawyerId)
             .order('created_at', { ascending: false })
           if (fallbackErro) {
-            console.error('[EspacoIndividual] documents fallback order:', fallbackErro.message)
+            console.error('[EspacoIndividual] documents fallback:', fallbackErro.message)
             const { data: semOrdem } = await supabase
               .from('documents')
-              .select('id, title, type, agent_type, created_at')
+              .select('id, title, agent_type, created_at')
               .eq('lawyer_id', lawyerId)
             setDocs((semOrdem as DocPessoal[]) || [])
           } else {
@@ -94,64 +96,65 @@ export function EspacoIndividual({ lawyerId, officeId, membros, isLight }: Props
           setDocs((docsData as DocPessoal[]) || [])
         }
 
-      const { data: meus, error: modelosErro } = await supabase
-        .from('modelos_pessoais')
-        .select('*')
-        .eq('lawyer_id', lawyerId)
-        .order('updated_at', { ascending: false })
-
-      if (modelosErro) {
-        console.error('[EspacoIndividual] modelos_pessoais order by updated_at:', modelosErro.message)
-        const { data: meusFallback, error: meusFallbackErro } = await supabase
+        const { data: meus, error: modelosErro } = await supabase
           .from('modelos_pessoais')
-          .select('*')
+          .select(MODELOS_COLS)
           .eq('lawyer_id', lawyerId)
-        if (meusFallbackErro) {
-          console.error('[EspacoIndividual] modelos_pessoais fallback:', meusFallbackErro.message)
-          setSemMigracao(true)
-          setMeusModelos([])
-          setModelosEquipe([])
+          .order('updated_at', { ascending: false })
+
+        if (modelosErro) {
+          console.error('[EspacoIndividual] modelos_pessoais:', modelosErro.message)
+          const { data: meusFallback, error: meusFallbackErro } = await supabase
+            .from('modelos_pessoais')
+            .select(MODELOS_COLS)
+            .eq('lawyer_id', lawyerId)
+          if (meusFallbackErro) {
+            console.error('[EspacoIndividual] modelos_pessoais fallback:', meusFallbackErro.message)
+            setSemMigracao(true)
+            setMeusModelos([])
+            setModelosEquipe([])
+          } else {
+            setMeusModelos((meusFallback as ModeloPessoal[]) || [])
+            if (idsEquipe.length > 0) {
+              const { data: equipe, error: equipeErro } = await supabase
+                .from('modelos_pessoais')
+                .select(MODELOS_COLS)
+                .in('lawyer_id', idsEquipe)
+                .eq('compartilhado', true)
+              if (equipeErro) {
+                console.error('[EspacoIndividual] modelos equipe:', equipeErro.message)
+                setModelosEquipe([])
+              } else {
+                setModelosEquipe((equipe as ModeloPessoal[]) || [])
+              }
+            } else {
+              setModelosEquipe([])
+            }
+          }
         } else {
-          setMeusModelos((meusFallback as ModeloPessoal[]) || [])
-          if (officeId) {
+          setMeusModelos((meus as ModeloPessoal[]) || [])
+          if (idsEquipe.length > 0) {
             const { data: equipe, error: equipeErro } = await supabase
               .from('modelos_pessoais')
-              .select('*')
-              .eq('office_id', officeId)
+              .select(MODELOS_COLS)
+              .in('lawyer_id', idsEquipe)
               .eq('compartilhado', true)
-              .neq('lawyer_id', lawyerId)
+              .order('updated_at', { ascending: false })
             if (equipeErro) {
-              console.error('[EspacoIndividual] modelos_pessoais equipe:', equipeErro.message)
-              setModelosEquipe([])
+              console.error('[EspacoIndividual] modelos equipe order:', equipeErro.message)
+              const { data: equipeFallback } = await supabase
+                .from('modelos_pessoais')
+                .select(MODELOS_COLS)
+                .in('lawyer_id', idsEquipe)
+                .eq('compartilhado', true)
+              setModelosEquipe((equipeFallback as ModeloPessoal[]) || [])
             } else {
               setModelosEquipe((equipe as ModeloPessoal[]) || [])
             }
-          }
-        }
-      } else {
-        setMeusModelos((meus as ModeloPessoal[]) || [])
-        if (officeId) {
-          const { data: equipe, error: equipeErro } = await supabase
-            .from('modelos_pessoais')
-            .select('*')
-            .eq('office_id', officeId)
-            .eq('compartilhado', true)
-            .neq('lawyer_id', lawyerId)
-            .order('updated_at', { ascending: false })
-          if (equipeErro) {
-            console.error('[EspacoIndividual] modelos_pessoais equipe order:', equipeErro.message)
-            const { data: equipeFallback } = await supabase
-              .from('modelos_pessoais')
-              .select('*')
-              .eq('office_id', officeId)
-              .eq('compartilhado', true)
-              .neq('lawyer_id', lawyerId)
-            setModelosEquipe((equipeFallback as ModeloPessoal[]) || [])
           } else {
-            setModelosEquipe((equipe as ModeloPessoal[]) || [])
+            setModelosEquipe([])
           }
         }
-      }
 
       } catch (err) {
         console.error('[EspacoIndividual] carregar:', err)
@@ -164,7 +167,7 @@ export function EspacoIndividual({ lawyerId, officeId, membros, isLight }: Props
       }
     }
     carregar()
-  }, [lawyerId, officeId])
+  }, [lawyerId, membros])
 
   const pastas = useMemo(() => {
     const nomes = new Set<string>()
@@ -226,7 +229,7 @@ export function EspacoIndividual({ lawyerId, officeId, membros, isLight }: Props
     } else {
       const { data, error } = await supabase
         .from('modelos_pessoais')
-        .insert({ ...payload, lawyer_id: lawyerId, office_id: officeId })
+        .insert({ ...payload, lawyer_id: lawyerId })
         .select()
         .single()
       setSalvandoModelo(false)
