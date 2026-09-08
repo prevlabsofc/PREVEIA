@@ -86,10 +86,27 @@ export default function DocumentosPage() {
         const membros = await carregarMembrosEscritorio(supabase, user.id)
         const memberIds = membros.map((m) => m.id)
 
-        const docsQuery = supabase.from('documents').select('*').in('lawyer_id', memberIds).order('created_at', { ascending: false })
-        const [{ data, error: docsError }, { data: clientList }, { data: procs }] = await Promise.all([
+        let clientList: any[] = []
+        try {
+          const r1 = await supabase.from('clients').select('id, name, cpf').in('lawyer_id', memberIds).order('name')
+          if (r1.error) {
+            const r2 = await supabase.from('clients').select('id, nome, cpf').in('lawyer_id', memberIds)
+            clientList = ((r2.data as any[]) || []).map((c) => ({ ...c, name: c.nome || c.name }))
+          } else {
+            clientList = (r1.data as any[]) || []
+          }
+        } catch {
+          clientList = []
+        }
+
+        const docsQuery = supabase
+          .from('documents')
+          .select('*')
+          .in('lawyer_id', memberIds)
+          .order('created_at', { ascending: false })
+
+        const [{ data, error: docsError }, { data: procs }] = await Promise.all([
           docsQuery,
-          supabase.from('clients').select('id, name, cpf, status').in('lawyer_id', memberIds).order('name'),
           supabase.from('processos').select('id, numero, tribunal, cliente_id').in('lawyer_id', memberIds),
         ])
 
@@ -101,7 +118,7 @@ export default function DocumentosPage() {
           setDocs((data as Doc[]) || [])
         }
 
-        setClients((clientList as Client[]) || [])
+        setClients(clientList)
         setProcessos((procs as ProcessoParaPasta[]) || [])
       } catch (err) {
         console.error('[documentos] load:', err)

@@ -157,11 +157,25 @@ export default function ProcessosPage() {
       setUserId(user.id)
       const membros = await carregarMembrosEscritorio(supabase, user.id)
       const memberIds = membros.map((m) => m.id)
-      const [{ data: cli }, { data: procs }] = await Promise.all([
-        supabase.from('clients').select('id, name, status, email').in('lawyer_id', memberIds).order('name'),
-        supabase.from('processos').select('*').in('lawyer_id', memberIds).order('created_at', { ascending: false }),
-      ])
-      setClientes(cli || [])
+      let cli: any[] = []
+      try {
+        const r = await supabase.from('clients').select('id, name, email').in('lawyer_id', memberIds).order('name')
+        if (r.error) {
+          console.error('[processos] clients:', r.error.message)
+          cli = []
+        } else {
+          cli = (r.data as any[]) || []
+        }
+      } catch (err) {
+        console.error('[processos] clients catch:', err)
+        cli = []
+      }
+      const { data: procs } = await supabase
+        .from('processos')
+        .select('*')
+        .in('lawyer_id', memberIds)
+        .order('created_at', { ascending: false })
+      setClientes(cli)
       setProcessos((procs as Processo[]) || [])
     }
     load()

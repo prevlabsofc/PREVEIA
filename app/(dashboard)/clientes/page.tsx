@@ -12,6 +12,10 @@ import ClientesTabela from '@/components/clientes/ClientesTabela'
 import ClientesKanban from '@/components/clientes/ClientesKanban'
 import { UFS_BRASIL } from '@/lib/estados-brasil'
 import { juntarEnderecoLegado, mascaraCEP } from '@/lib/formatar-endereco'
+import {
+  fetchClientsByLawyer,
+} from '@/lib/clients-schema'
+import { isClienteArquivado } from '@/lib/client-archive'
 
 const supabase = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
 
@@ -107,15 +111,20 @@ export default function ClientesPage() {
 
 
   async function loadClients() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const { data } = await supabase
-      .from('clients')
-      .select('*')
-      .eq('lawyer_id', user.id)
-      .order('created_at', { ascending: false })
-    setClients(data || [])
-    setLoading(false)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        setLoading(false)
+        return
+      }
+      const rows = await fetchClientsByLawyer(supabase, user.id)
+      setClients(rows)
+    } catch (err) {
+      console.error('[clientes] loadClients:', err)
+      setClients([])
+    } finally {
+      setLoading(false)
+    }
     const termoBusca = localStorage.getItem('marple_search')
     if (termoBusca) {
       setSearch(termoBusca)
@@ -163,7 +172,21 @@ export default function ClientesPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    await supabase.from('clients').insert({
+    // Preferência PT-BR (produção); fallback EN se a base for legada.
+    const payloadPt = {
+      lawyer_id: user.id,
+      nome: form.name,
+      cpf: form.cpf.replace(/\D/g, ''),
+      telefone: form.phone,
+      email: form.email,
+      endereco: juntarEnderecoLegado(form),
+      cidade: form.city,
+      estado: form.state,
+      zona_rural: form.zone === 'rural',
+      etapa_funil: 'atendimento_triagem',
+      arquivado: false,
+    }
+    const payloadEn = {
       lawyer_id: user.id,
       name: form.name,
       cpf: form.cpf.replace(/\D/g, ''),
@@ -178,15 +201,24 @@ export default function ClientesPage() {
       rua: form.rua,
       numero: form.numero,
       bairro: form.bairro,
-      // `address` legado é mantido em sincronia (rua+número+bairro) para não
-      // quebrar telas que ainda só leem esse campo (exportações, snapshot do
-      // link de aceite) — ver comentário na migração 20260801_clients_endereco_estruturado.
       address: juntarEnderecoLegado(form),
       city: form.city,
       state: form.state,
       notes: form.notes,
-      status: 'active',
-    })
+      etapa_funil: 'atendimento_triagem',
+      arquivado: false,
+    }
+
+    let { error } = await supabase.from('clients').insert(payloadPt)
+    if (error) {
+      console.error('[clientes] insert PT falhou, tentando EN:', error.message)
+      ;({ error } = await supabase.from('clients').insert(payloadEn))
+    }
+    if (error) {
+      console.error('[clientes] insert EN falhou:', error.message)
+      setSaving(false)
+      return
+    }
 
     if (user) {
       await supabase.from('notifications').insert({
@@ -251,8 +283,8 @@ export default function ClientesPage() {
         }
       }
       setImportMsg(`${count} clientes importados com sucesso!`)
-      const { data } = await supabase.from('clients').select('*').eq('lawyer_id', user.id).order('created_at', { ascending: false })
-      setClients(data || [])
+      const clientesAtualizados = await fetchClientsByLawyer(supabase, user.id)
+      setClients(clientesAtualizados)
     } catch {
       setImportMsg('Erro ao processar o arquivo CSV.')
     } finally {
@@ -351,12 +383,12 @@ export default function ClientesPage() {
 
     // Com busca ativa, arquivados continuam encontráveis (exceto no filtro
     // Arquivados, que restringe só a eles). Sem busca, Ativos exclui arquivados.
-    if (filter === 'Arquivados') return c.status === 'archived'
+    if (filter === 'Arquivados') return isClienteArquivado(c)
     if (filter === 'Rural') return c.zone === 'rural'
     if (filter === 'Urbano') return c.zone === 'urban'
     if (filter === 'Ativos') {
       if (temBusca) return true
-      return c.status !== 'archived'
+      return !isClienteArquivado(c)
     }
     // Todos
     return true

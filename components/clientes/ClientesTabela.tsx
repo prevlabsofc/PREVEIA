@@ -96,11 +96,20 @@ export default function ClientesTabela({
     const patch =
       campo.key === 'stage'
         ? patchPorTransicaoEtapa(valor)
-        : ({ [campo.key]: valor } as Record<string, unknown>)
+        : campo.key === 'status'
+          ? {
+              status: valor === 'archived' ? 'archived' : 'active',
+              arquivado: valor === 'archived',
+            }
+          : ({ [campo.key]: valor } as Record<string, unknown>)
     onPatch(cliente.id, patch)
 
     const payload =
-      campo.key === 'stage' ? updateEtapaPayload(valor) : { [campo.key]: valor }
+      campo.key === 'stage'
+        ? updateEtapaPayload(valor)
+        : campo.key === 'status'
+          ? { arquivado: valor === 'archived' }
+          : { [campo.key]: valor }
 
     const { error } = await supabaseBrowser
       .from('clients')

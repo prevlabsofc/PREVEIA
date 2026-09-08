@@ -15,7 +15,13 @@ import { PastasDocumentos } from '@/components/documentos/PastasDocumentos'
 import { ExtracaoPdfDocumento } from '@/components/documentos/ExtracaoPdfDocumento'
 import { DownloadButtons } from '@/components/DownloadButtons'
 import { EXTRACAO_PDF_AGENT_TYPE } from '@/lib/extracao-documento-pdf'
-import { rotuloStatusFinal } from '@/lib/client-archive'
+import { rotuloStatusFinal, isClienteArquivado } from '@/lib/client-archive'
+import {
+  CLIENTS_SELECT_EN,
+  CLIENTS_SELECT_PT,
+  normalizeCliente,
+  updateArquivadoPayload,
+} from '@/lib/clients-schema'
 import { CHECKLIST_ANEXO_AGENT_TYPE, type DocChecklist } from '@/lib/checklist-inss'
 import { carregarMembrosEscritorio, carregarNomesForaDaEquipe, type MembroEquipe } from '@/lib/equipe'
 import { PainelCrmCliente } from '@/components/clientes/PainelCrmCliente'
@@ -80,8 +86,20 @@ export default function ClienteDetalhesPage() {
       const memberIds = membrosLista.map((m) => m.id)
       setMembros(membrosLista)
 
-      const { data: c } = await supabase.from('clients').select('*').eq('id', id).single()
-      if (c?.assigned_lawyer_id && !membrosLista.some((m) => m.id === c.assigned_lawyer_id)) {
+      let c: Record<string, any> | null = null
+      for (const cols of [CLIENTS_SELECT_PT, CLIENTS_SELECT_EN, '*'] as const) {
+        const { data, error } = await supabase
+          .from('clients')
+          .select(cols as string)
+          .eq('id', id)
+          .maybeSingle()
+        if (!error && data) {
+          c = normalizeCliente(data as unknown as Record<string, unknown>)
+          break
+        }
+        if (error) console.error('[clientes/id] select:', cols, error.message)
+      }
+      if (c?.assigned_lawyer_id && !membrosLista.some((m) => m.id === c!.assigned_lawyer_id)) {
         const extras = await carregarNomesForaDaEquipe(supabase, [c.assigned_lawyer_id])
         setNomesExtras(extras)
       } else {
@@ -89,19 +107,31 @@ export default function ClienteDetalhesPage() {
       }
 
       // Só metadados: bastam para matching da checklist e não carregam o texto da peça.
-      const [{ data: d }, { data: procs }] = await Promise.all([
-        supabase
+      let d: any[] = []
+      let procs: any[] = []
+      try {
+        const docsRes = await supabase
           .from('documents')
           .select('id, title, type, agent_type, form_data, status, created_at, client_id, client_name')
           .in('lawyer_id', memberIds)
-          .order('created_at', { ascending: false }),
-        supabase
+          .order('created_at', { ascending: false })
+        d = (docsRes.data as any[]) || []
+      } catch (err) {
+        console.error('[clientes/id] documents:', err)
+        d = []
+      }
+      try {
+        const procsRes = await supabase
           .from('processos')
           .select('id, numero, tribunal, cliente_id')
           .eq('cliente_id', id)
-          .in('lawyer_id', memberIds),
-      ])
-      const clientDocs = (d || []).filter((doc: any) => doc.client_id === id || doc.client_name === c?.name)
+          .in('lawyer_id', memberIds)
+        procs = (procsRes.data as any[]) || []
+      } catch (err) {
+        console.error('[clientes/id] processos:', err)
+        procs = []
+      }
+      const clientDocs = d.filter((doc: any) => doc.client_id === id || doc.client_name === c?.name)
       setClient(c)
       setForm(c || {})
       setDocs(clientDocs)
@@ -122,9 +152,20 @@ export default function ClienteDetalhesPage() {
   }
 
   async function arquivar() {
-    const novoStatus = client.status === 'archived' ? 'active' : 'archived'
-    await supabase.from('clients').update({ status: novoStatus }).eq('id', id)
-    setClient({ ...client, status: novoStatus })
+    const agoraArquivado = !isClienteArquivado(client)
+    const { error } = await supabase
+      .from('clients')
+      .update(updateArquivadoPayload(agoraArquivado))
+      .eq('id', id)
+    if (error) {
+      console.error('[clientes/id] arquivar:', error.message)
+      return
+    }
+    setClient({
+      ...client,
+      arquivado: agoraArquivado,
+      status: agoraArquivado ? 'archived' : 'active',
+    })
   }
 
   function gerarPeticao() {
@@ -208,7 +249,7 @@ export default function ClienteDetalhesPage() {
     <div className="p-8 text-center text-gray-400">Cliente não encontrado</div>
   )
 
-  const statusColor = client.status === 'archived' ? '#888' : '#22C55E'
+  const statusColor = isClienteArquivado(client) ? '#888' : '#22C55E'
   const contratos = docs.filter((d: any) => ehContratoHonorarios(d.agent_type))
   const peticoes = docs.filter(
     (d: any) =>
@@ -229,7 +270,7 @@ export default function ClienteDetalhesPage() {
           <div className="flex-1"/>
           <div className="flex items-center gap-2 flex-wrap justify-end">
             <span className="text-xs px-3 py-1 rounded-full font-bold" style={{ background: `${statusColor}18`, color: statusColor }}>
-              {client.status === 'archived' ? 'Arquivado' : 'Ativo'}
+              {isClienteArquivado(client) ? 'Arquivado' : 'Ativo'}
             </span>
             {rotuloStatusFinal(client.status_final) && (
               <span className="text-xs px-3 py-1 rounded-full font-bold" style={{ background: 'rgba(34,197,94,0.12)', color: '#22C55E' }}>
@@ -237,7 +278,7 @@ export default function ClienteDetalhesPage() {
               </span>
             )}
             <button onClick={arquivar} className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:bg-white/5 flex items-center gap-1.5" style={{ border: '1px solid rgba(255,255,255,0.1)', color: '#888' }}>
-              <Archive size={13}/> {client.status === 'archived' ? 'Reativar' : 'Arquivar'}
+              <Archive size={13}/> {isClienteArquivado(client) ? 'Reativar' : 'Arquivar'}
             </button>
           </div>
         </div>
@@ -330,7 +371,7 @@ export default function ClienteDetalhesPage() {
         <div className="mb-6">
           <EtapaFunilCliente
             clientId={String(id)}
-            stage={client.stage}
+            stage={client.stage || client.etapa_funil}
             isLight={isLight}
             onAtualizar={(patch) => setClient((c: any) => ({ ...c, ...patch }))}
           />

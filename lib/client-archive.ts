@@ -1,11 +1,9 @@
 /**
- * Auto-arquivamento ao atingir etapa final do funil (`clients.stage`).
+ * Auto-arquivamento ao atingir etapa final do funil (`clients.etapa_funil`).
  *
- * Reusa `clients.status` ('active' | 'archived') — já usado pelo filtro
- * Arquivados em /clientes. Complementa com `status_final` (rótulo Concluído /
- * Protocolado). A lógica canônica no banco é o trigger
- * `clients_auto_arquivar_etapa_final`; estes helpers espelham o efeito para
- * atualização otimista na UI.
+ * Usa `clients.arquivado` (boolean). Em bases legadas ainda pode existir
+ * `clients.status` ('active' | 'archived') — a UI normaliza ambos via
+ * `normalizeCliente` / `isClienteArquivado`.
  */
 
 import {
@@ -14,19 +12,23 @@ import {
   type ClientStage,
   type FinalStage,
 } from '@/lib/client-stages'
+import { updateEtapaFunilPayload } from '@/lib/clients-schema'
 
 export type StatusFinal = FinalStage
 
 export type PatchArquivamento = {
   stage: ClientStage
+  etapa_funil: ClientStage
   status: 'active' | 'archived'
+  arquivado: boolean
   status_final: StatusFinal | null
 }
 
 export function isClienteArquivado(cliente: {
   status?: string | null
+  arquivado?: boolean | null
 }): boolean {
-  return cliente.status === 'archived'
+  return cliente.arquivado === true || cliente.status === 'archived'
 }
 
 /** Patch otimista ao mudar a etapa do funil. */
@@ -35,20 +37,24 @@ export function patchPorTransicaoEtapa(destino: unknown): PatchArquivamento {
   if (isFinalStage(stage)) {
     return {
       stage,
+      etapa_funil: stage,
       status: 'archived',
+      arquivado: true,
       status_final: stage as StatusFinal,
     }
   }
   return {
     stage,
+    etapa_funil: stage,
     status: 'active',
+    arquivado: false,
     status_final: null,
   }
 }
 
-/** Payload mínimo enviado ao Supabase (o trigger completa status/status_final). */
-export function updateEtapaPayload(destino: unknown): { stage: ClientStage } {
-  return { stage: normalizeStage(destino) }
+/** Payload mínimo enviado ao Supabase (sem coluna `stage`). */
+export function updateEtapaPayload(destino: unknown): { etapa_funil: string } {
+  return updateEtapaFunilPayload(normalizeStage(destino))
 }
 
 export function rotuloStatusFinal(valor: unknown): string | null {

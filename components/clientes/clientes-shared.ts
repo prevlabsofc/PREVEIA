@@ -100,7 +100,8 @@ export const CAMPOS_CLIENTE: CampoCliente[] = [
  * A etapa é sempre considerada presente porque tem default no banco.
  */
 export function camposPresentes(clients: Cliente[]): Set<string> {
-  const presentes = new Set<string>(['stage'])
+  // stage/status normalizados sempre existem na UI (via normalizeCliente)
+  const presentes = new Set<string>(['stage', 'status', 'name', 'cpf', 'phone', 'email'])
   for (const c of clients.slice(0, 30)) {
     for (const k of Object.keys(c ?? {})) presentes.add(k)
   }
