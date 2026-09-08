@@ -7,8 +7,9 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-playfair' })
 
 export const metadata: Metadata = {
-  title: 'Marple - Inteligência Jurídica com IA',
-  description: 'Plataforma SaaS de IA para advogados previdenciaristas',
+  title: 'Marple — Inteligência Jurídica Previdenciária',
+  description:
+    'Plataforma de IA para advogados previdenciários. Gere petições, gerencie clientes e jurisprudências com IA.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
