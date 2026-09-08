@@ -90,8 +90,8 @@ export default function DocumentosPage() {
         try {
           const r1 = await supabase.from('clients').select('id, name, cpf').in('lawyer_id', memberIds).order('name')
           if (r1.error) {
-            const r2 = await supabase.from('clients').select('id, nome, cpf').in('lawyer_id', memberIds)
-            clientList = ((r2.data as any[]) || []).map((c) => ({ ...c, name: c.nome || c.name }))
+            const r2 = await supabase.from('clients').select('id, name, cpf').in('lawyer_id', memberIds)
+            clientList = ((r2.data as any[]) || []).map((c) => ({ ...c, name: c.name || c.nome }))
           } else {
             clientList = (r1.data as any[]) || []
           }

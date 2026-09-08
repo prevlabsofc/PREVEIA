@@ -3,12 +3,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { motion, AnimatePresence } from 'framer-motion'
-import { FolderOpen, FileText, Plus, Trash2, Pencil, Users, Lock, X, BookMarked } from 'lucide-react'
+import { FolderOpen, FileText, Plus, Trash2, Pencil, Lock, X, BookMarked } from 'lucide-react'
 import { GlassCard } from '@/components/GlassCard'
 
 const supabase = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
 
 const SEM_PASTA = '__sem_pasta__'
+
+/** Colunas reais em produção (probe REST): id, lawyer_id, nome, tipo, conteudo, created_at, updated_at */
+const MODELOS_COLS = 'id, lawyer_id, nome, tipo, conteudo, created_at, updated_at'
 
 interface DocPessoal {
   id: string
@@ -43,14 +46,31 @@ function docTitulo(d: DocPessoal) {
   return d.title || d.agent_type || 'Petição'
 }
 
-export function EspacoIndividual({ lawyerId, officeId: _officeId, membros, isLight }: Props) {
+function normalizeModelo(row: Record<string, unknown> | null | undefined): ModeloPessoal | null {
+  if (!row?.id) return null
+  return {
+    id: String(row.id),
+    lawyer_id: String(row.lawyer_id ?? ''),
+    titulo: String(row.nome ?? row.titulo ?? ''),
+    categoria: (row.tipo ?? row.categoria ?? null) as string | null,
+    conteudo: String(row.conteudo ?? ''),
+    compartilhado: false,
+    created_at: (row.created_at as string | undefined) ?? undefined,
+    updated_at: String(row.updated_at ?? row.created_at ?? ''),
+  }
+}
+
+function normalizeModelos(rows: unknown): ModeloPessoal[] {
+  return ((rows as Record<string, unknown>[]) || [])
+    .map(normalizeModelo)
+    .filter((m): m is ModeloPessoal => Boolean(m))
+}
+
+export function EspacoIndividual({ lawyerId, officeId: _officeId, membros: _membros, isLight }: Props) {
   const [aba, setAba] = useState<'peticoes' | 'modelos'>('peticoes')
   const [docs, setDocs] = useState<DocPessoal[]>([])
   const [meusModelos, setMeusModelos] = useState<ModeloPessoal[]>([])
-  const [modelosEquipe, setModelosEquipe] = useState<ModeloPessoal[]>([])
   const [carregando, setCarregando] = useState(true)
-  // A migração 20260727_espaco_individual_advogado.sql é aplicada manualmente no
-  // Supabase; sem ela as consultas abaixo falham e a UI precisa avisar.
   const [semMigracao, setSemMigracao] = useState(false)
 
   const [pastaAtiva, setPastaAtiva] = useState<string | null>(null)
@@ -66,9 +86,6 @@ export function EspacoIndividual({ lawyerId, officeId: _officeId, membros, isLig
   useEffect(() => {
     async function carregar() {
       try {
-        const MODELOS_COLS = 'id, lawyer_id, titulo, categoria, conteudo, compartilhado, created_at, updated_at'
-        const idsEquipe = membros.map((m) => m.id).filter((id) => id !== lawyerId)
-
         const { data: docsData, error: docsErro } = await supabase
           .from('documents')
           .select('id, title, agent_type, created_at, pasta')
@@ -106,68 +123,30 @@ export function EspacoIndividual({ lawyerId, officeId: _officeId, membros, isLig
           console.error('[EspacoIndividual] modelos_pessoais:', modelosErro.message)
           const { data: meusFallback, error: meusFallbackErro } = await supabase
             .from('modelos_pessoais')
-            .select(MODELOS_COLS)
+            .select('*')
             .eq('lawyer_id', lawyerId)
+            .limit(50)
           if (meusFallbackErro) {
             console.error('[EspacoIndividual] modelos_pessoais fallback:', meusFallbackErro.message)
             setSemMigracao(true)
             setMeusModelos([])
-            setModelosEquipe([])
           } else {
-            setMeusModelos((meusFallback as ModeloPessoal[]) || [])
-            if (idsEquipe.length > 0) {
-              const { data: equipe, error: equipeErro } = await supabase
-                .from('modelos_pessoais')
-                .select(MODELOS_COLS)
-                .in('lawyer_id', idsEquipe)
-                .eq('compartilhado', true)
-              if (equipeErro) {
-                console.error('[EspacoIndividual] modelos equipe:', equipeErro.message)
-                setModelosEquipe([])
-              } else {
-                setModelosEquipe((equipe as ModeloPessoal[]) || [])
-              }
-            } else {
-              setModelosEquipe([])
-            }
+            setMeusModelos(normalizeModelos(meusFallback))
           }
         } else {
-          setMeusModelos((meus as ModeloPessoal[]) || [])
-          if (idsEquipe.length > 0) {
-            const { data: equipe, error: equipeErro } = await supabase
-              .from('modelos_pessoais')
-              .select(MODELOS_COLS)
-              .in('lawyer_id', idsEquipe)
-              .eq('compartilhado', true)
-              .order('updated_at', { ascending: false })
-            if (equipeErro) {
-              console.error('[EspacoIndividual] modelos equipe order:', equipeErro.message)
-              const { data: equipeFallback } = await supabase
-                .from('modelos_pessoais')
-                .select(MODELOS_COLS)
-                .in('lawyer_id', idsEquipe)
-                .eq('compartilhado', true)
-              setModelosEquipe((equipeFallback as ModeloPessoal[]) || [])
-            } else {
-              setModelosEquipe((equipe as ModeloPessoal[]) || [])
-            }
-          } else {
-            setModelosEquipe([])
-          }
+          setMeusModelos(normalizeModelos(meus))
         }
-
       } catch (err) {
         console.error('[EspacoIndividual] carregar:', err)
         setDocs([])
         setMeusModelos([])
-        setModelosEquipe([])
         setSemMigracao(true)
       } finally {
         setCarregando(false)
       }
     }
     carregar()
-  }, [lawyerId, membros])
+  }, [lawyerId])
 
   const pastas = useMemo(() => {
     const nomes = new Set<string>()
@@ -206,7 +185,7 @@ export function EspacoIndividual({ lawyerId, officeId: _officeId, membros, isLig
 
   function abrirEdicaoModelo(m: ModeloPessoal) {
     setEditandoModelo(m)
-    setFormModelo({ titulo: m.titulo, categoria: m.categoria || '', conteudo: m.conteudo, compartilhado: m.compartilhado })
+    setFormModelo({ titulo: m.titulo, categoria: m.categoria || '', conteudo: m.conteudo, compartilhado: false })
     setModalModelo(true)
   }
 
@@ -214,27 +193,28 @@ export function EspacoIndividual({ lawyerId, officeId: _officeId, membros, isLig
     if (!formModelo.titulo.trim()) { alert('Informe um título para o modelo.'); return }
     setSalvandoModelo(true)
     const payload = {
-      titulo: formModelo.titulo.trim(),
-      categoria: formModelo.categoria.trim() || null,
+      nome: formModelo.titulo.trim(),
+      tipo: formModelo.categoria.trim() || null,
       conteudo: formModelo.conteudo,
-      compartilhado: formModelo.compartilhado,
       updated_at: new Date().toISOString(),
     }
 
     if (editandoModelo) {
-      const { data, error } = await supabase.from('modelos_pessoais').update(payload).eq('id', editandoModelo.id).select().single()
+      const { data, error } = await supabase.from('modelos_pessoais').update(payload).eq('id', editandoModelo.id).select(MODELOS_COLS).single()
       setSalvandoModelo(false)
       if (error) { alert('Não foi possível salvar o modelo.'); return }
-      setMeusModelos(prev => prev.map(m => m.id === editandoModelo.id ? (data as ModeloPessoal) : m))
+      const normalizado = normalizeModelo(data as Record<string, unknown>)
+      if (normalizado) setMeusModelos(prev => prev.map(m => m.id === editandoModelo.id ? normalizado : m))
     } else {
       const { data, error } = await supabase
         .from('modelos_pessoais')
         .insert({ ...payload, lawyer_id: lawyerId })
-        .select()
+        .select(MODELOS_COLS)
         .single()
       setSalvandoModelo(false)
       if (error) { alert('Não foi possível criar o modelo.'); return }
-      setMeusModelos(prev => [data as ModeloPessoal, ...prev])
+      const normalizado = normalizeModelo(data as Record<string, unknown>)
+      if (normalizado) setMeusModelos(prev => [normalizado, ...prev])
     }
     setModalModelo(false)
   }
@@ -244,16 +224,6 @@ export function EspacoIndividual({ lawyerId, officeId: _officeId, membros, isLig
     const { error } = await supabase.from('modelos_pessoais').delete().eq('id', id)
     if (error) { alert('Não foi possível excluir o modelo.'); return }
     setMeusModelos(prev => prev.filter(m => m.id !== id))
-  }
-
-  async function alternarCompartilhamento(m: ModeloPessoal) {
-    const novo = !m.compartilhado
-    const { error } = await supabase
-      .from('modelos_pessoais')
-      .update({ compartilhado: novo, updated_at: new Date().toISOString() })
-      .eq('id', m.id)
-    if (error) { alert('Não foi possível alterar o compartilhamento.'); return }
-    setMeusModelos(prev => prev.map(x => x.id === m.id ? { ...x, compartilhado: novo } : x))
   }
 
   const corTexto = isLight ? '#1E1E1E' : '#fff'
@@ -310,9 +280,7 @@ export function EspacoIndividual({ lawyerId, officeId: _officeId, membros, isLig
 
         {semMigracao && (
           <div className="mb-4 p-3 rounded-xl text-xs" style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)', color: '#F59E0B' }}>
-            Recursos do espaço individual indisponíveis. Rode a migração
-            <span className="font-mono"> supabase/migrations/20260727_espaco_individual_advogado.sql </span>
-            no SQL Editor do Supabase para habilitar pastas e modelos pessoais.
+            Recursos do espaço individual indisponíveis no momento. Tente recarregar a página.
           </div>
         )}
 
@@ -401,8 +369,8 @@ export function EspacoIndividual({ lawyerId, officeId: _officeId, membros, isLig
                           </span>
                         )}
                         <span className="text-[10px] px-2 py-0.5 rounded-full font-medium flex items-center gap-1"
-                          style={{ background: m.compartilhado ? 'rgba(34,197,94,0.12)' : 'rgba(255,255,255,0.05)', color: m.compartilhado ? '#22C55E' : '#888' }}>
-                          {m.compartilhado ? <><Users size={10}/> Compartilhado</> : <><Lock size={10}/> Privado</>}
+                          style={{ background: 'rgba(255,255,255,0.05)', color: '#888' }}>
+                          <Lock size={10}/> Privado
                         </span>
                       </div>
                       {m.conteudo && (
@@ -412,12 +380,6 @@ export function EspacoIndividual({ lawyerId, officeId: _officeId, membros, isLig
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <button onClick={() => alternarCompartilhamento(m)}
-                        className="px-2.5 py-1.5 rounded-lg transition-colors hover:bg-[rgba(34,197,94,0.1)]"
-                        style={{ border: '1px solid rgba(34,197,94,0.3)', color: '#22C55E' }}
-                        title={m.compartilhado ? 'Tornar privado' : 'Compartilhar com o escritório'}>
-                        {m.compartilhado ? <Lock size={13}/> : <Users size={13}/>}
-                      </button>
                       <button onClick={() => abrirEdicaoModelo(m)}
                         className="px-2.5 py-1.5 rounded-lg transition-colors hover:bg-[rgba(212,175,55,0.08)]"
                         style={{ border: '1px solid rgba(212,175,55,0.3)', color: '#D4AF37' }}
@@ -443,152 +405,129 @@ export function EspacoIndividual({ lawyerId, officeId: _officeId, membros, isLig
                 </div>
               )}
             </div>
-
-            {modelosEquipe.length > 0 && (
-              <div className="mt-6 pt-5 border-t" style={{ borderColor: isLight ? '#EDEDED' : 'rgba(255,255,255,0.06)' }}>
-                <div className="flex items-center gap-2 mb-3">
-                  <Users size={15} color="#22C55E"/>
-                  <h4 className="text-sm font-bold" style={{ color: corTexto }}>Compartilhados pela equipe ({modelosEquipe.length})</h4>
-                </div>
-                <div className="space-y-2">
-                  {modelosEquipe.map(m => (
-                    <div key={m.id} className="p-3 rounded-2xl" style={{ background: fundoItem, border: bordaItem }}>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-medium" style={{ color: corTexto }}>{m.titulo}</span>
-                        <span className="text-[10px]" style={{ color: '#666' }}>
-                          por {membros.find(x => x.id === m.lawyer_id)?.name || 'colega de escritório'}
-                        </span>
-                      </div>
-                      {m.conteudo && (
-                        <p className="text-xs mt-1" style={{ color: corSecundaria }}>
-                          {m.conteudo.slice(0, 140)}{m.conteudo.length > 140 ? '…' : ''}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </>
         )}
       </GlassCard>
 
-      {/* MODAL — ORGANIZAR PETIÇÃO EM PASTA */}
       <AnimatePresence>
         {docEmMovimento && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }}
-            onClick={() => setDocEmMovimento(null)}>
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+            style={{ background: 'rgba(0,0,0,0.7)' }}
+            onClick={() => setDocEmMovimento(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
               className="w-full max-w-md rounded-2xl p-6"
-              style={{ background: '#0A0800', border: '1px solid rgba(212,175,55,0.2)' }}
-              onClick={e => e.stopPropagation()}>
-              <div className="flex items-start justify-between mb-1">
-                <h3 className="text-lg font-bold" style={{ color: '#fff' }}>Organizar em pasta</h3>
-                <button onClick={() => setDocEmMovimento(null)} className="text-gray-600 hover:text-white transition-colors" aria-label="Fechar">
-                  <X size={18}/>
+              style={{ background: isLight ? '#fff' : '#0A0A0A', border: '1px solid rgba(212,175,55,0.25)' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold" style={{ color: corTexto }}>Organizar em pasta</h3>
+                <button onClick={() => setDocEmMovimento(null)} className="p-1 rounded-lg hover:bg-white/5">
+                  <X size={16} color="#888"/>
                 </button>
               </div>
-              <p className="text-xs mb-4" style={{ color: '#888' }}>{docTitulo(docEmMovimento)}</p>
-
-              <label className="block text-xs font-medium mb-1.5" style={{ color: '#bbb' }}>Nome da pasta</label>
+              <p className="text-xs mb-3 truncate" style={{ color: corSecundaria }}>{docTitulo(docEmMovimento)}</p>
               <input
                 value={pastaDigitada}
                 onChange={e => setPastaDigitada(e.target.value)}
-                placeholder="Ex: Aposentadoria rural"
-                className="input-glass w-full px-3 text-sm"
-                style={{ height: 44 }} spellCheck={true} />
-
+                placeholder="Nome da pasta (ex: SM Rural 2024)"
+                className="input-glass w-full px-4 text-sm mb-3"
+                style={{ height: 44 }}
+                spellCheck={true}
+              />
               {pastas.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-3">
+                <div className="flex flex-wrap gap-2 mb-4">
                   {pastas.map(p => (
                     <button key={p} onClick={() => setPastaDigitada(p)}
-                      className="text-[11px] px-2.5 py-1 rounded-full transition-colors"
-                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#999' }}>
+                      className="text-xs px-2.5 py-1 rounded-full"
+                      style={{ background: 'rgba(212,175,55,0.1)', color: '#D4AF37', border: '1px solid rgba(212,175,55,0.25)' }}>
                       {p}
                     </button>
                   ))}
                 </div>
               )}
-
-              <div className="flex gap-2 pt-5">
+              <div className="flex gap-2">
+                <button
+                  onClick={() => salvarPasta(pastaDigitada.trim() || null)}
+                  disabled={salvandoPasta}
+                  className="btn-gold flex-1 py-2.5 rounded-xl text-sm font-bold disabled:opacity-50"
+                >
+                  {salvandoPasta ? 'Salvando…' : 'Salvar'}
+                </button>
                 {docEmMovimento.pasta && (
-                  <button onClick={() => salvarPasta(null)} disabled={salvandoPasta}
-                    className="py-2.5 px-4 rounded-xl text-sm transition-colors hover:bg-[rgba(239,68,68,0.1)]"
-                    style={{ border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444' }}>
-                    Remover
+                  <button
+                    onClick={() => salvarPasta(null)}
+                    disabled={salvandoPasta}
+                    className="px-4 py-2.5 rounded-xl text-sm disabled:opacity-50"
+                    style={{ border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444' }}
+                  >
+                    Remover pasta
                   </button>
                 )}
-                <button onClick={() => setDocEmMovimento(null)} className="flex-1 py-2.5 rounded-xl text-sm" style={{ border: '1px solid rgba(255,255,255,0.1)', color: '#888' }}>
-                  Cancelar
-                </button>
-                <button onClick={() => salvarPasta(pastaDigitada.trim() || null)} disabled={salvandoPasta}
-                  className="btn-gold flex-1 py-2.5 rounded-xl text-sm font-bold">
-                  {salvandoPasta ? 'Salvando...' : 'Salvar'}
-                </button>
               </div>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* MODAL — MODELO PESSOAL */}
       <AnimatePresence>
         {modalModelo && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }}
-            onClick={() => setModalModelo(false)}>
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl"
-              style={{ background: '#0A0800', border: '1px solid rgba(212,175,55,0.2)', boxShadow: '0 0 60px rgba(180,120,10,0.12)' }}
-              onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-                <div>
-                  <h2 className="font-bold" style={{ color: '#fff' }}>{editandoModelo ? 'Editar modelo' : 'Novo modelo pessoal'}</h2>
-                  <p className="text-xs mt-0.5" style={{ color: '#666' }}>Guarde seu estilo de redação para reutilizar nas petições</p>
-                </div>
-                <button onClick={() => setModalModelo(false)} className="text-gray-600 hover:text-white transition-colors" aria-label="Fechar">
-                  <X size={20}/>
+            style={{ background: 'rgba(0,0,0,0.7)' }}
+            onClick={() => setModalModelo(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              className="w-full max-w-lg rounded-2xl p-6"
+              style={{ background: isLight ? '#fff' : '#0A0A0A', border: '1px solid rgba(212,175,55,0.25)' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold" style={{ color: corTexto }}>
+                  {editandoModelo ? 'Editar modelo' : 'Novo modelo pessoal'}
+                </h3>
+                <button onClick={() => setModalModelo(false)} className="p-1 rounded-lg hover:bg-white/5">
+                  <X size={16} color="#888"/>
                 </button>
               </div>
-
-              <div className="p-6 space-y-4">
+              <div className="space-y-3">
                 <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: '#bbb' }}>Título *</label>
+                  <label className="text-xs mb-1 block" style={{ color: corSecundaria }}>Título</label>
                   <input value={formModelo.titulo} onChange={e => setFormModelo(f => ({ ...f, titulo: e.target.value }))}
-                    placeholder="Ex: Inicial padrão — Auxílio-doença"
-                    className="input-glass w-full px-3 text-sm" style={{ height: 44 }} spellCheck={true} />
+                    placeholder="Ex: Estilo SM Rural — Custódio" className="input-glass w-full px-4 text-sm" style={{ height: 44 }} spellCheck={true} />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: '#bbb' }}>Categoria</label>
+                  <label className="text-xs mb-1 block" style={{ color: corSecundaria }}>Tipo / categoria</label>
                   <input value={formModelo.categoria} onChange={e => setFormModelo(f => ({ ...f, categoria: e.target.value }))}
-                    placeholder="Ex: Benefício por incapacidade"
-                    className="input-glass w-full px-3 text-sm" style={{ height: 44 }} spellCheck={true} />
+                    placeholder="Ex: salário-maternidade" className="input-glass w-full px-4 text-sm" style={{ height: 44 }} spellCheck={true} />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: '#bbb' }}>Conteúdo do modelo</label>
+                  <label className="text-xs mb-1 block" style={{ color: corSecundaria }}>Conteúdo / instruções</label>
                   <textarea value={formModelo.conteudo} onChange={e => setFormModelo(f => ({ ...f, conteudo: e.target.value }))}
-                    placeholder="Estrutura, teses recorrentes, tom de escrita, cláusulas fixas..."
-                    className="input-glass w-full px-3 text-sm" style={{ height: 200, resize: 'vertical', paddingTop: 10 }} spellCheck={true} />
-                </div>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={formModelo.compartilhado}
-                    onChange={e => setFormModelo(f => ({ ...f, compartilhado: e.target.checked }))}
-                    className="w-4 h-4 accent-[#D4AF37]"/>
-                  <span className="text-xs" style={{ color: '#bbb' }}>Compartilhar com os demais advogados do escritório</span>
-                </label>
-
-                <div className="flex gap-2 pt-2">
-                  <button onClick={() => setModalModelo(false)} className="flex-1 py-2.5 rounded-xl text-sm" style={{ border: '1px solid rgba(255,255,255,0.1)', color: '#888' }}>
-                    Cancelar
-                  </button>
-                  <button onClick={salvarModelo} disabled={salvandoModelo} className="btn-gold flex-1 py-2.5 rounded-xl text-sm font-bold">
-                    {salvandoModelo ? 'Salvando...' : 'Salvar modelo'}
-                  </button>
+                    rows={6} placeholder="Cole aqui o estilo, trechos ou instruções do modelo…"
+                    className="input-glass w-full px-4 py-3 text-sm resize-none" spellCheck={true} />
                 </div>
               </div>
+              <button
+                onClick={salvarModelo}
+                disabled={salvandoModelo || !formModelo.titulo.trim()}
+                className="btn-gold w-full py-3 rounded-xl text-sm font-bold mt-4 disabled:opacity-50"
+              >
+                {salvandoModelo ? 'Salvando…' : 'Salvar modelo'}
+              </button>
             </motion.div>
           </motion.div>
         )}

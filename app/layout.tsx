@@ -1,6 +1,7 @@
 ﻿import type { Metadata, Viewport } from 'next'
 import { Inter, Playfair_Display } from 'next/font/google'
 import './globals.css'
+import { DisableMotionAppear } from '@/components/DisableMotionAppear'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-playfair' })
@@ -39,6 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="apple-mobile-web-app-title" content="Marple"/>
       </head>
       <body className={`${inter.variable} ${playfair.variable} font-sans`}>
+        <DisableMotionAppear />
         {children}
       </body>
     </html>

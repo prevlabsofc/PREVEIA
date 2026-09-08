@@ -1,20 +1,25 @@
 /**
- * Schema seguro de `public.clients` para produção.
+ * Schema seguro de `public.clients` — colunas confirmadas via REST (produção).
  *
- * Em algumas bases as colunas canônicas são as PT-BR abaixo (sem `stage`/`status`).
- * Em bases legadas ainda existem equivalentes EN (`name`, `phone`, `stage`, …).
- * Sempre normalize o resultado para o formato EN esperado pela UI.
+ * Existem: id, name, cpf, phone, email, whatsapp, created_at, lawyer_id,
+ * address, city, state, zone, rg, birth_date, profession, notes, status,
+ * ultimo_contato, cep
+ *
+ * NÃO existem (400): nome, telefone, tipo_beneficio, office_id, etapa_funil,
+ * stage, arquivado, last_contact_at, assigned_lawyer_id
+ *
+ * `zone` = rural/urbano. Funil/arquivamento usam `status` até as migrações
+ * CRM/funil serem aplicadas no projeto remoto.
  */
 
 export const CLIENTS_SELECT_SAFE =
-  'id, nome, cpf, telefone, email, whatsapp, created_at, lawyer_id, tipo_beneficio, address, city, state, zone, rg, birth_date, last_contact_at, etapa_funil, arquivado, profession, notes, cep'
+  'id, name, cpf, phone, email, whatsapp, created_at, lawyer_id, address, city, state, zone, rg, birth_date, profession, notes, status, ultimo_contato'
 
 /** @deprecated use CLIENTS_SELECT_SAFE — mantido como alias. */
 export const CLIENTS_SELECT_PT = CLIENTS_SELECT_SAFE
 
-/** Fallback se a base ainda usar `name`/`phone` em vez de `nome`/`telefone`. */
-export const CLIENTS_SELECT_EN =
-  'id, name, cpf, phone, email, whatsapp, created_at, lawyer_id, tipo_beneficio, address, city, state, zone, rg, birth_date, last_contact_at, etapa_funil, arquivado, profession, notes, cep'
+/** @deprecated use CLIENTS_SELECT_SAFE. */
+export const CLIENTS_SELECT_EN = CLIENTS_SELECT_SAFE
 
 export type ClienteNormalizado = Record<string, unknown> & {
   id: string
@@ -45,16 +50,18 @@ function zonaUi(v: unknown): string {
   return 'rural'
 }
 
-/** Une PT-BR e EN num objeto estável para a UI. */
+/** Une aliases legados num objeto estável para a UI. */
 export function normalizeCliente(row: Record<string, unknown> | null | undefined): ClienteNormalizado {
   const r = row ?? {}
   const arquivado =
     r.arquivado === true ||
     r.arquivado === 'true' ||
     r.status === 'archived'
+  // Sem coluna de funil no remoto: UI usa default estável.
   const etapa = String(r.etapa_funil ?? r.stage ?? 'atendimento_triagem')
-  const nome = String(r.nome ?? r.name ?? '')
-  const telefone = String(r.telefone ?? r.phone ?? '')
+  const nome = String(r.name ?? r.nome ?? '')
+  const telefone = String(r.phone ?? r.telefone ?? '')
+  const zone = zonaUi(r.zone ?? r.zona_rural)
 
   return {
     ...r,
@@ -69,18 +76,19 @@ export function normalizeCliente(row: Record<string, unknown> | null | undefined
     etapa_funil: etapa,
     status: arquivado ? 'archived' : 'active',
     arquivado,
-    address: String(r.endereco ?? r.address ?? ''),
-    city: String(r.cidade ?? r.city ?? ''),
-    state: String(r.estado ?? r.state ?? ''),
-    zone: zonaUi(r.zona_rural ?? r.zone),
+    address: String(r.address ?? r.endereco ?? ''),
+    city: String(r.city ?? r.cidade ?? ''),
+    state: String(r.state ?? r.estado ?? ''),
+    zone,
     last_contact_at: (r.ultimo_contato ?? r.last_contact_at ?? null) as string | null,
-    tipo_beneficio: (r.tipo_beneficio as string | null) ?? null,
+    tipo_beneficio:
+      (r.tipo_beneficio as string | null) ??
+      (zone === 'rural' ? 'rural' : zone === 'urban' ? 'urbano' : null),
     lawyer_id: (r.lawyer_id as string | null) ?? null,
     created_at: (r.created_at as string | null) ?? null,
     whatsapp: String(r.whatsapp ?? telefone ?? ''),
     profession: String(r.profession ?? ''),
     notes: String(r.notes ?? ''),
-    cep: String(r.cep ?? ''),
     rg: String(r.rg ?? ''),
     birth_date: (r.birth_date as string | null) ?? null,
   }
@@ -99,7 +107,7 @@ export async function fetchClientsByLawyer(
   lawyerId: string,
 ): Promise<ClienteNormalizado[]> {
   try {
-    const tentativas = [CLIENTS_SELECT_SAFE, CLIENTS_SELECT_EN, '*'] as const
+    const tentativas = [CLIENTS_SELECT_SAFE, '*'] as const
     for (const cols of tentativas) {
       const { data, error } = await supabase
         .from('clients')
@@ -119,12 +127,16 @@ export async function fetchClientsByLawyer(
   }
 }
 
-/** Payload de etapa do funil — só `etapa_funil` (sem `stage`). */
-export function updateEtapaFunilPayload(destino: string): { etapa_funil: string } {
-  return { etapa_funil: destino }
+/**
+ * Payload de etapa do funil.
+ * Remoto ainda não tem `etapa_funil`/`stage` — devolve objeto vazio para evitar 400.
+ * Quando a migração for aplicada, troque para `{ etapa_funil: destino }`.
+ */
+export function updateEtapaFunilPayload(_destino: string): Record<string, never> {
+  return {}
 }
 
-/** Payload de arquivamento — só `arquivado` (sem `status`). */
-export function updateArquivadoPayload(arquivado: boolean): { arquivado: boolean } {
-  return { arquivado }
+/** Payload de arquivamento via `status` (coluna real em produção). */
+export function updateArquivadoPayload(arquivado: boolean): { status: 'active' | 'archived' } {
+  return { status: arquivado ? 'archived' : 'active' }
 }

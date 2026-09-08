@@ -91,14 +91,19 @@ export function ResumoDocumentosCliente({
   async function salvarTipoBeneficio(valor: string) {
     setErro('')
     onTipoBeneficioChange?.(valor)
+    // Produção não tem `tipo_beneficio`; zone cobre rural/urbano.
+    const zone =
+      /rural/i.test(valor) ? 'rural' : /urban|urbano/i.test(valor) ? 'urban' : null
+    if (!zone) {
+      setErro('Neste banco o tipo de benefício usa a zona (rural/urbano). Escolha um benefício rural ou urbano.')
+      return
+    }
     const { error } = await supabase
       .from('clients')
-      .update({ tipo_beneficio: valor || null })
+      .update({ zone })
       .eq('id', clientId)
     if (error) {
-      setErro(
-        'Não foi possível salvar o tipo de benefício. Verifique se a coluna tipo_beneficio existe no banco.'
-      )
+      setErro('Não foi possível salvar a zona do cliente.')
     }
   }
 

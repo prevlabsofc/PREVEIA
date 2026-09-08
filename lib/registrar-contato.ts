@@ -5,7 +5,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
  * Nomes canônicos das colunas de CRM em `clients`.
  * Migração: supabase/migrations/20260727_clients_crm_last_contact_assigned_lawyer.sql
  */
-export const COLUNA_ULTIMO_CONTATO = 'last_contact_at'
+export const COLUNA_ULTIMO_CONTATO = 'ultimo_contato'
+/** Coluna ainda não existe no remoto — updates de responsável falham em silêncio. */
 export const COLUNA_RESPONSAVEL = 'assigned_lawyer_id'
 
 /** Limiar padrão (dias) para alerta de cliente sem contato. */

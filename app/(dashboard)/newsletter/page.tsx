@@ -151,7 +151,7 @@ export default function NewsletterPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       const { data: lawyer } = await supabase.from('lawyers').select('office_id').eq('id', user.id).maybeSingle()
-      let q = supabase.from('clients').select('id, email, tipo_beneficio, lawyer_id')
+      let q = supabase.from('clients').select('id, email, zone, lawyer_id')
       if (lawyer?.office_id) {
         const { data: membros } = await supabase.from('lawyers').select('id').eq('office_id', lawyer.office_id)
         const ids = (membros || []).map(m => m.id)
@@ -166,7 +166,7 @@ export default function NewsletterPage() {
         if (!c.email) continue
         porEmail.set(normalizarEmail(c.email), {
           id: c.id,
-          tag: tagDeTipoBeneficio(c.tipo_beneficio),
+          tag: tagDeTipoBeneficio(c.zone === 'rural' ? 'rural' : c.zone === 'urban' || c.zone === 'urbano' ? 'urbano' : c.zone),
         })
       }
       const updates: { id: string; tags: string[]; client_id: string }[] = []
