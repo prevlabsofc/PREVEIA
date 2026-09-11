@@ -224,4 +224,8 @@ REGRAS:
 - prioridade_menor: true se a autora for menor de 18 anos
 - Local/data da assinatura: o sistema completa com a cidade do escritório — no FECHAMENTO NÃO escreva a linha de cidade/data
 - Valor da causa padrão: R$ 6.072,00 (4 × salário mínimo R$ 1.518,00), salvo outro valor informado
+- Texto corrido em caixa de sentença (primeira letra maiúscula, resto minúsculo conforme o português). NUNCA escreva parágrafos inteiros em CAIXA ALTA.
+- Copie os nomes dos marcadores EXATAMENTE, com underscores: <<<END_III_ANTES>>> (nunca <<<ENDIIANTES>>>). Todo bloco aberto DEVE ser fechado.
+- Os marcadores são instruções internas do sistema: não os explique, não os repita fora do formato e não os deixe no meio do texto jurídico.
+- Na TIMELINE escreva APENAS um objeto JSON válido (sem markdown, sem texto antes ou depois do JSON).
 `

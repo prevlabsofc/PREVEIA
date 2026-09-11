@@ -163,7 +163,7 @@ async function urlToDataUrl(url: string): Promise<string | null> {
   return null
 }
 
-/** Garante logo_url como data-URL (ou null → fallback de iniciais no template). */
+/** Garante logo_url como data-URL (ou null → espaço em branco, sem asterisco). */
 async function prepararAdvComLogo(
   adv: DadosAdvogadoPeticao,
 ): Promise<DadosAdvogadoPeticao> {
@@ -463,20 +463,12 @@ async function gerarPdfBlob(
         el.querySelectorAll('img').forEach((img) => {
           const src = img.getAttribute('src') || ''
           if (!src || !src.startsWith('data:')) {
-            // Sem data-URL: esconde broken-image (asterisco) e mostra iniciais
-            const td = img.closest('td')
-            img.style.display = 'none'
-            if (td && !td.querySelector('[data-logo-fallback]')) {
-              const doc = el.ownerDocument
-              const fb = doc.createElement('div')
-              fb.setAttribute('data-logo-fallback', '1')
-              fb.textContent = 'PL'
-              fb.setAttribute(
-                'style',
-                'width:36px;height:36px;background:#D4AF37;color:#000;font-weight:bold;font-size:11px;line-height:36px;text-align:center;',
-              )
-              td.insertBefore(fb, img)
-            }
+            const doc = el.ownerDocument
+            const slot = doc.createElement('div')
+            slot.className = 'sm-logo-slot'
+            slot.setAttribute('aria-hidden', 'true')
+            slot.style.cssText = 'width:110px;height:36px;display:block;'
+            img.replaceWith(slot)
           }
         })
         el.querySelectorAll('*').forEach((node) => {

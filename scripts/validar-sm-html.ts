@@ -1,5 +1,9 @@
 import { writeFileSync } from 'fs'
-import { montarHtmlSmRural, textoRodapeSm } from '../lib/peticao-sm-rural'
+import {
+  canonicalizarMarcadoresSm,
+  montarHtmlSmRural,
+  textoRodapeSm,
+} from '../lib/peticao-sm-rural'
 import { FIXTURE_SM_ANA_LUCIA } from '../lib/fixtures/sm-ana-lucia'
 
 const adv = {
@@ -21,6 +25,30 @@ if (!html) {
 
 writeFileSync('tmp-sm-preview.html', `<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body>${html}</body></html>`)
 
+const MALFORMED = `Qualificação da autora, agricultora, vem propor a presente
+<<<END_TITULO>>>
+<<<ENDIIANTES>>>
+<<<TIMELINE>>>
+{"nome":"Maria da Silva","atividade":"Agricultora","local":"Rurópolis/PA","estilo":"horizontal","eventos":[{"data":"10/05/2024","titulo":"Nascimento","detalhe":"João"}]}
+<<<END_I>>>
+<<<V_FUNDAMENTACAO>>>
+O salário-maternidade é um direito assegurado pelo art. 71 da Lei nº 8.213/1991.
+<<<VI_PEDIDOS>>>
+i. Seja a ação julgada procedente
+<<<FECHAMENTO>>>
+Termos em que, pede e espera deferimento.
+`
+
+const htmlBad = montarHtmlSmRural({ text: MALFORMED, adv, comMargens: true })
+if (!htmlBad) {
+  console.error('FAIL: malformed returned null (deveria parsear mesmo sem SM_RURAL_V2)')
+  process.exit(1)
+}
+
+writeFileSync('tmp-sm-malformed.html', `<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body>${htmlBad}</body></html>`)
+
+const canon = canonicalizarMarcadoresSm('<<<ENDIIANTES>>>\n<<<V_FUNDAMENTACAO>>>')
+
 const checks: [string, boolean][] = [
   ['planilha 1518 x4', (html.match(/R\$ 1\.518,00/g) || []).length >= 4],
   ['total 6072', html.includes('R$ 6.072,00')],
@@ -29,10 +57,24 @@ const checks: [string, boolean][] = [
   ['header OAB', html.includes('OAB/MA n° 12345')],
   ['header email', html.includes('contato@prevlabs.com.br')],
   ['sem footer no corpo', !/<div class="sm-footer[\s"]/.test(html)],
-  ['sem timeline no corpo', !/<div class="sm-timeline[\s"]/.test(html)],
+  ['sem timeline no corpo (estilo none)', !/<div class="sm-timeline[\s"]/.test(html)],
   ['overflow hidden', html.includes('overflow: hidden')],
   ['max-width 794', html.includes('max-width: 794px')],
+  ['width 794', html.includes('width: 794px')],
   ['III then IV', /III[\s\S]*IV – DAS PROVAS/.test(html)],
+  ['fixture sem tags no HTML', !/<<<[A-Z0-9_]+>>>/.test(html)],
+  ['fixture sem JSON cru', !/"eventos"\s*:/.test(html)],
+  ['sm-para 12px', html.includes('font-size: 12px')],
+  ['sm-para sem uppercase', /\.sm-para\s*\{[^}]*text-transform:\s*none/.test(html)],
+  ['seção com uppercase', /\.sm-section-bar[\s\S]*?text-transform:\s*uppercase/.test(html)],
+  ['data centralizada', /\.sm-local-data\s*\{[^}]*text-align:\s*center/.test(html)],
+  ['logo slot vazio (sem img)', !/<img /.test(html)],
+  ['canon ENDIIANTES', canon.includes('<<<END_III_ANTES>>>')],
+  ['malformed não nulo', Boolean(htmlBad)],
+  ['malformed sem tags', !/<<<[A-Z0-9_]+>>>/.test(htmlBad)],
+  ['malformed sem END_TITULO', !htmlBad.includes('END_TITULO') && !htmlBad.includes('ENDIIANTES')],
+  ['malformed timeline parseada', htmlBad.includes('sm-timeline') && !htmlBad.includes('"eventos"')],
+  ['malformed fundamentação', htmlBad.includes('art. 71')],
 ]
 
 let ok = true

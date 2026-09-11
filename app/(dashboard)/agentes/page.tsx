@@ -35,7 +35,7 @@ import { PeticaoEditorComPreview } from '@/components/peticao/PeticaoEditorComPr
 import { ConfigurarTimelineSm } from '@/components/peticao/ConfigurarTimelineSm'
 import type { DadosAdvogadoPeticao, EstiloPeticao } from '@/lib/peticao-export'
 import { normalizarEstiloPeticao } from '@/lib/peticao-export'
-import { injetarTimelineNoTexto, slugArquivoPeticaoSm, type TimelineData } from '@/lib/peticao-sm-rural'
+import { canonicalizarMarcadoresSm, injetarTimelineNoTexto, slugArquivoPeticaoSm, type TimelineData } from '@/lib/peticao-sm-rural'
 import { marcarPeticaoAtiva, consumirFilaPeticao, PETICAO_INSERIR_EVENT, PETICAO_CHANNEL } from '@/lib/peticao-sessao'
 import { consumirContextoPeticao } from '@/lib/extracao-documento-pdf'
 import { formatarEnderecoQualificacao } from '@/lib/formatar-endereco'
@@ -506,10 +506,15 @@ function AgentesPageContent() {
         setResult(acumulado)
       }
 
-      // Sobrescreve o bloco TIMELINE da IA com a configuração do usuário
+      // Canonicaliza marcadores SM (corrige <<<ENDIIANTES>>> etc.) e injeta timeline
+      if (selectedAgent.key === 'salario-maternidade-rural') {
+        acumulado = canonicalizarMarcadoresSm(acumulado)
+      }
       if (timeline) {
         const comTimeline = injetarTimelineNoTexto(acumulado, timeline)
         setResult(comTimeline)
+      } else {
+        setResult(acumulado)
       }
     } catch {
       setResult('Erro ao gerar petição. Tente novamente.')

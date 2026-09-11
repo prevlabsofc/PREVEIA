@@ -6,6 +6,7 @@ import { getSystemPrompt } from '@/lib/agents'
 import { temAcessoTotal } from '@/lib/permissions/cargos'
 import { rateLimit } from '@/lib/rateLimit'
 import { registrarContato } from '@/lib/registrar-contato'
+import { AGENT_SM_RURAL, canonicalizarMarcadoresSm } from '@/lib/peticao-sm-rural'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -271,6 +272,10 @@ export async function POST(request: Request) {
               fullText += chunk.delta.text
               controller.enqueue(encoder.encode(chunk.delta.text))
             }
+          }
+
+          if (agentType === AGENT_SM_RURAL) {
+            fullText = canonicalizarMarcadoresSm(fullText)
           }
 
           const { data: novoDoc } = await supabaseAdmin

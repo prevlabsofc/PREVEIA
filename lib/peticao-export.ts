@@ -281,6 +281,7 @@ export function parseMarkdownToHtml(
 ): string {
   const estilo = normalizarEstiloPeticao(opts.estilo)
   let html = corrigirLocalNoTexto(text, opts.adv)
+  html = html.replace(/<<<(?!CLOSING|END_CLOSING|BOX_START)[A-Z0-9_]+>>>/gi, '')
   html = deduplicarHierarquiaTitulos(html)
   html = marcarBlocoFinal(html)
 
@@ -467,6 +468,7 @@ export function cssPeticao(opts: {
       break-inside: auto;
       overflow-wrap: anywhere;
       word-wrap: break-word;
+      text-transform: none;
     }
     strong { color: ${moderno ? '#0A2540' : '#000'}; }
     .divider { border: none; border-top: 1px solid #ccc; margin: 16px 0; }

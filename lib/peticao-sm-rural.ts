@@ -2,8 +2,9 @@
  * Template visual fiel ao modelo Custódio Advogados para
  * Salário-Maternidade — Segurada Especial (salario-maternidade-rural).
  *
- * Espera marcadores <<<SM_RURAL_V2>>> no texto gerado pela IA.
- * Se ausentes, retorna null para o export genérico assumir.
+ * A IA devolve marcadores <<<SECAO>>>…<<<END_SECAO>>>. Este módulo
+ * canonicaliza nomes malformados, extrai o miolo e NUNCA deixa as tags
+ * (nem o JSON da timeline) vazarem para o HTML/PDF.
  */
 
 import {
@@ -136,12 +137,93 @@ export function slugArquivoPeticaoSm(nomeCliente: string): string {
   return `peticao-salario-maternidade-${slug || 'cliente'}`
 }
 
+const MARCADOR_RE = /<<<\s*\/?\s*([A-Z0-9_]+)\s*>>>/gi
+
+function compactTag(name: string): string {
+  return String(name || '')
+    .replace(/[^A-Z0-9]/gi, '')
+    .toUpperCase()
+}
+
+/** Nomes canônicos a partir da forma compacta (absorve <<<ENDIIANTES>>> etc.). */
+const CANON_BY_COMPACT: Record<string, string> = {
+  SMRURALV2: 'SM_RURAL_V2',
+  META: 'META',
+  ENDMETA: 'END_META',
+  ENDERECO: 'ENDERECO',
+  ENDENDERECO: 'END_ENDERECO',
+  QUALIFICACAO: 'QUALIFICACAO',
+  ENDQUALIFICACAO: 'END_QUALIFICACAO',
+  TITULO: 'TITULO',
+  SUBTITULO: 'SUBTITULO',
+  ENDTITULO: 'END_TITULO',
+  EMFACE: 'EM_FACE',
+  ENDEMFACE: 'END_EM_FACE',
+  IPRELIMINARES: 'I_PRELIMINARES',
+  ENDI: 'END_I',
+  IIQUADRO: 'II_QUADRO',
+  ENDII: 'END_II',
+  IIISINTESEANTES: 'III_SINTESE_ANTES',
+  IIIANTES: 'III_SINTESE_ANTES',
+  ENDIIIANTES: 'END_III_ANTES',
+  ENDIIANTES: 'END_III_ANTES',
+  TIMELINE: 'TIMELINE',
+  ENDTIMELINE: 'END_TIMELINE',
+  IIISINTESEDEPOIS: 'III_SINTESE_DEPOIS',
+  IIIDEPOIS: 'III_SINTESE_DEPOIS',
+  ENDIIIDEPOIS: 'END_III_DEPOIS',
+  ENDIIDEPOIS: 'END_III_DEPOIS',
+  IVPROVAS: 'IV_PROVAS',
+  ENDIV: 'END_IV',
+  IVFECHO: 'IV_FECHO',
+  ENDIVFECHO: 'END_IV_FECHO',
+  VFUNDAMENTACAO: 'V_FUNDAMENTACAO',
+  ENDV: 'END_V',
+  VIPEDIDOS: 'VI_PEDIDOS',
+  ENDVI: 'END_VI',
+  FECHAMENTO: 'FECHAMENTO',
+  ENDFECHAMENTO: 'END_FECHAMENTO',
+  PLANILHA: 'PLANILHA',
+  ENDPLANILHA: 'END_PLANILHA',
+}
+
+/** Normaliza marcadores da IA (nomes errados, espaços) para a forma canônica. */
+export function canonicalizarMarcadoresSm(text: string): string {
+  return String(text || '').replace(MARCADOR_RE, (_m, name: string) => {
+    const canon = CANON_BY_COMPACT[compactTag(name)]
+    return canon ? `<<<${canon}>>>` : ''
+  })
+}
+
+/** Remove qualquer <<<TAG>>> residual do texto/HTML. */
+export function stripMarcadoresSm(text: string): string {
+  return String(text || '')
+    .replace(/<<<[^>]*>>>/g, '')
+    .replace(/&lt;&lt;&lt;[^&]*&gt;&gt;&gt;/gi, '')
+}
+
+function proximoMarcadorIndex(text: string, from: number): number {
+  const re = /<<<[A-Z0-9_]+>>>/g
+  re.lastIndex = from
+  const m = re.exec(text)
+  return m ? m.index : -1
+}
+
+/**
+ * Extrai o miolo entre start e end. Se o fechamento faltar, para no
+ * próximo marcador — nunca engole o resto do documento.
+ */
 function bloco(text: string, start: string, end: string): string {
-  const a = text.indexOf(start)
+  const startTag = start.startsWith('<<<') ? start : `<<<${start}>>>`
+  const endTag = end.startsWith('<<<') ? end : `<<<${end}>>>`
+  const a = text.indexOf(startTag)
   if (a === -1) return ''
-  const b = text.indexOf(end, a + start.length)
-  if (b === -1) return text.slice(a + start.length).trim()
-  return text.slice(a + start.length, b).trim()
+  const after = a + startTag.length
+  const b = text.indexOf(endTag, after)
+  let limit = b === -1 ? text.length : b
+  const next = proximoMarcadorIndex(text, after)
+  if (next !== -1 && next < limit) limit = next
+  return stripMarcadoresSm(text.slice(after, limit)).trim()
 }
 
 function parseMeta(raw: string): {
@@ -167,18 +249,23 @@ function parseMeta(raw: string): {
 function parseQuadro(md: string): QuadroRow[] {
   const rows: QuadroRow[] = []
   for (const line of md.split('\n')) {
-    const m = line.match(/^\|(.+)\|(.+)\|\s*$/)
-    if (!m) continue
-    const campo = limparMarkdownResidual(m[1].trim())
-    let valor = limparMarkdownResidual(m[2].trim())
-    if (!campo || /^[-:]+$/.test(campo) || /^campo$/i.test(campo)) continue
-    if (/^valor$/i.test(valor)) continue
-    const pareceData =
-      campoEhData(campo) ||
-      /^\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}$/.test(valor) ||
-      /^\d{4}-\d{2}-\d{2}/.test(valor)
-    if (pareceData) valor = sanitizarDataPeticao(valor)
-    rows.push({ campo, valor })
+    const trimmed = line.trim()
+    const m =
+      trimmed.match(/^\|(.+?)\|(.+?)\|\s*$/) ||
+      trimmed.match(/^\|(.+?)\|(.+?)\|?$/)
+    if (m) {
+      const campo = limparMarkdownResidual(m[1].trim())
+      let valor = limparMarkdownResidual(m[2].trim())
+      if (!campo || /^[-:]+$/.test(campo) || /^campo$/i.test(campo)) continue
+      if (/^valor$/i.test(valor)) continue
+      const pareceData =
+        campoEhData(campo) ||
+        /^\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}$/.test(valor) ||
+        /^\d{4}-\d{2}-\d{2}/.test(valor)
+      if (pareceData) valor = sanitizarDataPeticao(valor)
+      rows.push({ campo, valor })
+      continue
+    }
   }
   return rows
 }
@@ -212,9 +299,56 @@ function parsePedidos(raw: string): string[] {
   return items
 }
 
+function recortarObjetoJson(s: string, from: number): string | null {
+  let depth = 0
+  let inStr = false
+  let esc = false
+  for (let i = from; i < s.length; i++) {
+    const ch = s[i]
+    if (inStr) {
+      if (esc) {
+        esc = false
+        continue
+      }
+      if (ch === '\\') {
+        esc = true
+        continue
+      }
+      if (ch === '"') inStr = false
+      continue
+    }
+    if (ch === '"') {
+      inStr = true
+      continue
+    }
+    if (ch === '{') depth++
+    else if (ch === '}') {
+      depth--
+      if (depth === 0) return s.slice(from, i + 1)
+    }
+  }
+  return null
+}
+
+/** Isola o primeiro objeto JSON (com "eventos" se houver) de um bloco misto. */
+export function extrairJsonTimeline(raw: string): string | null {
+  const cleaned = String(raw || '').replace(/```(?:json)?/gi, '')
+  const ev = cleaned.search(/"eventos"\s*:/)
+  const from = ev >= 0 ? cleaned.lastIndexOf('{', ev) : cleaned.indexOf('{')
+  if (from < 0) return null
+  return recortarObjetoJson(cleaned, from)
+}
+
+export function removerJsonTimelineDoTexto(s: string): string {
+  const json = extrairJsonTimeline(s)
+  if (!json) return s
+  return s.replace(json, '').replace(/\n{3,}/g, '\n\n').trim()
+}
+
 function parseTimeline(raw: string): TimelineData | null {
+  const jsonStr = extrairJsonTimeline(raw) || String(raw || '').trim()
   try {
-    const json = JSON.parse(raw)
+    const json = JSON.parse(jsonStr)
     if (!json || !Array.isArray(json.eventos)) return null
     const estiloRaw = String(json.estilo || 'horizontal').toLowerCase()
     const estilo: TimelineEstilo =
@@ -314,6 +448,7 @@ export function montarTimelineDataPadrao(
 
 /** Substitui (ou anexa) o bloco <<<TIMELINE>>> no texto gerado pela IA. */
 export function injetarTimelineNoTexto(text: string, data: TimelineData): string {
+  const base = canonicalizarMarcadoresSm(text)
   const json = JSON.stringify(
     {
       nome: data.nome,
@@ -326,13 +461,13 @@ export function injetarTimelineNoTexto(text: string, data: TimelineData): string
     2,
   )
   const blocoTl = `<<<TIMELINE>>>\n${json}\n<<<END_TIMELINE>>>`
-  if (/<<<TIMELINE>>>[\s\S]*?<<<END_TIMELINE>>>/.test(text)) {
-    return text.replace(/<<<TIMELINE>>>[\s\S]*?<<<END_TIMELINE>>>/, blocoTl)
+  if (/<<<TIMELINE>>>[\s\S]*?<<<END_TIMELINE>>>/.test(base)) {
+    return base.replace(/<<<TIMELINE>>>[\s\S]*?<<<END_TIMELINE>>>/, blocoTl)
   }
-  if (text.includes('<<<III_SINTESE_DEPOIS>>>')) {
-    return text.replace('<<<III_SINTESE_DEPOIS>>>', `${blocoTl}\n\n<<<III_SINTESE_DEPOIS>>>`)
+  if (base.includes('<<<III_SINTESE_DEPOIS>>>')) {
+    return base.replace('<<<III_SINTESE_DEPOIS>>>', `${blocoTl}\n\n<<<III_SINTESE_DEPOIS>>>`)
   }
-  return `${text.trim()}\n\n${blocoTl}\n`
+  return `${base.trim()}\n\n${blocoTl}\n`
 }
 
 function normalizarEspacos(s: string): string {
@@ -346,7 +481,7 @@ function normalizarEspacos(s: string): string {
 
 function parasHtml(raw: string, extraClass = ''): string {
   const cls = extraClass ? `sm-para ${extraClass}` : 'sm-para'
-  return limparMarkdownResidual(raw)
+  return limparMarkdownResidual(stripMarcadoresSm(raw))
     .split(/\n\s*\n/)
     .map((p) => p.trim())
     .filter(Boolean)
@@ -533,7 +668,7 @@ function quadroHtml(rows: QuadroRow[]): string {
   return `
     <div class="sm-table-wrap keep-together">
       <div class="sm-table-caption">RESUMO DAS PRINCIPAIS INFORMAÇÕES DO PROCESSO</div>
-      <table class="sm-quadro">
+      <table class="sm-quadro" cellpadding="0" cellspacing="0" width="100%" border="1">
         <tbody>${body}</tbody>
       </table>
     </div>
@@ -574,7 +709,7 @@ function pedidosHtml(items: string[], comIntro = true): string {
         <table class="sm-pedido-item" data-pdf-keep="1" cellpadding="0" cellspacing="0" width="100%" border="0"
           style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:avoid;break-inside:avoid;">
           <tr>
-            <td style="font-size:11.5px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;">
+            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;">
               <span class="sm-rom">${escapar(num)}.</span> ${escapar(limparMarkdownResidual(body))}
             </td>
           </tr>
@@ -602,27 +737,41 @@ function notaDocumentoGeradoHtml(): string {
   `
 }
 
-function planilhaHtml(_raw: string): string {
-  // Compacta — rodapé/nota logo abaixo, sem espaço morto na última página.
+const PLANILHA_PADRAO: QuadroRow[] = [
+  { campo: '1º Mês de benefício', valor: 'R$ 1.518,00' },
+  { campo: '2º Mês de benefício', valor: 'R$ 1.518,00' },
+  { campo: '3º Mês de benefício', valor: 'R$ 1.518,00' },
+  { campo: '4º Mês de benefício', valor: 'R$ 1.518,00' },
+  { campo: 'TOTAL', valor: 'R$ 6.072,00' },
+]
+
+function planilhaHtml(raw: string): string {
+  const parsed = parseQuadro(raw)
+  const rows = parsed.length ? parsed : PLANILHA_PADRAO
+  const notaMatch = raw.match(/nota:\s*(.+)/i)
+  const nota =
+    notaMatch?.[1]?.trim() ||
+    'Referência do valor: quantia devida por fato gerador (cada nascimento)'
+  const body = rows
+    .map((r, i) => {
+      const isTotal = /^total$/i.test(r.campo)
+      const cls = isTotal ? 'total' : i % 2 === 0 ? 'even' : 'odd'
+      return `<tr class="${cls}"><td>${escapar(r.campo)}</td><td class="num" align="right">${escapar(r.valor)}</td></tr>`
+    })
+    .join('')
   return `
     <div class="sm-anexo" style="margin-top:8pt;margin-bottom:0;padding-top:4pt;padding-bottom:0;border-top:0.5pt solid #ccc;page-break-before:auto;break-before:auto;page-break-inside:avoid;break-inside:avoid;">
-      <div class="sm-anexo-title" style="margin:2px 0 6px;font-size:13px;">ANEXO – PLANILHA DE CÁLCULO</div>
+      <div class="sm-anexo-title">ANEXO – PLANILHA DE CÁLCULO</div>
       <div class="sm-table-wrap" style="margin:4px 0 0;">
-        <div class="sm-table-caption" style="padding:5px 10px;">PLANILHA DE CÁLCULO</div>
-        <table class="sm-planilha" cellpadding="0" cellspacing="0" width="100%" border="0" style="width:100%;max-width:100%;border-collapse:collapse;table-layout:fixed;">
+        <div class="sm-table-caption">PLANILHA DE CÁLCULO</div>
+        <table class="sm-planilha" cellpadding="0" cellspacing="0" width="100%" border="1">
           <colgroup>
             <col style="width:65%;" />
             <col style="width:35%;" />
           </colgroup>
-          <tbody>
-            <tr class="even"><td style="padding:5px 10px;color:#1a1a1a;">1º Mês de benefício</td><td align="right" style="padding:5px 10px;text-align:right;color:#1a1a1a;white-space:nowrap;">R$ 1.518,00</td></tr>
-            <tr class="odd"><td style="padding:5px 10px;color:#1a1a1a;">2º Mês de benefício</td><td align="right" style="padding:5px 10px;text-align:right;color:#1a1a1a;white-space:nowrap;">R$ 1.518,00</td></tr>
-            <tr class="even"><td style="padding:5px 10px;color:#1a1a1a;">3º Mês de benefício</td><td align="right" style="padding:5px 10px;text-align:right;color:#1a1a1a;white-space:nowrap;">R$ 1.518,00</td></tr>
-            <tr class="odd"><td style="padding:5px 10px;color:#1a1a1a;">4º Mês de benefício</td><td align="right" style="padding:5px 10px;text-align:right;color:#1a1a1a;white-space:nowrap;">R$ 1.518,00</td></tr>
-            <tr class="total"><td style="padding:5px 10px;background:#c8a951;font-weight:bold;color:#1a1a1a;">TOTAL</td><td align="right" style="padding:5px 10px;text-align:right;background:#c8a951;font-weight:bold;color:#1a1a1a;white-space:nowrap;">R$ 6.072,00</td></tr>
-          </tbody>
+          <tbody>${body}</tbody>
         </table>
-        <p class="sm-nota" style="margin-top:4px;margin-bottom:0;">Referência do valor: quantia devida por fato gerador (cada nascimento) — salário mínimo vigente</p>
+        <p class="sm-nota">${escapar(nota)}</p>
       </div>
     </div>
   `
@@ -644,6 +793,7 @@ function assinaturasHtml(adv: DadosAdvogadoPeticao, fechamentoRaw: string): stri
   const oabNum = String(adv.oab_number || '').trim()
 
   let cards = ''
+  let nCards = 1
   if (nomeAdv || oabNum) {
     const oabLabel = oabUf
       ? `OAB/${oabUf}${oabNum ? ` nº ${oabNum}` : ''}`
@@ -656,6 +806,7 @@ function assinaturasHtml(adv: DadosAdvogadoPeticao, fechamentoRaw: string): stri
       /^[A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç\s.]+\nOAB\/.+$/gm,
     )
     if (oabLines && oabLines.length) {
+      nCards = Math.min(2, oabLines.length)
       cards = oabLines
         .slice(0, 2)
         .map((block) => {
@@ -678,7 +829,7 @@ function assinaturasHtml(adv: DadosAdvogadoPeticao, fechamentoRaw: string): stri
       ${parasHtml(body)}
       <p class="sm-local-data">${escapar(localData)}.</p>
       <table class="sm-sign-row" cellpadding="0" cellspacing="0" width="100%">
-        <tr>${cards}</tr>
+        <tr>${cards.replace(/class="sm-sign-card"/g, `class="sm-sign-card"${nCards === 1 ? ' style="width:100%;"' : ''}`)}</tr>
       </table>
     </div>
   `
@@ -702,7 +853,18 @@ function subheadComBarra(title: string): string {
 }
 
 export function isSmRuralStructured(text: string): boolean {
-  return text.includes('<<<SM_RURAL_V2>>>')
+  const t = canonicalizarMarcadoresSm(text)
+  return (
+    t.includes('<<<SM_RURAL_V2>>>') ||
+    t.includes('<<<TITULO>>>') ||
+    t.includes('<<<I_PRELIMINARES>>>') ||
+    t.includes('<<<II_QUADRO>>>') ||
+    t.includes('<<<V_FUNDAMENTACAO>>>') ||
+    t.includes('<<<VI_PEDIDOS>>>') ||
+    t.includes('<<<FECHAMENTO>>>') ||
+    t.includes('<<<TIMELINE>>>') ||
+    t.includes('<<<QUALIFICACAO>>>')
+  )
 }
 
 export function cssSmRural(comMargens: boolean): string {
@@ -714,10 +876,11 @@ export function cssSmRural(comMargens: boolean): string {
   return `
     .pdf-page.sm-rural {
       font-family: 'Times New Roman', Times, serif;
+      font-size: 12px;
       color: #1a1a1a;
       background: #fff;
       box-sizing: border-box;
-      width: 100%;
+      width: 794px;
       max-width: 794px;
       height: auto;
       min-height: 0;
@@ -726,6 +889,7 @@ export function cssSmRural(comMargens: boolean): string {
       word-wrap: break-word;
       overflow-wrap: break-word;
       white-space: normal;
+      text-transform: none;
       ${pad}
     }
     .pdf-page.sm-rural,
@@ -907,7 +1071,7 @@ export function cssSmRural(comMargens: boolean): string {
     }
 
     .sm-para {
-      font-size: 11.5px;
+      font-size: 12px;
       line-height: 1.65;
       text-align: justify;
       text-indent: 1.25cm;
@@ -916,8 +1080,9 @@ export function cssSmRural(comMargens: boolean): string {
       box-sizing: border-box;
       word-wrap: break-word;
       overflow-wrap: break-word;
+      text-transform: none;
     }
-    .sm-para-qualif { text-indent: 1.25cm; }
+    .sm-para-qualif { text-indent: 1.25cm; text-transform: none; font-size: 12px; font-weight: normal; }
 
     .sm-table-wrap { margin: 10px 0 16px; page-break-inside: avoid; width: 100%; box-sizing: border-box; }
     .sm-table-caption {
@@ -932,10 +1097,12 @@ export function cssSmRural(comMargens: boolean): string {
       box-sizing: border-box;
     }
     table.sm-quadro, table.sm-planilha {
-      width: 100%; border-collapse: collapse; font-size: 10.5px; table-layout: fixed;
+      width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed;
+      border: 1px solid #1a3a5c;
     }
     table.sm-quadro td, table.sm-planilha td {
-      padding: 7px 10px; border-bottom: 1px solid #dde3ec; vertical-align: top;
+      padding: 7px 10px; border: 1px solid #c5d0e0; vertical-align: top;
+      text-transform: none;
     }
     table.sm-quadro tr.even td, table.sm-planilha tr.even td { background: #f5f5f5; }
     table.sm-quadro tr.odd td, table.sm-planilha tr.odd td { background: #ffffff; }
@@ -985,7 +1152,7 @@ export function cssSmRural(comMargens: boolean): string {
     table.sm-provas-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
     table.sm-provas-table tr.even td { background: #f5f5f5; }
     table.sm-provas-table tr.odd td { background: #fff; }
-    table.sm-provas-table td { padding: 6px 10px; font-size: 11.5px; vertical-align: top; }
+    table.sm-provas-table td { padding: 6px 10px; font-size: 12px; vertical-align: top; text-transform: none; }
     table.sm-provas-table td.sm-check {
       color: #15803d; font-weight: bold; width: 22px; text-align: center;
     }
@@ -994,17 +1161,18 @@ export function cssSmRural(comMargens: boolean): string {
     .sm-pedidos-list { list-style: none; padding: 0; margin: 8px 0 0; }
     .sm-pedidos-list li,
     table.sm-pedido-item {
-      font-size: 11.5px; line-height: 1.6; text-align: justify;
+      font-size: 12px; line-height: 1.6; text-align: justify;
       margin: 0 0 10px;
       page-break-inside: avoid !important;
       break-inside: avoid !important;
+      text-transform: none;
     }
     .sm-pedidos-intro { margin-bottom: 8px; }
     .sm-rom { font-weight: bold; margin-right: 4px; }
 
-    .sm-fechamento { margin-top: 12px; margin-bottom: 0; }
+    .sm-fechamento { margin-top: 12px; margin-bottom: 0; text-transform: none; }
     .sm-fecho-bloco { page-break-inside: auto; break-inside: auto; margin-bottom: 0; }
-    .sm-local-data { text-align: right; font-size: 12px; margin: 14px 0 16px; font-weight: 500; }
+    .sm-local-data { text-align: center; font-size: 12px; margin: 14px 0 16px; font-weight: 500; text-transform: none; }
     table.sm-sign-row {
       width: 100%; border-collapse: collapse; table-layout: fixed;
       margin-top: 8px; page-break-inside: avoid;
@@ -1034,8 +1202,8 @@ export function cssSmRural(comMargens: boolean): string {
 }
 
 /**
- * Monta o HTML multipágina do modelo Custódio.
- * Retorna null se o texto não tiver a estrutura <<<SM_RURAL_V2>>>.
+ * Monta o HTML do modelo Custódio a partir dos marcadores da IA.
+ * Tags e JSON cru nunca entram no HTML — só o conteúdo parseado.
  */
 export function montarHtmlSmRural(opts: {
   text: string
@@ -1043,9 +1211,12 @@ export function montarHtmlSmRural(opts: {
   comMargens?: boolean
   estilo?: EstiloPeticao
 }): string | null {
-  if (!isSmRuralStructured(opts.text)) return null
-  // Sanitiza só o miolo dos blocos (mantém delimitadores <<<...>>> intactos)
-  const text = corrigirLocalNoTexto(opts.text, opts.adv).replace(
+  const canonical = canonicalizarMarcadoresSm(
+    corrigirLocalNoTexto(opts.text, opts.adv),
+  )
+  if (!isSmRuralStructured(canonical)) return null
+
+  const text = canonical.replace(
     /(<<<[A-Z0-9_]+>>>)([\s\S]*?)(<<<END_[A-Z0-9_]+>>>)/g,
     (_m, open: string, body: string, close: string) =>
       `${open}${limparMarkdownResidual(body)}${close}`,
@@ -1054,20 +1225,26 @@ export function montarHtmlSmRural(opts: {
   const meta = parseMeta(bloco(text, '<<<META>>>', '<<<END_META>>>'))
   const endereco = bloco(text, '<<<ENDERECO>>>', '<<<END_ENDERECO>>>')
   const qualificacao = bloco(text, '<<<QUALIFICACAO>>>', '<<<END_QUALIFICACAO>>>')
-  const titulo = bloco(text, '<<<TITULO>>>', '<<<SUBTITULO>>>')
-  const subtitulo = bloco(text, '<<<SUBTITULO>>>', '<<<END_TITULO>>>')
+  let titulo = bloco(text, '<<<TITULO>>>', '<<<SUBTITULO>>>')
+  let subtitulo = bloco(text, '<<<SUBTITULO>>>', '<<<END_TITULO>>>')
+  if (!titulo) titulo = bloco(text, '<<<TITULO>>>', '<<<END_TITULO>>>')
   const emFace = bloco(text, '<<<EM_FACE>>>', '<<<END_EM_FACE>>>')
   const preliminares = bloco(text, '<<<I_PRELIMINARES>>>', '<<<END_I>>>')
   const quadro = parseQuadro(bloco(text, '<<<II_QUADRO>>>', '<<<END_II>>>'))
-  const sinteseAntes = bloco(text, '<<<III_SINTESE_ANTES>>>', '<<<END_III_ANTES>>>')
-  const timeline = parseTimeline(bloco(text, '<<<TIMELINE>>>', '<<<END_TIMELINE>>>'))
-  const sinteseDepois = bloco(text, '<<<III_SINTESE_DEPOIS>>>', '<<<END_III_DEPOIS>>>')
+  let sinteseAntes = bloco(text, '<<<III_SINTESE_ANTES>>>', '<<<END_III_ANTES>>>')
+  const timelineRaw = bloco(text, '<<<TIMELINE>>>', '<<<END_TIMELINE>>>')
+  let timeline = parseTimeline(timelineRaw)
+  if (!timeline) timeline = parseTimeline(extrairJsonTimeline(text) || '')
+  let sinteseDepois = bloco(text, '<<<III_SINTESE_DEPOIS>>>', '<<<END_III_DEPOIS>>>')
   const provas = parseProvas(bloco(text, '<<<IV_PROVAS>>>', '<<<END_IV>>>'))
   const provasFecho = bloco(text, '<<<IV_FECHO>>>', '<<<END_IV_FECHO>>>')
   const fund = bloco(text, '<<<V_FUNDAMENTACAO>>>', '<<<END_V>>>')
   const pedidosAll = parsePedidos(bloco(text, '<<<VI_PEDIDOS>>>', '<<<END_VI>>>'))
   const fechamento = bloco(text, '<<<FECHAMENTO>>>', '<<<END_FECHAMENTO>>>')
   const planilha = bloco(text, '<<<PLANILHA>>>', '<<<END_PLANILHA>>>')
+
+  sinteseAntes = removerJsonTimelineDoTexto(sinteseAntes)
+  sinteseDepois = removerJsonTimelineDoTexto(sinteseDepois)
 
   // Divide pedidos: i–vii no bloco principal; viii+ (honorários) junto das assinaturas
   const pedidosP4 = pedidosAll.filter((p) => !/^viii\./i.test(p.trim()))
@@ -1109,8 +1286,6 @@ export function montarHtmlSmRural(opts: {
       .trim()
   }
 
-  // Fluxo CONTÍNUO (sem .sm-sheet com page-break): elimina páginas em branco
-  // e rodapés no meio do texto. Rodapé é desenhado no jsPDF após a captura.
   const corpo = `
     ${cabecalhoSm(opts.adv)}
     <div class="sm-endereco">${escapar(enderecoTexto)}</div>
@@ -1143,10 +1318,11 @@ export function montarHtmlSmRural(opts: {
     ${notaDocumentoGeradoHtml()}
   `
 
-  return `
+  const html = `
     <style>${cssSmRural(opts.comMargens !== false)}</style>
     <div class="pdf-page sm-rural">
       ${corpo}
     </div>
   `
+  return stripMarcadoresSm(html)
 }

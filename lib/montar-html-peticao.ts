@@ -1,6 +1,8 @@
 /**
  * Ponto único de montagem do HTML de petição.
  * Encaminha Salário-Maternidade Segurada Especial ao template Custódio.
+ * Marcadores <<<TAG>>> nunca vazam: ou são parseados no template SM,
+ * ou são removidos antes do gerador genérico.
  */
 
 import {
@@ -12,6 +14,7 @@ import {
   AGENT_SM_RURAL,
   isSmRuralStructured,
   montarHtmlSmRural,
+  stripMarcadoresSm,
 } from '@/lib/peticao-sm-rural'
 
 export function montarHtmlPeticao(opts: {
@@ -33,5 +36,8 @@ export function montarHtmlPeticao(opts: {
     })
     if (dedicated) return dedicated
   }
-  return montarHtmlPeticaoGenerico(opts)
+  return montarHtmlPeticaoGenerico({
+    ...opts,
+    text: stripMarcadoresSm(opts.text),
+  })
 }
