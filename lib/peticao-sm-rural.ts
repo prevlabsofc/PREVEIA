@@ -199,7 +199,67 @@ export function canonicalizarMarcadoresSm(text: string): string {
 export function stripMarcadoresSm(text: string): string {
   return String(text || '')
     .replace(/<<<[^>]*>>>/g, '')
+    .replace(/<<\s*\/?\s*[A-Z0-9_]*\s*>>/gi, '')
+    .replace(/<<\s*>>/g, '')
     .replace(/&lt;&lt;&lt;[^&]*&gt;&gt;&gt;/gi, '')
+    .replace(/&lt;&lt;\s*&gt;&gt;/gi, '')
+}
+
+const TITULO_SM_PADRAO =
+  'AÇÃO PREVIDENCIÁRIA DE CONCESSÃO DE SALÁRIO-MATERNIDADE'
+const SUBTITULO_SM_PADRAO = '(SEGURADA ESPECIAL – AGRICULTORA)'
+
+/** Remove artefatos << >> / tags e deduplica título × subtítulo. */
+function normalizarTituloSubtitulo(
+  tituloRaw: string,
+  subtituloRaw: string,
+): { titulo: string; subtitulo: string } {
+  const limpar = (s: string) =>
+    stripMarcadoresSm(limparMarkdownResidual(s || ''))
+      .replace(/<<\s*>>/g, ' ')
+      .replace(/[<>]{1,}/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+
+  let titulo = limpar(tituloRaw)
+  let subtitulo = limpar(subtituloRaw)
+
+  const parenRe =
+    /\(\s*SEGURADA\s+ESPECIAL\s*[–—\-]\s*AGRICULTORA\s*\)/gi
+  const foundInTitle = titulo.match(parenRe)
+  if (foundInTitle?.[0]) {
+    if (!subtitulo) subtitulo = foundInTitle[0].replace(/\s+/g, ' ').trim()
+    titulo = titulo.replace(parenRe, ' ').replace(/\s{2,}/g, ' ').trim()
+  }
+
+  titulo = titulo
+    .replace(/\bSEGURADA\s+ESPECIAL\s*[–—\-]\s*AGRICULTORA\b/gi, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+
+  if (subtitulo) {
+    const plain = subtitulo.replace(/[()]/g, '').trim()
+    if (plain) {
+      const esc = plain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      titulo = titulo
+        .replace(new RegExp(`\\(?\\s*${esc}\\s*\\)?`, 'gi'), ' ')
+        .replace(/\s{2,}/g, ' ')
+        .trim()
+    }
+  }
+
+  if (!titulo) titulo = TITULO_SM_PADRAO
+  if (!subtitulo) subtitulo = SUBTITULO_SM_PADRAO
+  if (!/^\(/.test(subtitulo)) {
+    subtitulo = `(${subtitulo.replace(/^\(+|\)+$/g, '')})`
+  }
+
+  subtitulo = subtitulo.replace(
+    /(\(\s*SEGURADA\s+ESPECIAL\s*[–—\-]\s*AGRICULTORA\s*\))\s*\1+/gi,
+    '$1',
+  )
+
+  return { titulo, subtitulo }
 }
 
 function proximoMarcadorIndex(text: string, from: number): number {
@@ -585,13 +645,17 @@ function cabecalhoSm(adv: DadosAdvogadoPeticao): string {
   const oabUf = String(adv.oab_uf || adv.estado || '').toUpperCase()
   const oabNum = String(adv.oab_number || '')
   const email = String(adv.email || '')
-  const logoSrc = adv.logo_url ? String(adv.logo_url) : ''
-  // Só renderiza <img> com data-URL (já convertida via /api/logo-data-url).
-  // Sem logo / falha → espaço em branco (sem asterisco / broken-image / iniciais).
-  const logo =
-    logoSrc && logoSrc.startsWith('data:')
-      ? `<img src="${logoSrc}" class="sm-logo" width="110" height="36" alt="" style="height:36px;max-width:110px;width:auto;display:block;border:0;"/>`
-      : `<div class="sm-logo-slot" style="width:110px;height:36px;display:block;" aria-hidden="true"></div>`
+  const logoSrc = adv.logo_url ? String(adv.logo_url).trim() : ''
+  // Só <img> com data-URL válida. Sem logo / falha → espaço vazio (nunca * / texto / broken-image).
+  const logoOk =
+    logoSrc.startsWith('data:image/') &&
+    logoSrc.length > 64 &&
+    !/^data:image\/(?:gif|png|jpeg|jpg|webp|svg\+xml);base64,R0lGODlhAQABAIAAAAAAAP/i.test(
+      logoSrc,
+    )
+  const logo = logoOk
+    ? `<img src="${logoSrc}" class="sm-logo" width="60" height="36" alt="" style="height:36px;max-width:110px;width:auto;display:block;border:0;"/>`
+    : `<div class="sm-logo-slot" style="width:60px;height:36px;display:block;" aria-hidden="true"></div>`
 
   const mailLine = email
     ? `<br/><span style="font-size:9px;color:#1d4ed8;line-height:1.4;">${escapar(email)}</span>`
@@ -698,16 +762,20 @@ function pedidosHtml(items: string[], comIntro = true): string {
   const intro = comIntro
     ? `<p class="sm-para sm-pedidos-intro">Diante do exposto, requer:</p>`
     : ''
-  // Cada item é uma TABLE com page-break-inside:avoid + data-pdf-keep
-  // (html2canvas/fatiamento respeitam melhor que <li>)
+  // Itens curtos: keep juntos. Itens longos: sem data-pdf-keep (evita pág. quase vazia).
   const rows = items
     .map((it) => {
       const m = it.match(/^((?:viii|vii|vi|iv|ix|iii|ii|v|i|x)+)\.\s*([\s\S]*)$/i)
       const num = m ? m[1].toLowerCase() : ''
       const body = m ? m[2] : it
+      const curto = body.trim().length < 280
+      const keepAttr = curto ? ' data-pdf-keep="1"' : ''
+      const breakStyle = curto
+        ? 'page-break-inside:avoid;break-inside:avoid;'
+        : 'page-break-inside:auto;break-inside:auto;'
       return `
-        <table class="sm-pedido-item" data-pdf-keep="1" cellpadding="0" cellspacing="0" width="100%" border="0"
-          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:avoid;break-inside:avoid;">
+        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0"${keepAttr}
+          style="width:100%;border-collapse:collapse;margin:0 0 10px;${breakStyle}">
           <tr>
             <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;">
               <span class="sm-rom">${escapar(num)}.</span> ${escapar(limparMarkdownResidual(body))}
@@ -717,7 +785,7 @@ function pedidosHtml(items: string[], comIntro = true): string {
     })
     .join('')
   return `
-    <div class="sm-pedidos">
+    <div class="sm-pedidos" style="page-break-inside:avoid;break-inside:avoid;">
       ${intro}
       ${rows}
     </div>
@@ -944,7 +1012,7 @@ export function cssSmRural(comMargens: boolean): string {
     .sm-header-logo { width: 24%; vertical-align: middle; text-align: left; padding: 0 8px 0 0; }
     .sm-header-info { width: 76%; vertical-align: middle; text-align: right; padding: 0; }
     .sm-logo { height: 36px; max-height: 36px; max-width: 120px; width: auto; display: block; }
-    .sm-logo-slot { width: 110px; height: 36px; display: block; }
+    .sm-logo-slot { width: 60px; height: 36px; display: block; }
     .sm-office-name {
       font-weight: bold; font-size: 11.5px; color: #0A2540;
       text-transform: uppercase; letter-spacing: 0.3px; line-height: 1.35;
@@ -1159,15 +1227,21 @@ export function cssSmRural(comMargens: boolean): string {
     table.sm-provas-table td.sm-prova-txt { width: auto; }
 
     .sm-pedidos-list { list-style: none; padding: 0; margin: 8px 0 0; }
+    .sm-secao-vi {
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+    }
+    .sm-pedidos {
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
     .sm-pedidos-list li,
     table.sm-pedido-item {
       font-size: 12px; line-height: 1.6; text-align: justify;
       margin: 0 0 10px;
-      page-break-inside: avoid !important;
-      break-inside: avoid !important;
       text-transform: none;
     }
-    .sm-pedidos-intro { margin-bottom: 8px; }
+    .sm-pedidos-intro { margin-bottom: 8px; page-break-after: avoid; }
     .sm-rom { font-weight: bold; margin-right: 4px; }
 
     .sm-fechamento { margin-top: 12px; margin-bottom: 0; text-transform: none; }
@@ -1228,6 +1302,7 @@ export function montarHtmlSmRural(opts: {
   let titulo = bloco(text, '<<<TITULO>>>', '<<<SUBTITULO>>>')
   let subtitulo = bloco(text, '<<<SUBTITULO>>>', '<<<END_TITULO>>>')
   if (!titulo) titulo = bloco(text, '<<<TITULO>>>', '<<<END_TITULO>>>')
+  // Se SUBTITULO ausente e o título já traz o parêntese, normalizarTituloSubtitulo separa.
   const emFace = bloco(text, '<<<EM_FACE>>>', '<<<END_EM_FACE>>>')
   const preliminares = bloco(text, '<<<I_PRELIMINARES>>>', '<<<END_I>>>')
   const quadro = parseQuadro(bloco(text, '<<<II_QUADRO>>>', '<<<END_II>>>'))
@@ -1267,9 +1342,12 @@ export function montarHtmlSmRural(opts: {
   const timelineHtml = renderTimelineHtml(timeline)
   const temTimeline = Boolean(timelineHtml.trim())
 
-  let tituloBruto = limparMarkdownResidual(
-    titulo || 'AÇÃO PREVIDENCIÁRIA DE CONCESSÃO DE SALÁRIO-MATERNIDADE',
-  )
+  let tituloBruto = ''
+  {
+    const norm = normalizarTituloSubtitulo(titulo, subtitulo)
+    tituloBruto = norm.titulo
+    subtitulo = norm.subtitulo
+  }
   // Garante quebra antes de MATERNIDADE (evita corte no hífen pelo canvas)
   tituloBruto = tituloBruto.replace(/\s*SALÁRIO-MATERNIDADE\s*/gi, ' SALÁRIO-MATERNIDADE ')
   const tituloHtml = escapar(tituloBruto.trim())
@@ -1292,7 +1370,7 @@ export function montarHtmlSmRural(opts: {
     ${metaBoxHtml(meta.tipoAcao, meta.juizoDigital, meta.prioridades)}
     ${parasHtml(qualificacao, 'sm-para-qualif')}
     <div class="sm-main-title">${tituloHtml}</div>
-    <div class="sm-sub-title">${escapar(limparMarkdownResidual(subtitulo || '(SEGURADA ESPECIAL – AGRICULTORA)'))}</div>
+    <div class="sm-sub-title">${escapar(subtitulo)}</div>
     ${parasHtml(emFace)}
     ${sectionBar('I – PRELIMINARMENTE')}
     ${subheadComBarra(limparMarkdownResidual(prelimTitle))}
@@ -1308,9 +1386,11 @@ export function montarHtmlSmRural(opts: {
     ${parasHtml(provasFecho)}
     ${sectionBar('V – FUNDAMENTAÇÃO JURÍDICA')}
     ${parasHtml(fund)}
-    ${sectionBar('VI – PEDIDO / REQUERIMENTOS')}
-    ${pedidosHtml(pedidosP4.length ? pedidosP4 : pedidosAll, true)}
-    ${pedidosP5.length ? pedidosHtml(pedidosP5, false) : ''}
+    <div class="sm-secao-vi" style="page-break-inside:avoid;break-inside:avoid;">
+      ${sectionBar('VI – PEDIDO / REQUERIMENTOS')}
+      ${pedidosHtml(pedidosP4.length ? pedidosP4 : pedidosAll, true)}
+      ${pedidosP5.length ? pedidosHtml(pedidosP5, false) : ''}
+    </div>
     <div class="sm-fecho-bloco">
       ${assinaturas}
       ${planilhaHtml(planilha)}

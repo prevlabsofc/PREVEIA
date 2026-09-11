@@ -47,6 +47,19 @@ if (!htmlBad) {
 
 writeFileSync('tmp-sm-malformed.html', `<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body>${htmlBad}</body></html>`)
 
+const DUP_TITULO = FIXTURE_SM_ANA_LUCIA.replace(
+  /<<<TITULO>>>[\s\S]*?<<<END_TITULO>>>/,
+  `<<<TITULO>>>
+AÇÃO PREVIDENCIÁRIA DE CONCESSÃO DE SALÁRIO-MATERNIDADE << >>
+(SEGURADA ESPECIAL – AGRICULTORA)
+<<<SUBTITULO>>>
+(SEGURADA ESPECIAL – AGRICULTORA)
+<<<END_TITULO>>>`,
+)
+const htmlDup = montarHtmlSmRural({ text: DUP_TITULO, adv, comMargens: true }) || ''
+const titleDup = htmlDup.match(/sm-main-title">([\s\S]*?)<\/div>/)?.[1] || ''
+const subDup = htmlDup.match(/sm-sub-title">([\s\S]*?)<\/div>/)?.[1] || ''
+
 const canon = canonicalizarMarcadoresSm('<<<ENDIIANTES>>>\n<<<V_FUNDAMENTACAO>>>')
 
 const checks: [string, boolean][] = [
@@ -69,6 +82,16 @@ const checks: [string, boolean][] = [
   ['seção com uppercase', /\.sm-section-bar[\s\S]*?text-transform:\s*uppercase/.test(html)],
   ['data centralizada', /\.sm-local-data\s*\{[^}]*text-align:\s*center/.test(html)],
   ['logo slot vazio (sem img)', !/<img /.test(html)],
+  [
+    'titulo sem subtítulo duplicado',
+    /sm-main-title">[^<]*SALÁRIO-<br\/>MATERNIDADE<\/div>\s*<div class="sm-sub-title">\(SEGURADA ESPECIAL/.test(
+      html,
+    ) && (html.match(/sm-sub-title">\(SEGURADA ESPECIAL/g) || []).length === 1,
+  ],
+  ['titulo sem artefato <<', !/sm-main-title">[^<]*&lt;/.test(html)],
+  ['dup título limpo', !/&lt;|&gt;|SEGURADA/.test(titleDup) && /SALÁRIO-<br\/>MATERNIDADE/.test(titleDup)],
+  ['dup subtítulo único', subDup === '(SEGURADA ESPECIAL – AGRICULTORA)'],
+  ['seção VI com avoid', html.includes('sm-secao-vi') && html.includes('page-break-inside:avoid')],
   ['canon ENDIIANTES', canon.includes('<<<END_III_ANTES>>>')],
   ['malformed não nulo', Boolean(htmlBad)],
   ['malformed sem tags', !/<<<[A-Z0-9_]+>>>/.test(htmlBad)],

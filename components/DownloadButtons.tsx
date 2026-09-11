@@ -167,11 +167,14 @@ async function urlToDataUrl(url: string): Promise<string | null> {
 async function prepararAdvComLogo(
   adv: DadosAdvogadoPeticao,
 ): Promise<DadosAdvogadoPeticao> {
-  const url = adv.logo_url ? String(adv.logo_url) : ''
-  if (!url) return { ...adv, logo_url: null }
-  if (url.startsWith('data:')) return adv
+  const url = adv.logo_url ? String(adv.logo_url).trim() : ''
+  if (!url || url === '*' || url === 'null' || url === 'undefined') {
+    return { ...adv, logo_url: null }
+  }
+  if (url.startsWith('data:image/') && url.length > 64) return adv
+  if (url.startsWith('data:')) return { ...adv, logo_url: null }
   const dataUrl = await urlToDataUrl(url)
-  return { ...adv, logo_url: dataUrl }
+  return { ...adv, logo_url: dataUrl && dataUrl.startsWith('data:image/') ? dataUrl : null }
 }
 
 /** Converte <img> externos em data-URL para html2canvas não perder o logo (CORS). */
@@ -283,6 +286,12 @@ function corteSemQuebrarKeep(
       if (z.bottom - srcY <= maxSlice) {
         end = z.bottom
       } else if (z.top > srcY + 24) {
+        const fill = z.top - srcY
+        // Evita página quase vazia (ex.: só o item i): se o recuo deixa
+        // menos de ~35% da página, permite cortar dentro do bloco longo.
+        if (fill < maxSlice * 0.35) {
+          break
+        }
         end = z.top
       }
       break

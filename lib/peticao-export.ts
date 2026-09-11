@@ -502,15 +502,14 @@ export function montarCabecalhoHtml(adv: DadosAdvogadoPeticao): string {
   const email = String(adv.email || '')
   const phone = String(adv.whatsapp || adv.phone || '')
   const banner = adv.banner_url
-    ? `<img src="${escaparHtml(String(adv.banner_url))}" class="pdf-banner" alt="Timbre"/>`
+    ? `<img src="${escaparHtml(String(adv.banner_url))}" class="pdf-banner" alt=""/>`
     : ''
-  const fallbackLogo =
-    typeof window !== 'undefined'
-      ? `${window.location.origin}/logo.png`
-      : '/logo.png'
-  const logo = adv.logo_url
-    ? `<img src="${escaparHtml(String(adv.logo_url))}" class="logo" alt="Logo"/>`
-    : `<img src="${fallbackLogo}" class="logo" alt="Marple"/>`
+  const logoSrc = adv.logo_url ? String(adv.logo_url).trim() : ''
+  const logoOk =
+    logoSrc.startsWith('data:image/') && logoSrc.length > 64
+  const logo = logoOk
+    ? `<img src="${escaparHtml(logoSrc)}" class="logo" alt="" style="display:block;"/>`
+    : `<div class="logo-slot" style="width:60px;height:36px;display:block;" aria-hidden="true"></div>`
 
   return `
     ${banner}

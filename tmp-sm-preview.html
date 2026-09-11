@@ -1,0 +1,611 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body>
+    <style>
+    .pdf-page.sm-rural {
+      font-family: 'Times New Roman', Times, serif;
+      font-size: 12px;
+      color: #1a1a1a;
+      background: #fff;
+      box-sizing: border-box;
+      width: 794px;
+      max-width: 794px;
+      height: auto;
+      min-height: 0;
+      overflow-x: clip;
+      overflow-y: visible;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      white-space: normal;
+      text-transform: none;
+      padding: 3cm 2cm 2cm 3cm;
+    }
+    .pdf-page.sm-rural,
+    .pdf-page.sm-rural p,
+    .pdf-page.sm-rural div,
+    .pdf-page.sm-rural td,
+    .pdf-page.sm-rural span,
+    .pdf-page.sm-rural li,
+    .sm-para,
+    .sm-para-qualif,
+    .sm-endereco,
+    .sm-main-title,
+    .sm-sub-title,
+    .sm-section-bar,
+    .sm-subhead,
+    .sm-meta-inner,
+    .sm-meta-tipo,
+    .sm-fechamento,
+    .sm-pedido-item td,
+    .sm-prova-txt,
+    .sm-quadro td,
+    .sm-planilha td {
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      max-width: 100%;
+      white-space: normal;
+      box-sizing: border-box;
+    }
+    .sm-sheet {
+      position: relative;
+      min-height: 0;
+      height: auto;
+      width: 100%;
+      box-sizing: border-box;
+      page-break-inside: auto;
+    }
+    .sm-sheet-inner { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .sm-sheet-main { vertical-align: top; padding: 0; width: 100%; }
+    .sm-sheet-foot { vertical-align: bottom; padding: 16px 0 0; width: 100%; }
+    .sm-body { width: 100%; max-width: 100%; box-sizing: border-box; overflow: hidden; }
+    .sm-sheet:last-child {
+      page-break-after: auto;
+      break-after: auto;
+    }
+    /* Evitar page-break-before no fluxo — causa páginas em branco com html2canvas */
+    .page-break-before { page-break-before: auto; break-before: auto; }
+    .keep-together { page-break-inside: avoid !important; break-inside: avoid !important; }
+
+    /* —— Cabeçalho: TABLE logo | dados (sem flex) —— */
+    .sm-header { margin-bottom: 18px; width: 100%; }
+    .sm-header-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .sm-header-logo { width: 24%; vertical-align: middle; text-align: left; padding: 0 8px 0 0; }
+    .sm-header-info { width: 76%; vertical-align: middle; text-align: right; padding: 0; }
+    .sm-logo { height: 36px; max-height: 36px; max-width: 120px; width: auto; display: block; }
+    .sm-logo-slot { width: 60px; height: 36px; display: block; }
+    .sm-office-name {
+      font-weight: bold; font-size: 11.5px; color: #0A2540;
+      text-transform: uppercase; letter-spacing: 0.3px; line-height: 1.35;
+    }
+    .sm-office-sub { font-size: 9px; color: #444; margin-top: 2px; line-height: 1.4; }
+    .sm-office-mail { font-size: 9px; color: #1d4ed8; margin-top: 1px; }
+    .sm-header-line {
+      border: none; border-top: 1.5px solid #0A2540;
+      margin-top: 8px; width: 100%; height: 0;
+    }
+    .sm-page-top-line {
+      border: none; border-top: 1px solid #999;
+      width: 100%; height: 0; margin: 0 0 14px;
+    }
+
+    /* —— Rodapé: no fluxo do documento (sem fixed/absolute) —— */
+    .sm-footer { margin-top: 0; page-break-inside: avoid; break-inside: avoid; width: 100%; }
+    .sm-footer-line { border: none; border-top: 1px solid #999; width: 100%; height: 0; margin: 0 0 6px; }
+    .sm-footer-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .sm-footer-left {
+      text-align: left; font-weight: 600; font-size: 9px; color: #555; width: 70%;
+    }
+    .sm-footer-right {
+      text-align: right; white-space: nowrap; font-size: 9px; color: #555; width: 30%;
+    }
+
+    .sm-endereco {
+      font-weight: bold;
+      font-size: 12px;
+      text-transform: uppercase;
+      text-align: justify;
+      margin: 22px 0 20px;
+      line-height: 1.55;
+      page-break-after: avoid;
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
+      overflow-wrap: anywhere;
+      word-wrap: break-word;
+    }
+
+    /* —— Meta: tabela 2 cols + borda tracejada via border-style (sem float) —— */
+    .sm-meta-row {
+      width: 100%; border-collapse: collapse; table-layout: fixed;
+      margin: 0 0 14px; page-break-inside: avoid;
+    }
+    .sm-meta-spacer { width: 46%; padding: 0; }
+    .sm-meta-cell { width: 54%; padding: 0; vertical-align: top; text-align: left; }
+    table.sm-meta-box {
+      width: 100%; border-collapse: collapse;
+      border: 1.5px dashed #0A2540;
+      background: #ffffff;
+    }
+    .sm-meta-inner {
+      padding: 10px 12px;
+      font-size: 9.5px;
+      line-height: 1.5;
+      text-align: left;
+      vertical-align: top;
+      color: #1a1a1a;
+      overflow-wrap: anywhere;
+      word-wrap: break-word;
+      max-width: 100%;
+    }
+    .sm-meta-tipo {
+      font-weight: bold; font-size: 10.5px; color: #0A2540;
+      text-transform: uppercase; margin-bottom: 4px; line-height: 1.35;
+      overflow-wrap: anywhere; word-wrap: break-word;
+    }
+    .sm-meta-digital {
+      font-weight: bold; font-size: 10.5px; color: #0A2540; margin-bottom: 8px;
+    }
+    .sm-meta-prio {
+      border-top: 1px dashed #999; padding-top: 6px; margin-top: 4px;
+    }
+    .sm-meta-prio-title {
+      font-weight: bold;
+      text-decoration: underline;
+      margin-bottom: 5px;
+      font-size: 9.5px;
+    }
+    .sm-meta-prio-item { margin: 2px 0; line-height: 1.4; }
+
+    .sm-main-title {
+      text-align: center; font-weight: bold; font-size: 14px;
+      text-transform: uppercase; color: #0A2540; margin: 16px 0 4px;
+      page-break-after: avoid;
+      max-width: 100%;
+      width: 100%;
+      box-sizing: border-box;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+      word-break: normal;
+      hyphens: none;
+    }
+    .sm-sub-title {
+      text-align: center; font-size: 12px; font-weight: bold;
+      margin: 0 0 14px; page-break-after: avoid;
+    }
+
+    .sm-section-bar {
+      background: #2d5f8a;
+      color: #fff;
+      font-weight: bold;
+      font-size: 12px;
+      padding: 8px 14px;
+      margin: 18px 0 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      width: 100%;
+      box-sizing: border-box;
+      page-break-after: avoid;
+      page-break-inside: avoid;
+    }
+    .sm-subhead {
+      font-weight: bold;
+      font-size: 11.5px;
+      color: #1a1a1a;
+      margin: 10px 0 8px;
+      padding: 0;
+      background: none;
+      border: none;
+      page-break-after: avoid;
+    }
+
+    .sm-para {
+      font-size: 12px;
+      line-height: 1.65;
+      text-align: justify;
+      text-indent: 1.25cm;
+      margin: 0 0 10px;
+      width: 100%;
+      box-sizing: border-box;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      text-transform: none;
+    }
+    .sm-para-qualif { text-indent: 1.25cm; text-transform: none; font-size: 12px; font-weight: normal; }
+
+    .sm-table-wrap { margin: 10px 0 16px; page-break-inside: avoid; width: 100%; box-sizing: border-box; }
+    .sm-table-caption {
+      background: #1a3a5c;
+      color: #fff;
+      font-weight: bold;
+      font-size: 10.5px;
+      text-transform: uppercase;
+      padding: 8px 10px;
+      text-align: center;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    table.sm-quadro, table.sm-planilha {
+      width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed;
+      border: 1px solid #1a3a5c;
+    }
+    table.sm-quadro td, table.sm-planilha td {
+      padding: 7px 10px; border: 1px solid #c5d0e0; vertical-align: top;
+      text-transform: none;
+    }
+    table.sm-quadro tr.even td, table.sm-planilha tr.even td { background: #f5f5f5; }
+    table.sm-quadro tr.odd td, table.sm-planilha tr.odd td { background: #ffffff; }
+    table.sm-quadro td.campo { font-weight: bold; width: 42%; color: #1a1a1a; }
+    table.sm-quadro td.valor { font-weight: normal; width: 58%; }
+    table.sm-planilha td.num { text-align: right; white-space: nowrap; width: 35%; }
+    table.sm-planilha tr.total td {
+      background: #c8a951 !important;
+      font-weight: bold;
+      color: #1a1a1a;
+    }
+    .sm-nota {
+      font-size: 9.5px; font-style: italic; color: #555;
+      margin-top: 8px; text-align: center;
+    }
+    .sm-anexo-title {
+      text-align: center; font-weight: bold; font-size: 14px;
+      text-transform: uppercase; margin: 4px 0 8px; color: #0A2540;
+      background: none; padding: 0;
+    }
+
+    .sm-timeline {
+      margin: 14px 0 18px;
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+      -webkit-column-break-inside: avoid;
+    }
+    .sm-timeline svg {
+      display: block; width: 100%; height: auto;
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+    }
+    .sm-timeline-vertical { background: #EEF1F5; border: 1px solid #D0D7E2; padding: 12px 14px; }
+    .sm-tl-title { font-weight: bold; font-size: 11.5px; color: #0A2540; margin-bottom: 10px; text-transform: uppercase; }
+    .sm-tl-table { width: 100%; border-collapse: collapse; }
+    .sm-tl-table td { padding: 8px 6px; vertical-align: top; border-bottom: 1px solid #d8dee8; }
+    .sm-tl-num {
+      font-weight: bold; color: #fff; background: #0A2540;
+      text-align: center; width: 22px; height: 22px;
+      line-height: 22px; font-size: 11px;
+    }
+    .sm-tl-data { width: 110px; font-size: 10.5px; color: #555; white-space: nowrap; }
+    .sm-tl-titulo { font-weight: bold; font-size: 11.5px; color: #0A2540; }
+    .sm-tl-detalhe { font-size: 10px; color: #666; margin-top: 2px; }
+
+    .sm-provas { margin: 8px 0; }
+    table.sm-provas-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    table.sm-provas-table tr.even td { background: #f5f5f5; }
+    table.sm-provas-table tr.odd td { background: #fff; }
+    table.sm-provas-table td { padding: 6px 10px; font-size: 12px; vertical-align: top; text-transform: none; }
+    table.sm-provas-table td.sm-check {
+      color: #15803d; font-weight: bold; width: 22px; text-align: center;
+    }
+    table.sm-provas-table td.sm-prova-txt { width: auto; }
+
+    .sm-pedidos-list { list-style: none; padding: 0; margin: 8px 0 0; }
+    .sm-secao-vi {
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+    }
+    .sm-pedidos {
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .sm-pedidos-list li,
+    table.sm-pedido-item {
+      font-size: 12px; line-height: 1.6; text-align: justify;
+      margin: 0 0 10px;
+      text-transform: none;
+    }
+    .sm-pedidos-intro { margin-bottom: 8px; page-break-after: avoid; }
+    .sm-rom { font-weight: bold; margin-right: 4px; }
+
+    .sm-fechamento { margin-top: 12px; margin-bottom: 0; text-transform: none; }
+    .sm-fecho-bloco { page-break-inside: auto; break-inside: auto; margin-bottom: 0; }
+    .sm-local-data { text-align: center; font-size: 12px; margin: 14px 0 16px; font-weight: 500; text-transform: none; }
+    table.sm-sign-row {
+      width: 100%; border-collapse: collapse; table-layout: fixed;
+      margin-top: 8px; page-break-inside: avoid;
+    }
+    td.sm-sign-card { text-align: center; vertical-align: top; padding: 0 12px; width: 50%; }
+    .sm-sign-line { border-top: 1px solid #222; margin: 0 8px 8px; height: 0; }
+    .sm-sign-name { font-weight: bold; font-size: 11.5px; text-transform: uppercase; }
+    .sm-sign-oab { font-size: 10px; color: #333; margin-top: 2px; }
+
+    .sm-doc-fecho-wrap {
+      margin-top: 10pt;
+      padding-top: 8pt;
+      min-height: 0;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .sm-doc-gerado {
+      text-align: center;
+      font-size: 9px;
+      color: #888;
+      font-style: italic;
+      border-top: 0.5pt solid #ddd;
+      padding-top: 10pt;
+      line-height: 1.4;
+    }
+  </style>
+    <div class="pdf-page sm-rural">
+      
+    
+    <div class="sm-header">
+      <table class="sm-header-table" cellpadding="0" cellspacing="0" width="100%" border="0" style="width:100%;max-width:100%;border-collapse:collapse;table-layout:fixed;">
+        <colgroup>
+          <col style="width:130px;" />
+          <col style="width:auto;" />
+        </colgroup>
+        <tr>
+          <td width="130" valign="middle" align="left" style="width:130px;vertical-align:middle;text-align:left;padding:0;overflow:hidden;"><div class="sm-logo-slot" style="width:60px;height:36px;display:block;" aria-hidden="true"></div></td>
+          <td valign="middle" align="right" style="vertical-align:middle;text-align:right;padding:0 0 0 10px;overflow:hidden;">
+            <p align="right" style="margin:0;padding:0;text-align:right;font-family:'Times New Roman',Times,serif;">
+              <span style="font-weight:bold;font-size:11.5px;text-transform:uppercase;line-height:1.35;color:#0A2540;">Prev Labs</span><br/>
+              <span style="font-size:9px;color:#444;line-height:1.4;">OAB/MA n° 12345</span><br/><span style="font-size:9px;color:#1d4ed8;line-height:1.4;">contato@prevlabs.com.br</span>
+            </p>
+          </td>
+        </tr>
+      </table>
+      <div class="sm-header-line"></div>
+    </div>
+  
+    <div class="sm-endereco">AO JUÍZO FEDERAL DA VARA DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DA COMARCA DE SÃO LUÍS/MA</div>
+    
+    <table class="sm-meta-row" cellpadding="0" cellspacing="0">
+      <tr>
+        <td class="sm-meta-spacer">&nbsp;</td>
+        <td class="sm-meta-cell">
+          <table class="sm-meta-box" cellpadding="0" cellspacing="0">
+            <tr><td class="sm-meta-inner">
+              <div class="sm-meta-tipo">SALÁRIO MATERNIDADE - SEGURADO ESPECIAL</div>
+              <div class="sm-meta-digital">JUÍZO 100% DIGITAL</div>
+              <div class="sm-meta-prio">
+                <div class="sm-meta-prio-title">Prioridade Legal na tramitação processual:</div>
+                <div class="sm-meta-prio-item">( ) Idoso(a) maior de 60 anos – Lei 10.741/2003;</div>
+                <div class="sm-meta-prio-item">( ) Deficiente – Lei 12.008/2009 – Laudo em anexo;</div>
+                <div class="sm-meta-prio-item">( ) Menor nos termos do ECA – Lei 8.069/1990;</div>
+              </div>
+            </td></tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  
+    <p class="sm-para sm-para-qualif" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">ANA LÚCIA FERREIRA, brasileira, agricultora, nascida em 15/03/1995, RG 1234567 SSP/MA, CPF 000.000.000-00, residente e domiciliada na Zona Rural, Município de São Luís/MA, por intermédio de seus procuradores, vem, respeitosamente, à presença de Vossa Excelência, propor a presente</p>
+    <div class="sm-main-title">AÇÃO PREVIDENCIÁRIA DE CONCESSÃO DE SALÁRIO-<br/>MATERNIDADE</div>
+    <div class="sm-sub-title">(SEGURADA ESPECIAL – AGRICULTORA)</div>
+    <p class="sm-para" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">Em face do INSTITUTO NACIONAL DO SEGURO SOCIAL – INSS, autarquia federal, a ser citado na Procuradoria Federal na comarca de São Luís/MA.</p>
+    <div class="sm-section-bar keep-together">I – PRELIMINARMENTE</div>
+    <div class="sm-subhead keep-together">DA GRATUIDADE DA JUSTIÇA:</div>
+    <p class="sm-para" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">A autora declara hipossuficiência nos termos do art. 5º, LXXIV, da CF/88 e da Lei 1.060/50, requerendo os benefícios da justiça gratuita.</p>
+    <div class="sm-section-bar keep-together">II – QUADRO SINÓPTICO</div>
+    
+    <div class="sm-table-wrap keep-together">
+      <div class="sm-table-caption">RESUMO DAS PRINCIPAIS INFORMAÇÕES DO PROCESSO</div>
+      <table class="sm-quadro" cellpadding="0" cellspacing="0" width="100%" border="1">
+        <tbody>
+      <tr class="even">
+        <td class="campo">Nome</td>
+        <td class="valor">ANA LÚCIA FERREIRA</td>
+      </tr>
+      <tr class="odd">
+        <td class="campo">Idade no Req. Adm.</td>
+        <td class="valor">29</td>
+      </tr>
+      <tr class="even">
+        <td class="campo">Pedido</td>
+        <td class="valor">Salário-Maternidade – Segurado Especial</td>
+      </tr>
+      <tr class="odd">
+        <td class="campo">Criança</td>
+        <td class="valor">João Ferreira</td>
+      </tr>
+      <tr class="even">
+        <td class="campo">Data de Nascimento</td>
+        <td class="valor">10/01/2025</td>
+      </tr>
+      <tr class="odd">
+        <td class="campo">Data do Req. Adm.</td>
+        <td class="valor">20/02/2025</td>
+      </tr>
+      <tr class="even">
+        <td class="campo">NB</td>
+        <td class="valor">123.456.789-0</td>
+      </tr>
+      <tr class="odd">
+        <td class="campo">Situação/Decisão INSS</td>
+        <td class="valor">Indeferido</td>
+      </tr>
+      <tr class="even">
+        <td class="campo">Data do Indef. Adm.</td>
+        <td class="valor">15/03/2025</td>
+      </tr>
+      <tr class="odd">
+        <td class="campo">Motivo INSS</td>
+        <td class="valor">Ausência de qualidade de segurado especial</td>
+      </tr>
+      <tr class="even">
+        <td class="campo">Tempo de trabalho antes do parto</td>
+        <td class="valor">Mais de 12 meses</td>
+      </tr>
+      <tr class="odd">
+        <td class="campo">Período de Segurado Especial declarado</td>
+        <td class="valor">2018 a 2025</td>
+      </tr>
+      <tr class="even">
+        <td class="campo">Ponto controvertido</td>
+        <td class="valor">Qualidade de segurada especial</td>
+      </tr>
+      <tr class="odd">
+        <td class="campo">Benefício anterior</td>
+        <td class="valor">Não consta</td>
+      </tr>
+      <tr class="even">
+        <td class="campo">Período averbado no CNIS</td>
+        <td class="valor">Não consta</td>
+      </tr>
+      <tr class="odd">
+        <td class="campo">Vínculo urbano</td>
+        <td class="valor">Não possui</td>
+      </tr></tbody>
+      </table>
+    </div>
+  
+    <div class="sm-section-bar keep-together">III – SÍNTESE DO CONTEXTO FÁTICO</div>
+    <p class="sm-para" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">A autora labora em regime de economia familiar na zona rural do município, dedicando-se ao cultivo de mandioca e milho, sem empregados permanentes. Sustenta a família com o produto da lavoura, em condição típica de segurada especial.</p>
+    
+    <p class="sm-para" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">Em 10/01/2025 nasceu o filho da autora. Durante o período gestacional manteve-se no trabalho rural. Requereu administrativamente o salário-maternidade, indeferido pelo INSS sem lastro fático adequado.</p>
+    <div class="sm-section-bar keep-together">IV – DAS PROVAS JUNTADAS AOS AUTOS</div>
+    
+    <div class="sm-provas keep-together">
+      <table class="sm-provas-table" cellpadding="0" cellspacing="0" width="100%">
+        
+          <tr class="even">
+            <td class="sm-check">✓</td>
+            <td class="sm-prova-txt">Certidão de nascimento do filho</td>
+          </tr>
+          <tr class="odd">
+            <td class="sm-check">✓</td>
+            <td class="sm-prova-txt">Documentos de identificação da autora</td>
+          </tr>
+          <tr class="even">
+            <td class="sm-check">✓</td>
+            <td class="sm-prova-txt">Declaração de exercício de atividade rural</td>
+          </tr>
+          <tr class="odd">
+            <td class="sm-check">✓</td>
+            <td class="sm-prova-txt">Notas fiscais de produtor</td>
+          </tr>
+          <tr class="even">
+            <td class="sm-check">✓</td>
+            <td class="sm-prova-txt">Contratos de parceria agrícola</td>
+          </tr>
+      </table>
+    </div>
+  
+    <p class="sm-para" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">As provas materiais, conjugadas com a prova testemunhal a ser produzida em audiência, comprovam o exercício de atividade rural em regime de economia familiar e o preenchimento da carência.</p>
+    <div class="sm-section-bar keep-together">V – FUNDAMENTAÇÃO JURÍDICA</div>
+    <p class="sm-para" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">O salário-maternidade do segurado especial encontra amparo no art. 71 e no art. 39, parágrafo único, da Lei 8.213/91, bem como no art. 7º, XVIII, da CF/88.</p><p class="sm-para" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">O STF, nas ADIs 2110 e 2111 (28/03/2024), reafirmou a proteção à maternidade.</p><p class="sm-para" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">A jurisprudência do STJ, dos TRFs e da TNU é firme no sentido de que a prova material contemporânea, ainda que escassa, pode ser complementada por prova testemunhal.</p>
+    <div class="sm-secao-vi" style="page-break-inside:avoid;break-inside:avoid;">
+      <div class="sm-section-bar keep-together">VI – PEDIDO / REQUERIMENTOS</div>
+      
+    <div class="sm-pedidos" style="page-break-inside:avoid;break-inside:avoid;">
+      <p class="sm-para sm-pedidos-intro">Diante do exposto, requer:</p>
+      
+        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0" data-pdf-keep="1"
+          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:avoid;break-inside:avoid;">
+          <tr>
+            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;">
+              <span class="sm-rom">i.</span> Que todas as comunicações processuais sejam feitas em nome dos advogados constituídos, nos termos do art. 272, §5º, do CPC
+            </td>
+          </tr>
+        </table>
+        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0" data-pdf-keep="1"
+          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:avoid;break-inside:avoid;">
+          <tr>
+            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;">
+              <span class="sm-rom">ii.</span> A procedência do pedido, com a concessão do salário-maternidade
+            </td>
+          </tr>
+        </table>
+        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0" data-pdf-keep="1"
+          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:avoid;break-inside:avoid;">
+          <tr>
+            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;">
+              <span class="sm-rom">iii.</span> A averbação do período no CNIS
+            </td>
+          </tr>
+        </table>
+        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0" data-pdf-keep="1"
+          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:avoid;break-inside:avoid;">
+          <tr>
+            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;">
+              <span class="sm-rom">iv.</span> A citação da ré e a juntada do processo administrativo NB
+            </td>
+          </tr>
+        </table>
+        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0" data-pdf-keep="1"
+          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:avoid;break-inside:avoid;">
+          <tr>
+            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;">
+              <span class="sm-rom">v.</span> O pagamento de 120 dias de benefício, com correção monetária e juros
+            </td>
+          </tr>
+        </table>
+        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0" data-pdf-keep="1"
+          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:avoid;break-inside:avoid;">
+          <tr>
+            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;">
+              <span class="sm-rom">vi.</span> A designação de audiência UNA
+            </td>
+          </tr>
+        </table>
+        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0" data-pdf-keep="1"
+          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:avoid;break-inside:avoid;">
+          <tr>
+            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;">
+              <span class="sm-rom">vii.</span> A concessão da justiça gratuita
+            </td>
+          </tr>
+        </table>
+    </div>
+  
+      
+    <div class="sm-pedidos" style="page-break-inside:avoid;break-inside:avoid;">
+      
+      
+        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0" data-pdf-keep="1"
+          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:avoid;break-inside:avoid;">
+          <tr>
+            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;">
+              <span class="sm-rom">viii.</span> O destaque de honorários contratuais de 30% em favor do escritório
+            </td>
+          </tr>
+        </table>
+    </div>
+  
+    </div>
+    <div class="sm-fecho-bloco">
+      
+    <div class="sm-fechamento">
+      <p class="sm-para" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">Protesta o alegado por todos os meios admitidos em direito, especialmente o depoimento pessoal da parte autora e das testemunhas que comparecerão em audiência, independente de intimação.</p><p class="sm-para" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">Dá-se à causa o valor de R$ 6.072,00 (seis mil e setenta e dois reais), renunciando-se a eventual excedente da alçada do Juizado Especial Federal, especificamente para fins de fixação da competência.</p><p class="sm-para" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">Termos em que, pede e espera deferimento.</p>
+      <p class="sm-local-data">São Luís/MA, 11 de setembro de 2026.</p>
+      <table class="sm-sign-row" cellpadding="0" cellspacing="0" width="100%">
+        <tr>
+    <td class="sm-sign-card" style="width:100%;">
+      <div class="sm-sign-line"></div>
+      <div class="sm-sign-name">Prev Labs</div>
+      <div class="sm-sign-oab">OAB/MA nº 12345</div>
+    </td></tr>
+      </table>
+    </div>
+  
+      
+    <div class="sm-anexo" style="margin-top:8pt;margin-bottom:0;padding-top:4pt;padding-bottom:0;border-top:0.5pt solid #ccc;page-break-before:auto;break-before:auto;page-break-inside:avoid;break-inside:avoid;">
+      <div class="sm-anexo-title">ANEXO – PLANILHA DE CÁLCULO</div>
+      <div class="sm-table-wrap" style="margin:4px 0 0;">
+        <div class="sm-table-caption">PLANILHA DE CÁLCULO</div>
+        <table class="sm-planilha" cellpadding="0" cellspacing="0" width="100%" border="1">
+          <colgroup>
+            <col style="width:65%;" />
+            <col style="width:35%;" />
+          </colgroup>
+          <tbody><tr class="even"><td>1º Mês de benefício</td><td class="num" align="right">R$ 1.518,00</td></tr><tr class="odd"><td>2º Mês de benefício</td><td class="num" align="right">R$ 1.518,00</td></tr><tr class="even"><td>3º Mês de benefício</td><td class="num" align="right">R$ 1.518,00</td></tr><tr class="odd"><td>4º Mês de benefício</td><td class="num" align="right">R$ 1.518,00</td></tr><tr class="total"><td>TOTAL</td><td class="num" align="right">R$ 6.072,00</td></tr></tbody>
+        </table>
+        <p class="sm-nota">Referência do valor: quantia devida por fato gerador (cada nascimento)</p>
+      </div>
+    </div>
+  
+    </div>
+    
+    <div class="sm-doc-fecho-wrap">
+      <div class="sm-doc-gerado">Documento gerado em 11 de setembro de 2026 pela plataforma Marple</div>
+    </div>
+  
+  
+    </div>
+  </body></html>
