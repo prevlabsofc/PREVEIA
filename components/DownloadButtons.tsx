@@ -177,7 +177,16 @@ async function prepararAdvComLogo(
   return { ...adv, logo_url: dataUrl && dataUrl.startsWith('data:image/') ? dataUrl : null }
 }
 
-/** Converte <img> externos em data-URL para html2canvas não perder o logo (CORS). */
+/** Substitui <img> por slot vazio (evita CORS / broken-image no html2canvas). */
+function substituirImgPorSlot(img: HTMLImageElement): void {
+  const slot = document.createElement('div')
+  slot.className = 'sm-logo-slot'
+  slot.setAttribute('aria-hidden', 'true')
+  slot.style.cssText = 'width:60px;height:36px;display:block;'
+  img.replaceWith(slot)
+}
+
+/** Converte <img> externos em data-URL; o que não for data: vira slot vazio. */
 async function inlineImagesAsDataUrls(root: HTMLElement): Promise<void> {
   const imgs = Array.from(root.querySelectorAll('img'))
   await Promise.all(
@@ -185,22 +194,19 @@ async function inlineImagesAsDataUrls(root: HTMLElement): Promise<void> {
       const src = img.getAttribute('src') || ''
       if (!src || src.startsWith('data:')) return
       const dataUrl = await urlToDataUrl(src)
-      if (dataUrl) {
+      if (dataUrl?.startsWith('data:')) {
         img.setAttribute('src', dataUrl)
         img.removeAttribute('crossorigin')
       } else {
-        // Remove img quebrada — espaço vazio, sem asterisco/broken-image
-        img.style.display = 'none'
-        img.removeAttribute('src')
-        img.alt = ''
-        const slot = document.createElement('div')
-        slot.className = 'sm-logo-slot'
-        slot.setAttribute('aria-hidden', 'true')
-        slot.style.cssText = 'width:60px;height:36px;display:block;'
-        img.replaceWith(slot)
+        substituirImgPorSlot(img)
       }
     }),
   )
+  // Passo final: qualquer img ainda sem data: (externa/quebrada) → slot vazio
+  root.querySelectorAll('img').forEach((img) => {
+    const src = img.getAttribute('src') || ''
+    if (!src.startsWith('data:')) substituirImgPorSlot(img as HTMLImageElement)
+  })
 }
 
 /** Espera todas as imagens do container (ou timeout) antes do html2canvas. */
@@ -260,8 +266,9 @@ function desenharRodapesPdf(
  */
 function coletarZonasKeep(pageEl: HTMLElement, scale: number): { top: number; bottom: number }[] {
   const rootRect = pageEl.getBoundingClientRect()
-  // Só keep explícito + timeline. Pedidos fluem com orphans/widows no CSS.
-  const nodes = pageEl.querySelectorAll('[data-pdf-keep], .sm-timeline')
+  // Só keep explícito + timeline + barras de seção (evita cortar "III – SÍNTESE…").
+  // Pedidos fluem com orphans/widows no CSS.
+  const nodes = pageEl.querySelectorAll('[data-pdf-keep], .sm-timeline, .sm-section-bar')
   return Array.from(nodes)
     .map((node) => {
       const el = node as HTMLElement
@@ -426,36 +433,47 @@ async function gerarPdfBlob(
   })
 
   const W = A4_WIDTH_PX
+  // Offscreen visível ao layout engine (NÃO display:none — html2canvas precisa medir)
   const container = document.createElement('div')
   container.setAttribute('data-pdf-capture', '1')
   container.style.cssText = [
-    'position:fixed',
-    'left:-10000px',
+    'position:absolute',
+    'left:-9999px',
     'top:0',
     `width:${W}px`,
     `max-width:${W}px`,
     'min-width:0',
     'overflow:visible',
+    'opacity:1',
+    'visibility:visible',
     'background:#fff',
     'box-sizing:border-box',
+    'pointer-events:none',
+    'z-index:-1',
   ].join(';')
   container.innerHTML = html
   document.body.appendChild(container)
 
   try {
-    const pageEl = (container.querySelector('.pdf-page') as HTMLElement) || container
+    // Elemento com TODO o conteúdo montado (.pdf-page / .sm-rural)
+    const pageEl =
+      (container.querySelector('.pdf-page.sm-rural') as HTMLElement) ||
+      (container.querySelector('.pdf-page') as HTMLElement) ||
+      container
     const forceA4 = (el: HTMLElement) => {
       el.style.setProperty('width', `${W}px`, 'important')
       el.style.setProperty('max-width', `${W}px`, 'important')
       el.style.setProperty('min-width', '0', 'important')
       el.style.setProperty('box-sizing', 'border-box', 'important')
-      // visible: overflow:hidden cortava pedidos / seções longas no canvas
+      // visible: overflow:hidden cortava pedidos / seções / títulos no canvas
       el.style.setProperty('overflow', 'visible', 'important')
       el.style.setProperty('overflow-x', 'visible', 'important')
       el.style.setProperty('overflow-y', 'visible', 'important')
       el.style.setProperty('height', 'auto', 'important')
       el.style.setProperty('min-height', '0', 'important')
       el.style.setProperty('max-height', 'none', 'important')
+      el.style.setProperty('opacity', '1', 'important')
+      el.style.setProperty('visibility', 'visible', 'important')
       el.style.setProperty('background', '#fff', 'important')
       el.style.setProperty('padding-top', '0', 'important')
       el.style.setProperty('padding-bottom', '0', 'important')
@@ -466,12 +484,29 @@ async function gerarPdfBlob(
       .querySelectorAll('.sm-footer, .pdf-footer, [data-pdf-footer], .sm-sheet-foot')
       .forEach((n) => n.remove())
 
+    // Garantir títulos de seção sem clipping antes da captura
+    pageEl.querySelectorAll('.sm-section-bar').forEach((node) => {
+      const n = node as HTMLElement
+      n.style.setProperty('white-space', 'normal', 'important')
+      n.style.setProperty('word-wrap', 'break-word', 'important')
+      n.style.setProperty('overflow-wrap', 'anywhere', 'important')
+      n.style.setProperty('overflow', 'visible', 'important')
+      n.style.setProperty('max-height', 'none', 'important')
+      n.style.setProperty('height', 'auto', 'important')
+      n.style.setProperty('width', '100%', 'important')
+      n.style.setProperty('box-sizing', 'border-box', 'important')
+    })
+
     await inlineImagesAsDataUrls(container)
     await waitForImages(container)
     await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))
+    // Delay obrigatório: layout/fonts/imagens estabilizam antes do html2canvas
+    await new Promise<void>((resolve) => setTimeout(resolve, 1000))
 
     // Zonas que não podem ser cortadas no meio (itens de requerimento)
     const keepZones = coletarZonasKeep(pageEl, 2)
+
+    console.log('html2canvas element:', pageEl, pageEl.innerHTML.length)
 
     const canvas = await html2canvas(pageEl, {
       scale: 2,
@@ -480,8 +515,8 @@ async function gerarPdfBlob(
       useCORS: true,
       allowTaint: true,
       backgroundColor: '#ffffff',
-      logging: false,
-      imageTimeout: 8000,
+      logging: true,
+      imageTimeout: 15000,
       scrollX: 0,
       scrollY: 0,
       x: 0,
@@ -502,6 +537,18 @@ async function gerarPdfBlob(
             slot.style.cssText = 'width:60px;height:36px;display:block;'
             img.replaceWith(slot)
           }
+        })
+        el.querySelectorAll('.sm-section-bar').forEach((node) => {
+          const n = node as HTMLElement
+          if (!n.style) return
+          n.style.setProperty('white-space', 'normal', 'important')
+          n.style.setProperty('word-wrap', 'break-word', 'important')
+          n.style.setProperty('overflow-wrap', 'anywhere', 'important')
+          n.style.setProperty('overflow', 'visible', 'important')
+          n.style.setProperty('max-height', 'none', 'important')
+          n.style.setProperty('height', 'auto', 'important')
+          n.style.setProperty('width', '100%', 'important')
+          n.style.setProperty('box-sizing', 'border-box', 'important')
         })
         el.querySelectorAll(
           '.sm-pedidos, .sm-secao-vi, .sm-fecho-bloco, .sm-para, .sm-body, .pdf-page.sm-rural',

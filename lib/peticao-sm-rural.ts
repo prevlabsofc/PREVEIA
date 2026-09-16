@@ -581,7 +581,8 @@ function parasHtml(raw: string, extraClass = ''): string {
 export function renderTimelineSvg(data: TimelineData): string {
   const w = 720
   const h = 260
-  const padX = 48
+  // padX maior + text-anchor start/end nos extremos evita cortar labels nas bordas
+  const padX = 88
   const lineY = 130
   const events = data.eventos.length
     ? data.eventos
@@ -600,19 +601,27 @@ export function renderTimelineSvg(data: TimelineData): string {
     const textY = above ? lineY - 52 : lineY + 38
     const detailY = above ? lineY - 34 : lineY + 56
     const dataY = above ? lineY - 70 : lineY + 74
+    // Extremidades: âncora para dentro do canvas (ponto 1 → start, último → end)
+    const isFirst = i === 0
+    const isLast = i === n - 1 && n > 1
+    const labelAnchor = isFirst ? 'start' : isLast ? 'end' : 'middle'
+    const labelX = isFirst ? x - 6 : isLast ? x + 6 : x
+    const titleSize = n >= 5 ? 9.5 : 10
+    const dataSize = n >= 5 ? 9 : 9.5
+    const detailSize = 8.5
 
     nodes += `
       <circle cx="${x}" cy="${cy}" r="14" fill="#0A2540" stroke="#D4AF37" stroke-width="2"/>
       <text x="${x}" y="${cy + 5}" text-anchor="middle" fill="#fff" font-size="11" font-family="Arial,sans-serif" font-weight="700">${i + 1}</text>
-      <text x="${x}" y="${dataY}" text-anchor="middle" fill="#555" font-size="10" font-family="Arial,sans-serif">${escapar(ev.data)}</text>
-      <text x="${x}" y="${textY}" text-anchor="middle" fill="#0A2540" font-size="11" font-family="Arial,sans-serif" font-weight="700">${escapar(ev.titulo)}</text>
-      ${ev.detalhe ? `<text x="${x}" y="${detailY}" text-anchor="middle" fill="#666" font-size="9" font-family="Arial,sans-serif">${escapar(ev.detalhe)}</text>` : ''}
+      <text x="${labelX}" y="${dataY}" text-anchor="${labelAnchor}" fill="#555" font-size="${dataSize}" font-family="Arial,sans-serif">${escapar(ev.data)}</text>
+      <text x="${labelX}" y="${textY}" text-anchor="${labelAnchor}" fill="#0A2540" font-size="${titleSize}" font-family="Arial,sans-serif" font-weight="700">${escapar(ev.titulo)}</text>
+      ${ev.detalhe ? `<text x="${labelX}" y="${detailY}" text-anchor="${labelAnchor}" fill="#666" font-size="${detailSize}" font-family="Arial,sans-serif">${escapar(ev.detalhe)}</text>` : ''}
     `
   })
 
   return `
-    <div class="sm-timeline keep-together" data-pdf-keep="1" style="page-break-inside:avoid;break-inside:avoid;">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="100%" height="${h}" role="img" aria-label="${escapar(title)}">
+    <div class="sm-timeline keep-together" data-pdf-keep="1" style="page-break-inside:avoid;break-inside:avoid;overflow:visible;overflow-x:visible;width:100%;box-sizing:border-box;">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="100%" height="${h}" overflow="visible" style="overflow:visible;" role="img" aria-label="${escapar(title)}">
         <rect x="0" y="0" width="${w}" height="${h}" rx="12" ry="12" fill="#EEF1F5" stroke="#D0D7E2"/>
         <text x="16" y="28" fill="#0A2540" font-size="12" font-family="Arial,sans-serif" font-weight="700">${escapar(title)}</text>
         <line x1="${padX}" y1="${lineY}" x2="${w - padX}" y2="${lineY}" stroke="#0A2540" stroke-width="2.5"/>
@@ -1151,10 +1160,19 @@ export function cssSmRural(comMargens: boolean): string {
       text-transform: uppercase;
       letter-spacing: 0.4px;
       width: 100%;
+      max-width: 100%;
       box-sizing: border-box;
+      white-space: normal;
+      word-wrap: break-word;
+      overflow-wrap: anywhere;
+      overflow: visible;
+      height: auto;
+      max-height: none;
+      text-overflow: unset;
       page-break-after: avoid;
       page-break-inside: avoid;
       border-left: none;
+      line-height: 1.35;
     }
     .sm-subhead {
       font-weight: bold;
@@ -1238,12 +1256,21 @@ export function cssSmRural(comMargens: boolean): string {
 
     .sm-timeline {
       margin: 14px 0 18px;
+      width: 100%;
+      box-sizing: border-box;
+      overflow: visible;
+      overflow-x: visible;
+      overflow-y: visible;
       page-break-inside: avoid !important;
       break-inside: avoid !important;
       -webkit-column-break-inside: avoid;
     }
     .sm-timeline svg {
-      display: block; width: 100%; height: auto;
+      display: block;
+      width: 100%;
+      height: auto;
+      overflow: visible;
+      max-width: 100%;
       page-break-inside: avoid !important;
       break-inside: avoid !important;
     }

@@ -308,8 +308,21 @@ export function ConfigurarTimelineSm({
               }}
             >
               <style>{`
-                .sm-timeline { margin: 8px 0; }
-                .sm-timeline svg { display: block; width: 100%; height: auto; }
+                .sm-timeline {
+                  margin: 8px 0;
+                  width: 100%;
+                  box-sizing: border-box;
+                  overflow: visible;
+                  overflow-x: visible;
+                  overflow-y: visible;
+                }
+                .sm-timeline svg {
+                  display: block;
+                  width: 100%;
+                  height: auto;
+                  overflow: visible;
+                  max-width: 100%;
+                }
                 .sm-timeline-vertical { background: #EEF1F5; border: 1px solid #D0D7E2; border-radius: 10px; padding: 12px 14px; }
                 .sm-tl-title { font-weight: bold; font-size: 11.5px; color: #0A2540; margin-bottom: 10px; text-transform: uppercase; }
                 .sm-tl-table { width: 100%; border-collapse: collapse; }

@@ -73,7 +73,7 @@ async function gerarPdf(): Promise<{
   checks.push(hasVals ? 'Valores R$ 1.518,00 ×4 no HTML' : 'Valores planilha ausentes')
 
   const container = document.createElement('div')
-  container.style.cssText = `position:fixed;left:-10000px;top:0;width:${W}px;max-width:${W}px;overflow:hidden;background:#fff;box-sizing:border-box;`
+  container.style.cssText = `position:absolute;left:-9999px;top:0;width:${W}px;max-width:${W}px;overflow:visible;background:#fff;box-sizing:border-box;`
   container.innerHTML = html
   document.body.appendChild(container)
 
@@ -81,7 +81,7 @@ async function gerarPdf(): Promise<{
     const pageEl = (container.querySelector('.pdf-page') as HTMLElement) || container
     pageEl.style.setProperty('width', `${W}px`, 'important')
     pageEl.style.setProperty('max-width', `${W}px`, 'important')
-    pageEl.style.setProperty('overflow', 'hidden', 'important')
+    pageEl.style.setProperty('overflow', 'visible', 'important')
     pageEl.style.setProperty('box-sizing', 'border-box', 'important')
 
     await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))
