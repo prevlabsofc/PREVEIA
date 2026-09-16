@@ -124,9 +124,11 @@ AÇÃO PREVIDENCIÁRIA DE CONCESSÃO DE SALÁRIO-MATERNIDADE
 (SEGURADA ESPECIAL – AGRICULTORA)
 <<<END_TITULO>>>
 
-IMPORTANTE SOBRE TÍTULO: em <<<TITULO>>> coloque APENAS a linha da ação (sem subtítulo e sem << >>).
-O subtítulo vai SOMENTE em <<<SUBTITULO>>>, uma única vez, entre parênteses.
-NÃO repita "(SEGURADA ESPECIAL – AGRICULTORA)" dentro de <<<TITULO>>>.
+IMPORTANTE SOBRE TÍTULO (OBRIGATÓRIO):
+- Em <<<TITULO>>> coloque APENAS a linha da ação, SEM subtítulo e SEM artefatos << >> ou <<>>.
+- O subtítulo "(SEGURADA ESPECIAL – AGRICULTORA)" vai SOMENTE em <<<SUBTITULO>>>, UMA única vez.
+- NÃO repita o subtítulo dentro de <<<TITULO>>> nem cole título+subtítulo no mesmo bloco.
+- NÃO invente << >> / marcadores extras entre título e subtítulo.
 
 <<<EM_FACE>>>
 [Parágrafo "Em face do INSTITUTO NACIONAL DO SEGURO SOCIAL – INSS..." com endereço de citação na comarca]

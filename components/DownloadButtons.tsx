@@ -196,7 +196,7 @@ async function inlineImagesAsDataUrls(root: HTMLElement): Promise<void> {
         const slot = document.createElement('div')
         slot.className = 'sm-logo-slot'
         slot.setAttribute('aria-hidden', 'true')
-        slot.style.cssText = 'width:110px;height:36px;display:block;'
+        slot.style.cssText = 'width:60px;height:36px;display:block;'
         img.replaceWith(slot)
       }
     }),
@@ -254,21 +254,34 @@ function desenharRodapesPdf(
 
 /**
  * Fatia o canvas em páginas A4.
- * Respeita zonas data-pdf-keep (itens de pedido) para não cortar no meio.
+ * Respeita zonas data-pdf-keep (timeline etc.) — NÃO todos os itens de pedido
+ * (seção VI é grande demais e keep agressivo deixa página quase vazia).
  * Se a última fatia for pequena, tenta fundir com a anterior.
  */
 function coletarZonasKeep(pageEl: HTMLElement, scale: number): { top: number; bottom: number }[] {
   const rootRect = pageEl.getBoundingClientRect()
-  const nodes = pageEl.querySelectorAll('[data-pdf-keep], table.sm-pedido-item, .sm-timeline')
+  // Só keep explícito + timeline. Pedidos fluem com orphans/widows no CSS.
+  const nodes = pageEl.querySelectorAll('[data-pdf-keep], .sm-timeline')
   return Array.from(nodes)
     .map((node) => {
       const el = node as HTMLElement
+      // Ignora keep em containers grandes (seção VI / pedidos inteiros)
+      if (
+        el.classList.contains('sm-pedidos') ||
+        el.classList.contains('sm-secao-vi') ||
+        el.classList.contains('sm-fecho-bloco')
+      ) {
+        return null
+      }
       const r = el.getBoundingClientRect()
+      const h = r.height * scale
+      // Blocos > ~55% da página A4 (em px de captura) não devem forçar keep
+      if (h > 900) return null
       const top = (r.top - rootRect.top + pageEl.scrollTop) * scale
       const bottom = (r.bottom - rootRect.top + pageEl.scrollTop) * scale
       return { top, bottom }
     })
-    .filter((z) => z.bottom > z.top + 2)
+    .filter((z): z is { top: number; bottom: number } => z != null && z.bottom > z.top + 2)
     .sort((a, b) => a.top - b.top)
 }
 
@@ -287,9 +300,9 @@ function corteSemQuebrarKeep(
         end = z.bottom
       } else if (z.top > srcY + 24) {
         const fill = z.top - srcY
-        // Evita página quase vazia (ex.: só o item i): se o recuo deixa
-        // menos de ~35% da página, permite cortar dentro do bloco longo.
-        if (fill < maxSlice * 0.35) {
+        // Evita página quase vazia: se o recuo deixa menos de ~40% da página,
+        // permite cortar (não deixa só o item i sozinho).
+        if (fill < maxSlice * 0.4) {
           break
         }
         end = z.top
@@ -327,22 +340,30 @@ function adicionarCanvasAoPdf(
     srcY += sliceH
   }
 
-  // Funde última fatia órfã com a anterior, se couber
-  if (slices.length >= 2) {
+  // Funde fatias órfãs (última e penúltima pequenas) para evitar página em branco
+  // entre pedidos/assinaturas e a planilha.
+  const fundirOrfas = () => {
+    if (slices.length < 2) return false
     const last = slices[slices.length - 1]
     const prev = slices[slices.length - 2]
     if (last.h + prev.h <= pageSlicePx) {
       slices.splice(slices.length - 2, 2, { y: prev.y, h: prev.h + last.h })
-    } else if (last.h < pageSlicePx * 0.42) {
+      return true
+    }
+    if (last.h < pageSlicePx * 0.48) {
       const room = pageSlicePx - last.h
-      const take = Math.min(room, prev.h - Math.floor(pageSlicePx * 0.35))
+      const take = Math.min(room, prev.h - Math.floor(pageSlicePx * 0.32))
       if (take > 40) {
         prev.h -= take
         last.y = prev.y + prev.h
         last.h += take
+        return true
       }
     }
+    return false
   }
+  fundirOrfas()
+  fundirOrfas()
 
   slices.forEach((slice, pageIdx) => {
     const slicePtH = Math.min(usableH, slice.h / pxPerPt)
@@ -351,8 +372,6 @@ function adicionarCanvasAoPdf(
     if (pageIdx === 0) {
       // página inicial já existe
     } else if (isLast && slicePtH < usableH * 0.55) {
-      // Mantém A4 completo na última página se houver nota de fechamento
-      // (espaço preenchido visualmente pelo rodapé + nota no HTML)
       pdf.addPage()
     } else {
       pdf.addPage()
@@ -416,7 +435,7 @@ async function gerarPdfBlob(
     `width:${W}px`,
     `max-width:${W}px`,
     'min-width:0',
-    'overflow:hidden',
+    'overflow:visible',
     'background:#fff',
     'box-sizing:border-box',
   ].join(';')
@@ -430,9 +449,13 @@ async function gerarPdfBlob(
       el.style.setProperty('max-width', `${W}px`, 'important')
       el.style.setProperty('min-width', '0', 'important')
       el.style.setProperty('box-sizing', 'border-box', 'important')
-      el.style.setProperty('overflow', 'hidden', 'important')
+      // visible: overflow:hidden cortava pedidos / seções longas no canvas
+      el.style.setProperty('overflow', 'visible', 'important')
+      el.style.setProperty('overflow-x', 'visible', 'important')
+      el.style.setProperty('overflow-y', 'visible', 'important')
       el.style.setProperty('height', 'auto', 'important')
       el.style.setProperty('min-height', '0', 'important')
+      el.style.setProperty('max-height', 'none', 'important')
       el.style.setProperty('background', '#fff', 'important')
       el.style.setProperty('padding-top', '0', 'important')
       el.style.setProperty('padding-bottom', '0', 'important')
@@ -476,9 +499,19 @@ async function gerarPdfBlob(
             const slot = doc.createElement('div')
             slot.className = 'sm-logo-slot'
             slot.setAttribute('aria-hidden', 'true')
-            slot.style.cssText = 'width:110px;height:36px;display:block;'
+            slot.style.cssText = 'width:60px;height:36px;display:block;'
             img.replaceWith(slot)
           }
+        })
+        el.querySelectorAll(
+          '.sm-pedidos, .sm-secao-vi, .sm-fecho-bloco, .sm-para, .sm-body, .pdf-page.sm-rural',
+        ).forEach((node) => {
+          const n = node as HTMLElement
+          if (!n.style) return
+          n.style.setProperty('overflow', 'visible', 'important')
+          n.style.setProperty('height', 'auto', 'important')
+          n.style.setProperty('max-height', 'none', 'important')
+          n.style.setProperty('min-height', '0', 'important')
         })
         el.querySelectorAll('*').forEach((node) => {
           const n = node as HTMLElement

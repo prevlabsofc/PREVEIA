@@ -2,6 +2,7 @@ import { writeFileSync } from 'fs'
 import {
   canonicalizarMarcadoresSm,
   montarHtmlSmRural,
+  normalizarTituloSubtitulo,
   textoRodapeSm,
 } from '../lib/peticao-sm-rural'
 import { FIXTURE_SM_ANA_LUCIA } from '../lib/fixtures/sm-ana-lucia'
@@ -60,7 +61,17 @@ const htmlDup = montarHtmlSmRural({ text: DUP_TITULO, adv, comMargens: true }) |
 const titleDup = htmlDup.match(/sm-main-title">([\s\S]*?)<\/div>/)?.[1] || ''
 const subDup = htmlDup.match(/sm-sub-title">([\s\S]*?)<\/div>/)?.[1] || ''
 
+const COLADO = normalizarTituloSubtitulo(
+  'AÇÃO PREVIDENCIÁRIA DE CONCESSÃO DE SALÁRIO-MATERNIDADE << >> (SEGURADA ESPECIAL – AGRICULTORA)(SEGURADA ESPECIAL – AGRICULTORA)',
+  '',
+)
+
 const canon = canonicalizarMarcadoresSm('<<<ENDIIANTES>>>\n<<<V_FUNDAMENTACAO>>>')
+
+const pedidosBlock = html.match(/sm-secao-vi[\s\S]*?sm-fecho-bloco/)?.[0] || ''
+const romanos = (html.match(/sm-rom">(?:viii|vii|vi|v|iv|iii|ii|i)\./gi) || []).map((s) =>
+  s.replace(/sm-rom">/i, '').toLowerCase(),
+)
 
 const checks: [string, boolean][] = [
   ['planilha 1518 x4', (html.match(/R\$ 1\.518,00/g) || []).length >= 4],
@@ -71,7 +82,9 @@ const checks: [string, boolean][] = [
   ['header email', html.includes('contato@prevlabs.com.br')],
   ['sem footer no corpo', !/<div class="sm-footer[\s"]/.test(html)],
   ['sem timeline no corpo (estilo none)', !/<div class="sm-timeline[\s"]/.test(html)],
-  ['overflow hidden', html.includes('overflow: hidden')],
+  ['overflow visible no .pdf-page.sm-rural', /\.pdf-page\.sm-rural\s*\{[^}]*overflow:\s*visible/.test(html)],
+  ['sm-body overflow visible', /\.sm-body\s*\{[^}]*overflow:\s*visible/.test(html)],
+  ['sm-pedidos overflow visible', /\.sm-pedidos\s*\{[^}]*overflow:\s*visible/.test(html)],
   ['max-width 794', html.includes('max-width: 794px')],
   ['width 794', html.includes('width: 794px')],
   ['III then IV', /III[\s\S]*IV – DAS PROVAS/.test(html)],
@@ -82,6 +95,7 @@ const checks: [string, boolean][] = [
   ['seção com uppercase', /\.sm-section-bar[\s\S]*?text-transform:\s*uppercase/.test(html)],
   ['data centralizada', /\.sm-local-data\s*\{[^}]*text-align:\s*center/.test(html)],
   ['logo slot vazio (sem img)', !/<img /.test(html)],
+  ['logo slot 60px', html.includes('sm-logo-slot') && html.includes('width:60px')],
   [
     'titulo sem subtítulo duplicado',
     /sm-main-title">[^<]*SALÁRIO-<br\/>MATERNIDADE<\/div>\s*<div class="sm-sub-title">\(SEGURADA ESPECIAL/.test(
@@ -91,7 +105,27 @@ const checks: [string, boolean][] = [
   ['titulo sem artefato <<', !/sm-main-title">[^<]*&lt;/.test(html)],
   ['dup título limpo', !/&lt;|&gt;|SEGURADA/.test(titleDup) && /SALÁRIO-<br\/>MATERNIDADE/.test(titleDup)],
   ['dup subtítulo único', subDup === '(SEGURADA ESPECIAL – AGRICULTORA)'],
-  ['seção VI com avoid', html.includes('sm-secao-vi') && html.includes('page-break-inside:avoid')],
+  [
+    'normalizar cola título+subtítulo',
+    !/SEGURADA/.test(COLADO.titulo) &&
+      COLADO.subtitulo === '(SEGURADA ESPECIAL – AGRICULTORA)' &&
+      /SALÁRIO-MATERNIDADE/i.test(COLADO.titulo),
+  ],
+  [
+    'seção VI sem avoid no container',
+    /sm-secao-vi"[^>]*page-break-inside:\s*auto/.test(html) &&
+      !/\.sm-secao-vi\s*\{[^}]*page-break-inside:\s*avoid/.test(html),
+  ],
+  [
+    'sm-pedidos sem avoid',
+    /\.sm-pedidos\s*\{[^}]*page-break-inside:\s*auto/.test(html) &&
+      !/class="sm-pedidos"[^>]*page-break-inside:\s*avoid/.test(html),
+  ],
+  ['orphans widows nos pedidos', /\.sm-pedido-item[\s\S]*?orphans:\s*3/.test(html) && html.includes('widows: 3')],
+  ['subhead sem border-left', /\.sm-subhead\s*\{[^}]*border-left:\s*none/.test(html)],
+  ['subhead sem barra (só bold)', html.includes('sm-subhead') && !/sm-subhead[^>]*(border-left:\s*[1-9]|background:\s*#)/.test(pedidosBlock)],
+  ['sem data-pdf-keep nos pedidos', !/sm-pedido-item[^>]*data-pdf-keep/.test(html)],
+  ['itens i–viii presentes', ['i.', 'ii.', 'iii.', 'iv.', 'v.', 'vi.', 'vii.', 'viii.'].every((r) => romanos.includes(r))],
   ['canon ENDIIANTES', canon.includes('<<<END_III_ANTES>>>')],
   ['malformed não nulo', Boolean(htmlBad)],
   ['malformed sem tags', !/<<<[A-Z0-9_]+>>>/.test(htmlBad)],

@@ -209,14 +209,19 @@ const TITULO_SM_PADRAO =
   'AÇÃO PREVIDENCIÁRIA DE CONCESSÃO DE SALÁRIO-MATERNIDADE'
 const SUBTITULO_SM_PADRAO = '(SEGURADA ESPECIAL – AGRICULTORA)'
 
-/** Remove artefatos << >> / tags e deduplica título × subtítulo. */
-function normalizarTituloSubtitulo(
+/**
+ * Remove artefatos << >> / tags e deduplica título × subtítulo.
+ * Funciona mesmo quando a IA cola o subtítulo (uma ou mais vezes) dentro de TITULO.
+ */
+export function normalizarTituloSubtitulo(
   tituloRaw: string,
   subtituloRaw: string,
 ): { titulo: string; subtitulo: string } {
   const limpar = (s: string) =>
     stripMarcadoresSm(limparMarkdownResidual(s || ''))
+      .replace(/<<\s*\/?\s*[A-Z0-9_]*\s*>>/gi, ' ')
       .replace(/<<\s*>>/g, ' ')
+      .replace(/&lt;&lt;.*?&gt;&gt;/gi, ' ')
       .replace(/[<>]{1,}/g, ' ')
       .replace(/\s{2,}/g, ' ')
       .trim()
@@ -232,6 +237,12 @@ function normalizarTituloSubtitulo(
     titulo = titulo.replace(parenRe, ' ').replace(/\s{2,}/g, ' ').trim()
   }
 
+  // Também no subtítulo cru (IA pode colar título+subtítulo nos dois blocos)
+  const foundInSub = subtitulo.match(parenRe)
+  if (foundInSub?.[0]) {
+    subtitulo = foundInSub[0].replace(/\s+/g, ' ').trim()
+  }
+
   titulo = titulo
     .replace(/\bSEGURADA\s+ESPECIAL\s*[–—\-]\s*AGRICULTORA\b/gi, ' ')
     .replace(/\s{2,}/g, ' ')
@@ -243,6 +254,10 @@ function normalizarTituloSubtitulo(
       const esc = plain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       titulo = titulo
         .replace(new RegExp(`\\(?\\s*${esc}\\s*\\)?`, 'gi'), ' ')
+        .replace(/\s{2,}/g, ' ')
+        .trim()
+      subtitulo = subtitulo
+        .replace(new RegExp(`(\\(?\\s*${esc}\\s*\\)?)\\s*\\1+`, 'gi'), '$1')
         .replace(/\s{2,}/g, ' ')
         .trim()
     }
@@ -258,6 +273,10 @@ function normalizarTituloSubtitulo(
     /(\(\s*SEGURADA\s+ESPECIAL\s*[–—\-]\s*AGRICULTORA\s*\))\s*\1+/gi,
     '$1',
   )
+
+  // Garante uma única ocorrência do subtítulo padrão
+  const once = subtitulo.match(parenRe)
+  if (once?.[0]) subtitulo = once[0].replace(/\s+/g, ' ').trim()
 
   return { titulo, subtitulo }
 }
@@ -668,8 +687,8 @@ function cabecalhoSm(adv: DadosAdvogadoPeticao): string {
           <col style="width:auto;" />
         </colgroup>
         <tr>
-          <td width="130" valign="middle" align="left" style="width:130px;vertical-align:middle;text-align:left;padding:0;overflow:hidden;">${logo}</td>
-          <td valign="middle" align="right" style="vertical-align:middle;text-align:right;padding:0 0 0 10px;overflow:hidden;">
+          <td width="130" valign="middle" align="left" style="width:130px;vertical-align:middle;text-align:left;padding:0;overflow:visible;">${logo}</td>
+          <td valign="middle" align="right" style="vertical-align:middle;text-align:right;padding:0 0 0 10px;overflow:visible;">
             <p align="right" style="margin:0;padding:0;text-align:right;font-family:'Times New Roman',Times,serif;">
               <span style="font-weight:bold;font-size:11.5px;text-transform:uppercase;line-height:1.35;color:#0A2540;">${escapar(nome)}</span><br/>
               <span style="font-size:9px;color:#444;line-height:1.4;">OAB/${escapar(oabUf)} n° ${escapar(oabNum)}</span>${mailLine}
@@ -762,22 +781,18 @@ function pedidosHtml(items: string[], comIntro = true): string {
   const intro = comIntro
     ? `<p class="sm-para sm-pedidos-intro">Diante do exposto, requer:</p>`
     : ''
-  // Itens curtos: keep juntos. Itens longos: sem data-pdf-keep (evita pág. quase vazia).
+  // Sem data-pdf-keep / avoid no container (seção VI é grande demais).
+  // orphans/widows mantêm intro+itens legíveis sem página quase vazia.
   const rows = items
     .map((it) => {
       const m = it.match(/^((?:viii|vii|vi|iv|ix|iii|ii|v|i|x)+)\.\s*([\s\S]*)$/i)
       const num = m ? m[1].toLowerCase() : ''
       const body = m ? m[2] : it
-      const curto = body.trim().length < 280
-      const keepAttr = curto ? ' data-pdf-keep="1"' : ''
-      const breakStyle = curto
-        ? 'page-break-inside:avoid;break-inside:avoid;'
-        : 'page-break-inside:auto;break-inside:auto;'
       return `
-        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0"${keepAttr}
-          style="width:100%;border-collapse:collapse;margin:0 0 10px;${breakStyle}">
+        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0"
+          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:auto;break-inside:auto;height:auto;min-height:0;max-height:none;overflow:visible;">
           <tr>
-            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;">
+            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;orphans:3;widows:3;overflow:visible;height:auto;max-height:none;">
               <span class="sm-rom">${escapar(num)}.</span> ${escapar(limparMarkdownResidual(body))}
             </td>
           </tr>
@@ -785,7 +800,7 @@ function pedidosHtml(items: string[], comIntro = true): string {
     })
     .join('')
   return `
-    <div class="sm-pedidos" style="page-break-inside:avoid;break-inside:avoid;">
+    <div class="sm-pedidos" style="page-break-inside:auto;break-inside:auto;height:auto;min-height:0;max-height:none;overflow:visible;">
       ${intro}
       ${rows}
     </div>
@@ -828,9 +843,9 @@ function planilhaHtml(raw: string): string {
     })
     .join('')
   return `
-    <div class="sm-anexo" style="margin-top:8pt;margin-bottom:0;padding-top:4pt;padding-bottom:0;border-top:0.5pt solid #ccc;page-break-before:auto;break-before:auto;page-break-inside:avoid;break-inside:avoid;">
+    <div class="sm-anexo" style="margin-top:8pt;margin-bottom:0;padding-top:4pt;padding-bottom:0;border-top:0.5pt solid #ccc;page-break-before:auto;break-before:auto;page-break-inside:auto;break-inside:auto;height:auto;min-height:0;overflow:visible;">
       <div class="sm-anexo-title">ANEXO – PLANILHA DE CÁLCULO</div>
-      <div class="sm-table-wrap" style="margin:4px 0 0;">
+      <div class="sm-table-wrap" style="margin:4px 0 0;page-break-inside:avoid;break-inside:avoid;">
         <div class="sm-table-caption">PLANILHA DE CÁLCULO</div>
         <table class="sm-planilha" cellpadding="0" cellspacing="0" width="100%" border="1">
           <colgroup>
@@ -915,8 +930,9 @@ function sectionBar(title: string): string {
   return `<div class="sm-section-bar keep-together">${escapar(title)}</div>`
 }
 
-function subheadComBarra(title: string): string {
-  // Tipografia bold apenas — sem barra lateral / fundo (diferente de sectionBar).
+function subheadSimples(title: string): string {
+  // Tipografia bold apenas — sem barra lateral / fundo / border-left
+  // (diferente de sectionBar azul I–VI).
   return `<div class="sm-subhead keep-together">${escapar(title)}</div>`
 }
 
@@ -952,7 +968,9 @@ export function cssSmRural(comMargens: boolean): string {
       max-width: 794px;
       height: auto;
       min-height: 0;
-      overflow-x: clip;
+      max-height: none;
+      overflow: visible;
+      overflow-x: visible;
       overflow-y: visible;
       word-wrap: break-word;
       overflow-wrap: break-word;
@@ -986,18 +1004,28 @@ export function cssSmRural(comMargens: boolean): string {
       white-space: normal;
       box-sizing: border-box;
     }
+    .pdf-page.sm-rural p,
+    .sm-para,
+    .sm-para-qualif,
+    .sm-pedidos-intro,
+    .sm-pedido-item td {
+      orphans: 3;
+      widows: 3;
+    }
     .sm-sheet {
       position: relative;
       min-height: 0;
       height: auto;
+      max-height: none;
       width: 100%;
       box-sizing: border-box;
       page-break-inside: auto;
+      overflow: visible;
     }
     .sm-sheet-inner { width: 100%; border-collapse: collapse; table-layout: fixed; }
     .sm-sheet-main { vertical-align: top; padding: 0; width: 100%; }
     .sm-sheet-foot { vertical-align: bottom; padding: 16px 0 0; width: 100%; }
-    .sm-body { width: 100%; max-width: 100%; box-sizing: border-box; overflow: hidden; }
+    .sm-body { width: 100%; max-width: 100%; box-sizing: border-box; overflow: visible; height: auto; max-height: none; }
     .sm-sheet:last-child {
       page-break-after: auto;
       break-after: auto;
@@ -1126,6 +1154,7 @@ export function cssSmRural(comMargens: boolean): string {
       box-sizing: border-box;
       page-break-after: avoid;
       page-break-inside: avoid;
+      border-left: none;
     }
     .sm-subhead {
       font-weight: bold;
@@ -1134,7 +1163,10 @@ export function cssSmRural(comMargens: boolean): string {
       margin: 10px 0 8px;
       padding: 0;
       background: none;
+      background-color: transparent;
       border: none;
+      border-left: none;
+      box-shadow: none;
       page-break-after: avoid;
     }
 
@@ -1149,6 +1181,11 @@ export function cssSmRural(comMargens: boolean): string {
       word-wrap: break-word;
       overflow-wrap: break-word;
       text-transform: none;
+      orphans: 3;
+      widows: 3;
+      overflow: visible;
+      height: auto;
+      max-height: none;
     }
     .sm-para-qualif { text-indent: 1.25cm; text-transform: none; font-size: 12px; font-weight: normal; }
 
@@ -1185,6 +1222,13 @@ export function cssSmRural(comMargens: boolean): string {
     .sm-nota {
       font-size: 9.5px; font-style: italic; color: #555;
       margin-top: 8px; text-align: center;
+    }
+    .sm-anexo {
+      page-break-before: auto;
+      break-before: auto;
+      overflow: visible;
+      height: auto;
+      min-height: 0;
     }
     .sm-anexo-title {
       text-align: center; font-weight: bold; font-size: 14px;
@@ -1228,24 +1272,54 @@ export function cssSmRural(comMargens: boolean): string {
 
     .sm-pedidos-list { list-style: none; padding: 0; margin: 8px 0 0; }
     .sm-secao-vi {
-      page-break-inside: avoid !important;
-      break-inside: avoid !important;
+      page-break-inside: auto !important;
+      break-inside: auto !important;
+      height: auto !important;
+      min-height: 0 !important;
+      max-height: none !important;
+      overflow: visible !important;
     }
     .sm-pedidos {
-      page-break-inside: avoid;
-      break-inside: avoid;
+      page-break-inside: auto !important;
+      break-inside: auto !important;
+      height: auto !important;
+      min-height: 0 !important;
+      max-height: none !important;
+      overflow: visible !important;
     }
     .sm-pedidos-list li,
     table.sm-pedido-item {
       font-size: 12px; line-height: 1.6; text-align: justify;
       margin: 0 0 10px;
       text-transform: none;
+      page-break-inside: auto;
+      break-inside: auto;
+      orphans: 3;
+      widows: 3;
+      overflow: visible;
+      height: auto;
+      max-height: none;
     }
-    .sm-pedidos-intro { margin-bottom: 8px; page-break-after: avoid; }
+    .sm-pedidos-intro {
+      margin-bottom: 8px;
+      page-break-after: avoid;
+      orphans: 3;
+      widows: 3;
+    }
     .sm-rom { font-weight: bold; margin-right: 4px; }
 
-    .sm-fechamento { margin-top: 12px; margin-bottom: 0; text-transform: none; }
-    .sm-fecho-bloco { page-break-inside: auto; break-inside: auto; margin-bottom: 0; }
+    .sm-fechamento { margin-top: 12px; margin-bottom: 0; text-transform: none; overflow: visible; }
+    .sm-fecho-bloco {
+      page-break-inside: auto;
+      break-inside: auto;
+      page-break-before: auto;
+      break-before: auto;
+      margin-bottom: 0;
+      margin-top: 0;
+      overflow: visible;
+      height: auto;
+      min-height: 0;
+    }
     .sm-local-data { text-align: center; font-size: 12px; margin: 14px 0 16px; font-weight: 500; text-transform: none; }
     table.sm-sign-row {
       width: 100%; border-collapse: collapse; table-layout: fixed;
@@ -1373,7 +1447,7 @@ export function montarHtmlSmRural(opts: {
     <div class="sm-sub-title">${escapar(subtitulo)}</div>
     ${parasHtml(emFace)}
     ${sectionBar('I – PRELIMINARMENTE')}
-    ${subheadComBarra(limparMarkdownResidual(prelimTitle))}
+    ${subheadSimples(limparMarkdownResidual(prelimTitle))}
     ${parasHtml(prelimBody)}
     ${sectionBar('II – QUADRO SINÓPTICO')}
     ${quadroHtml(quadro)}
@@ -1386,12 +1460,12 @@ export function montarHtmlSmRural(opts: {
     ${parasHtml(provasFecho)}
     ${sectionBar('V – FUNDAMENTAÇÃO JURÍDICA')}
     ${parasHtml(fund)}
-    <div class="sm-secao-vi" style="page-break-inside:avoid;break-inside:avoid;">
+    <div class="sm-secao-vi" style="page-break-inside:auto;break-inside:auto;height:auto;min-height:0;max-height:none;overflow:visible;">
       ${sectionBar('VI – PEDIDO / REQUERIMENTOS')}
       ${pedidosHtml(pedidosP4.length ? pedidosP4 : pedidosAll, true)}
       ${pedidosP5.length ? pedidosHtml(pedidosP5, false) : ''}
     </div>
-    <div class="sm-fecho-bloco">
+    <div class="sm-fecho-bloco" style="page-break-before:auto;break-before:auto;page-break-inside:auto;break-inside:auto;margin-top:0;overflow:visible;">
       ${assinaturas}
       ${planilhaHtml(planilha)}
     </div>

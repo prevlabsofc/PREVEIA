@@ -10,7 +10,9 @@
       max-width: 794px;
       height: auto;
       min-height: 0;
-      overflow-x: clip;
+      max-height: none;
+      overflow: visible;
+      overflow-x: visible;
       overflow-y: visible;
       word-wrap: break-word;
       overflow-wrap: break-word;
@@ -44,18 +46,28 @@
       white-space: normal;
       box-sizing: border-box;
     }
+    .pdf-page.sm-rural p,
+    .sm-para,
+    .sm-para-qualif,
+    .sm-pedidos-intro,
+    .sm-pedido-item td {
+      orphans: 3;
+      widows: 3;
+    }
     .sm-sheet {
       position: relative;
       min-height: 0;
       height: auto;
+      max-height: none;
       width: 100%;
       box-sizing: border-box;
       page-break-inside: auto;
+      overflow: visible;
     }
     .sm-sheet-inner { width: 100%; border-collapse: collapse; table-layout: fixed; }
     .sm-sheet-main { vertical-align: top; padding: 0; width: 100%; }
     .sm-sheet-foot { vertical-align: bottom; padding: 16px 0 0; width: 100%; }
-    .sm-body { width: 100%; max-width: 100%; box-sizing: border-box; overflow: hidden; }
+    .sm-body { width: 100%; max-width: 100%; box-sizing: border-box; overflow: visible; height: auto; max-height: none; }
     .sm-sheet:last-child {
       page-break-after: auto;
       break-after: auto;
@@ -184,6 +196,7 @@
       box-sizing: border-box;
       page-break-after: avoid;
       page-break-inside: avoid;
+      border-left: none;
     }
     .sm-subhead {
       font-weight: bold;
@@ -192,7 +205,10 @@
       margin: 10px 0 8px;
       padding: 0;
       background: none;
+      background-color: transparent;
       border: none;
+      border-left: none;
+      box-shadow: none;
       page-break-after: avoid;
     }
 
@@ -207,6 +223,11 @@
       word-wrap: break-word;
       overflow-wrap: break-word;
       text-transform: none;
+      orphans: 3;
+      widows: 3;
+      overflow: visible;
+      height: auto;
+      max-height: none;
     }
     .sm-para-qualif { text-indent: 1.25cm; text-transform: none; font-size: 12px; font-weight: normal; }
 
@@ -243,6 +264,13 @@
     .sm-nota {
       font-size: 9.5px; font-style: italic; color: #555;
       margin-top: 8px; text-align: center;
+    }
+    .sm-anexo {
+      page-break-before: auto;
+      break-before: auto;
+      overflow: visible;
+      height: auto;
+      min-height: 0;
     }
     .sm-anexo-title {
       text-align: center; font-weight: bold; font-size: 14px;
@@ -286,24 +314,54 @@
 
     .sm-pedidos-list { list-style: none; padding: 0; margin: 8px 0 0; }
     .sm-secao-vi {
-      page-break-inside: avoid !important;
-      break-inside: avoid !important;
+      page-break-inside: auto !important;
+      break-inside: auto !important;
+      height: auto !important;
+      min-height: 0 !important;
+      max-height: none !important;
+      overflow: visible !important;
     }
     .sm-pedidos {
-      page-break-inside: avoid;
-      break-inside: avoid;
+      page-break-inside: auto !important;
+      break-inside: auto !important;
+      height: auto !important;
+      min-height: 0 !important;
+      max-height: none !important;
+      overflow: visible !important;
     }
     .sm-pedidos-list li,
     table.sm-pedido-item {
       font-size: 12px; line-height: 1.6; text-align: justify;
       margin: 0 0 10px;
       text-transform: none;
+      page-break-inside: auto;
+      break-inside: auto;
+      orphans: 3;
+      widows: 3;
+      overflow: visible;
+      height: auto;
+      max-height: none;
     }
-    .sm-pedidos-intro { margin-bottom: 8px; page-break-after: avoid; }
+    .sm-pedidos-intro {
+      margin-bottom: 8px;
+      page-break-after: avoid;
+      orphans: 3;
+      widows: 3;
+    }
     .sm-rom { font-weight: bold; margin-right: 4px; }
 
-    .sm-fechamento { margin-top: 12px; margin-bottom: 0; text-transform: none; }
-    .sm-fecho-bloco { page-break-inside: auto; break-inside: auto; margin-bottom: 0; }
+    .sm-fechamento { margin-top: 12px; margin-bottom: 0; text-transform: none; overflow: visible; }
+    .sm-fecho-bloco {
+      page-break-inside: auto;
+      break-inside: auto;
+      page-break-before: auto;
+      break-before: auto;
+      margin-bottom: 0;
+      margin-top: 0;
+      overflow: visible;
+      height: auto;
+      min-height: 0;
+    }
     .sm-local-data { text-align: center; font-size: 12px; margin: 14px 0 16px; font-weight: 500; text-transform: none; }
     table.sm-sign-row {
       width: 100%; border-collapse: collapse; table-layout: fixed;
@@ -341,8 +399,8 @@
           <col style="width:auto;" />
         </colgroup>
         <tr>
-          <td width="130" valign="middle" align="left" style="width:130px;vertical-align:middle;text-align:left;padding:0;overflow:hidden;"><div class="sm-logo-slot" style="width:60px;height:36px;display:block;" aria-hidden="true"></div></td>
-          <td valign="middle" align="right" style="vertical-align:middle;text-align:right;padding:0 0 0 10px;overflow:hidden;">
+          <td width="130" valign="middle" align="left" style="width:130px;vertical-align:middle;text-align:left;padding:0;overflow:visible;"><div class="sm-logo-slot" style="width:60px;height:36px;display:block;" aria-hidden="true"></div></td>
+          <td valign="middle" align="right" style="vertical-align:middle;text-align:right;padding:0 0 0 10px;overflow:visible;">
             <p align="right" style="margin:0;padding:0;text-align:right;font-family:'Times New Roman',Times,serif;">
               <span style="font-weight:bold;font-size:11.5px;text-transform:uppercase;line-height:1.35;color:#0A2540;">Prev Labs</span><br/>
               <span style="font-size:9px;color:#444;line-height:1.4;">OAB/MA n° 12345</span><br/><span style="font-size:9px;color:#1d4ed8;line-height:1.4;">contato@prevlabs.com.br</span>
@@ -490,64 +548,64 @@
     <p class="sm-para" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">As provas materiais, conjugadas com a prova testemunhal a ser produzida em audiência, comprovam o exercício de atividade rural em regime de economia familiar e o preenchimento da carência.</p>
     <div class="sm-section-bar keep-together">V – FUNDAMENTAÇÃO JURÍDICA</div>
     <p class="sm-para" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">O salário-maternidade do segurado especial encontra amparo no art. 71 e no art. 39, parágrafo único, da Lei 8.213/91, bem como no art. 7º, XVIII, da CF/88.</p><p class="sm-para" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">O STF, nas ADIs 2110 e 2111 (28/03/2024), reafirmou a proteção à maternidade.</p><p class="sm-para" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">A jurisprudência do STJ, dos TRFs e da TNU é firme no sentido de que a prova material contemporânea, ainda que escassa, pode ser complementada por prova testemunhal.</p>
-    <div class="sm-secao-vi" style="page-break-inside:avoid;break-inside:avoid;">
+    <div class="sm-secao-vi" style="page-break-inside:auto;break-inside:auto;height:auto;min-height:0;max-height:none;overflow:visible;">
       <div class="sm-section-bar keep-together">VI – PEDIDO / REQUERIMENTOS</div>
       
-    <div class="sm-pedidos" style="page-break-inside:avoid;break-inside:avoid;">
+    <div class="sm-pedidos" style="page-break-inside:auto;break-inside:auto;height:auto;min-height:0;max-height:none;overflow:visible;">
       <p class="sm-para sm-pedidos-intro">Diante do exposto, requer:</p>
       
-        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0" data-pdf-keep="1"
-          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:avoid;break-inside:avoid;">
+        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0"
+          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:auto;break-inside:auto;height:auto;min-height:0;max-height:none;overflow:visible;">
           <tr>
-            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;">
+            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;orphans:3;widows:3;overflow:visible;height:auto;max-height:none;">
               <span class="sm-rom">i.</span> Que todas as comunicações processuais sejam feitas em nome dos advogados constituídos, nos termos do art. 272, §5º, do CPC
             </td>
           </tr>
         </table>
-        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0" data-pdf-keep="1"
-          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:avoid;break-inside:avoid;">
+        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0"
+          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:auto;break-inside:auto;height:auto;min-height:0;max-height:none;overflow:visible;">
           <tr>
-            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;">
+            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;orphans:3;widows:3;overflow:visible;height:auto;max-height:none;">
               <span class="sm-rom">ii.</span> A procedência do pedido, com a concessão do salário-maternidade
             </td>
           </tr>
         </table>
-        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0" data-pdf-keep="1"
-          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:avoid;break-inside:avoid;">
+        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0"
+          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:auto;break-inside:auto;height:auto;min-height:0;max-height:none;overflow:visible;">
           <tr>
-            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;">
+            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;orphans:3;widows:3;overflow:visible;height:auto;max-height:none;">
               <span class="sm-rom">iii.</span> A averbação do período no CNIS
             </td>
           </tr>
         </table>
-        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0" data-pdf-keep="1"
-          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:avoid;break-inside:avoid;">
+        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0"
+          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:auto;break-inside:auto;height:auto;min-height:0;max-height:none;overflow:visible;">
           <tr>
-            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;">
+            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;orphans:3;widows:3;overflow:visible;height:auto;max-height:none;">
               <span class="sm-rom">iv.</span> A citação da ré e a juntada do processo administrativo NB
             </td>
           </tr>
         </table>
-        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0" data-pdf-keep="1"
-          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:avoid;break-inside:avoid;">
+        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0"
+          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:auto;break-inside:auto;height:auto;min-height:0;max-height:none;overflow:visible;">
           <tr>
-            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;">
+            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;orphans:3;widows:3;overflow:visible;height:auto;max-height:none;">
               <span class="sm-rom">v.</span> O pagamento de 120 dias de benefício, com correção monetária e juros
             </td>
           </tr>
         </table>
-        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0" data-pdf-keep="1"
-          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:avoid;break-inside:avoid;">
+        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0"
+          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:auto;break-inside:auto;height:auto;min-height:0;max-height:none;overflow:visible;">
           <tr>
-            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;">
+            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;orphans:3;widows:3;overflow:visible;height:auto;max-height:none;">
               <span class="sm-rom">vi.</span> A designação de audiência UNA
             </td>
           </tr>
         </table>
-        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0" data-pdf-keep="1"
-          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:avoid;break-inside:avoid;">
+        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0"
+          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:auto;break-inside:auto;height:auto;min-height:0;max-height:none;overflow:visible;">
           <tr>
-            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;">
+            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;orphans:3;widows:3;overflow:visible;height:auto;max-height:none;">
               <span class="sm-rom">vii.</span> A concessão da justiça gratuita
             </td>
           </tr>
@@ -555,13 +613,13 @@
     </div>
   
       
-    <div class="sm-pedidos" style="page-break-inside:avoid;break-inside:avoid;">
+    <div class="sm-pedidos" style="page-break-inside:auto;break-inside:auto;height:auto;min-height:0;max-height:none;overflow:visible;">
       
       
-        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0" data-pdf-keep="1"
-          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:avoid;break-inside:avoid;">
+        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0"
+          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:auto;break-inside:auto;height:auto;min-height:0;max-height:none;overflow:visible;">
           <tr>
-            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;">
+            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;orphans:3;widows:3;overflow:visible;height:auto;max-height:none;">
               <span class="sm-rom">viii.</span> O destaque de honorários contratuais de 30% em favor do escritório
             </td>
           </tr>
@@ -569,11 +627,11 @@
     </div>
   
     </div>
-    <div class="sm-fecho-bloco">
+    <div class="sm-fecho-bloco" style="page-break-before:auto;break-before:auto;page-break-inside:auto;break-inside:auto;margin-top:0;overflow:visible;">
       
     <div class="sm-fechamento">
       <p class="sm-para" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">Protesta o alegado por todos os meios admitidos em direito, especialmente o depoimento pessoal da parte autora e das testemunhas que comparecerão em audiência, independente de intimação.</p><p class="sm-para" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">Dá-se à causa o valor de R$ 6.072,00 (seis mil e setenta e dois reais), renunciando-se a eventual excedente da alçada do Juizado Especial Federal, especificamente para fins de fixação da competência.</p><p class="sm-para" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">Termos em que, pede e espera deferimento.</p>
-      <p class="sm-local-data">São Luís/MA, 11 de setembro de 2026.</p>
+      <p class="sm-local-data">São Luís/MA, 16 de setembro de 2026.</p>
       <table class="sm-sign-row" cellpadding="0" cellspacing="0" width="100%">
         <tr>
     <td class="sm-sign-card" style="width:100%;">
@@ -585,9 +643,9 @@
     </div>
   
       
-    <div class="sm-anexo" style="margin-top:8pt;margin-bottom:0;padding-top:4pt;padding-bottom:0;border-top:0.5pt solid #ccc;page-break-before:auto;break-before:auto;page-break-inside:avoid;break-inside:avoid;">
+    <div class="sm-anexo" style="margin-top:8pt;margin-bottom:0;padding-top:4pt;padding-bottom:0;border-top:0.5pt solid #ccc;page-break-before:auto;break-before:auto;page-break-inside:auto;break-inside:auto;height:auto;min-height:0;overflow:visible;">
       <div class="sm-anexo-title">ANEXO – PLANILHA DE CÁLCULO</div>
-      <div class="sm-table-wrap" style="margin:4px 0 0;">
+      <div class="sm-table-wrap" style="margin:4px 0 0;page-break-inside:avoid;break-inside:avoid;">
         <div class="sm-table-caption">PLANILHA DE CÁLCULO</div>
         <table class="sm-planilha" cellpadding="0" cellspacing="0" width="100%" border="1">
           <colgroup>
@@ -603,7 +661,7 @@
     </div>
     
     <div class="sm-doc-fecho-wrap">
-      <div class="sm-doc-gerado">Documento gerado em 11 de setembro de 2026 pela plataforma Marple</div>
+      <div class="sm-doc-gerado">Documento gerado em 16 de setembro de 2026 pela plataforma Marple</div>
     </div>
   
   
