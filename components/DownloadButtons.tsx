@@ -258,10 +258,89 @@ function desenharRodapesPdf(
   }
 }
 
+/** Bloco de texto no canvas (coords em px do canvas = CSS × scale). */
+type TextBlock = { top: number; bottom: number; lineH: number }
+
+/** line-height tipográfico do template SM (~12px × 1.65). */
+const SM_LINE_HEIGHT_CSS = 12 * 1.65 // 19.8px
+
+/**
+ * Coleta bounding boxes de parágrafos/células/títulos para snap de corte.
+ * Se o corte cair no meio de um bloco, recua para topo do bloco ou grade de linha.
+ */
+function coletarBlocosTexto(pageEl: HTMLElement, scale: number): TextBlock[] {
+  const rootRect = pageEl.getBoundingClientRect()
+  const selector = [
+    'p',
+    '.sm-para',
+    '.sm-para-qualif',
+    '.sm-pedidos-intro',
+    '.sm-section-bar',
+    '.sm-subhead',
+    '.sm-main-title',
+    '.sm-sub-title',
+    '.sm-endereco',
+    '.sm-meta-inner',
+    '.sm-meta-tipo',
+    '.sm-pedido-item',
+    '.sm-pedido-item td',
+    'table.sm-provas-table td',
+    'table.sm-planilha td',
+    'table.sm-quadro td',
+    '.sm-tl-titulo',
+    '.sm-tl-detalhe',
+    '.sm-tl-data',
+    '.sm-anexo-title',
+    '.sm-table-caption',
+    '.sm-nota',
+    '.sm-doc-gerado',
+    '.sm-local-data',
+    '.sm-sign-name',
+    '.sm-sign-oab',
+    'li',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+  ].join(',')
+
+  const fallbackLh = SM_LINE_HEIGHT_CSS * scale
+  const blocks: TextBlock[] = []
+
+  pageEl.querySelectorAll(selector).forEach((node) => {
+    const el = node as HTMLElement
+    const r = el.getBoundingClientRect()
+    if (r.height < 2) return
+    const top = (r.top - rootRect.top + pageEl.scrollTop) * scale
+    const bottom = (r.bottom - rootRect.top + pageEl.scrollTop) * scale
+    let lineH = fallbackLh
+    try {
+      const cs = window.getComputedStyle(el)
+      const rawLh = cs.lineHeight
+      const fontSize = parseFloat(cs.fontSize) || 12
+      if (rawLh && rawLh !== 'normal') {
+        const parsed = parseFloat(rawLh)
+        if (Number.isFinite(parsed) && parsed > 0) {
+          lineH = parsed * scale
+        } else {
+          lineH = fontSize * 1.65 * scale
+        }
+      } else {
+        lineH = fontSize * 1.65 * scale
+      }
+    } catch {
+      /* fallback */
+    }
+    lineH = Math.max(10, Math.min(lineH, 48 * scale))
+    blocks.push({ top, bottom, lineH })
+  })
+
+  return blocks.sort((a, b) => a.top - b.top)
+}
+
 /**
  * Fatia o canvas em páginas A4.
- * Keep só em zonas pequenas (timeline). NUNCA seção VI / pedidos —
- * keep agressivo deixa página quase em branco após item i.
+ * Keep só em zonas pequenas (timeline). NUNCA seção VI / pedidos.
  */
 function coletarZonasKeep(pageEl: HTMLElement, scale: number): { top: number; bottom: number }[] {
   const rootRect = pageEl.getBoundingClientRect()
@@ -269,7 +348,6 @@ function coletarZonasKeep(pageEl: HTMLElement, scale: number): { top: number; bo
   return Array.from(nodes)
     .map((node) => {
       const el = node as HTMLElement
-      // Nunca keep em containers grandes / pedidos / seção VI / fecho
       if (
         el.classList.contains('sm-pedidos') ||
         el.classList.contains('sm-secao-vi') ||
@@ -279,13 +357,11 @@ function coletarZonasKeep(pageEl: HTMLElement, scale: number): { top: number; bo
       ) {
         return null
       }
-      // Barras de seção dentro da VI não entram como keep de bloco grande
       if (el.classList.contains('sm-section-bar') && el.closest('.sm-secao-vi')) {
         return null
       }
       const r = el.getBoundingClientRect()
       const h = r.height * scale
-      // Blocos > ~40% da página A4 (em px de captura) não devem forçar keep
       if (h > 650) return null
       const top = (r.top - rootRect.top + pageEl.scrollTop) * scale
       const bottom = (r.bottom - rootRect.top + pageEl.scrollTop) * scale
@@ -303,15 +379,11 @@ function corteSemQuebrarKeep(
 ): number {
   let end = Math.min(idealEnd, srcY + maxSlice)
   for (const z of zones) {
-    // Corte cai no meio de um bloco keep → recua para o início do bloco
     if (z.top >= srcY + 8 && z.top < end && z.bottom > end) {
-      // Se o bloco inteiro cabe na página, inclui ele
       if (z.bottom - srcY <= maxSlice) {
         end = z.bottom
       } else if (z.top > srcY + 24) {
         const fill = z.top - srcY
-        // Evita página quase vazia: se o recuo deixa menos de ~55% da página,
-        // permite cortar (não deixa só o item i sozinho numa página vazia).
         if (fill < maxSlice * 0.55) {
           break
         }
@@ -323,35 +395,153 @@ function corteSemQuebrarKeep(
   return Math.max(srcY + 8, end)
 }
 
+/**
+ * Dentro de um bloco alto: alinha o corte à fronteira de linha (floor da grade).
+ * Nunca deixa o corte no meio dos glifos.
+ */
+function snapDentroDoBloco(
+  block: TextBlock,
+  srcY: number,
+  idealEnd: number,
+  maxSlice: number,
+): number {
+  const lineH = Math.max(10, block.lineH)
+  const hardMax = Math.min(srcY + maxSlice, idealEnd)
+
+  // Cabe o bloco inteiro no restante da página → inclui até o fim
+  if (block.bottom - srcY <= maxSlice + 0.5 && block.bottom <= hardMax + lineH * 0.25) {
+    return Math.min(block.bottom, srcY + maxSlice)
+  }
+
+  // Preferir cortar no topo do bloco se ele não cabe e já há conteúdo acima
+  if (block.top > srcY + lineH && block.bottom - srcY > maxSlice) {
+    if (block.top - srcY >= maxSlice * 0.4) {
+      return Math.min(block.top, hardMax)
+    }
+  }
+
+  // Snap à grade de linhas a partir do topo do bloco
+  const origin = block.top
+  if (hardMax <= origin + 1) {
+    return Math.max(srcY + 8, Math.min(origin, srcY + maxSlice))
+  }
+
+  const rel = hardMax - origin
+  let n = Math.floor(rel / lineH)
+  if (n < 1) n = 1
+  let snapped = origin + n * lineH
+  snapped = Math.min(snapped, block.bottom, srcY + maxSlice)
+
+  if (snapped <= srcY + lineH * 0.5) {
+    snapped = Math.min(srcY + lineH, srcY + maxSlice, block.bottom)
+  }
+
+  return Math.max(srcY + 8, snapped)
+}
+
+/**
+ * Ajusta o Y de corte para NUNCA fatiar no meio de uma linha de texto.
+ * 1) keep zones (timeline)
+ * 2) corte atravessa bloco → topo do bloco ou grade line-height
+ * 3) fallback: floor global por line-height tipográfico
+ */
+function corteComSnapLinha(
+  srcY: number,
+  idealEnd: number,
+  maxSlice: number,
+  keepZones: { top: number; bottom: number }[],
+  textBlocks: TextBlock[],
+  defaultLineH: number,
+): number {
+  let end = corteSemQuebrarKeep(srcY, idealEnd, maxSlice, keepZones)
+  const hardMax = srcY + maxSlice
+
+  const atravessados = textBlocks.filter(
+    (b) => b.top < end - 1 && b.bottom > end + 1 && b.bottom - b.top > 4,
+  )
+
+  if (atravessados.length > 0) {
+    atravessados.sort((a, b) => a.top - b.top)
+    for (const block of atravessados) {
+      end = snapDentroDoBloco(block, srcY, end, maxSlice)
+    }
+  } else {
+    const lh = Math.max(10, defaultLineH)
+    const rel = end - srcY
+    const n = Math.floor(rel / lh)
+    if (n >= 1) {
+      end = srcY + n * lh
+    }
+  }
+
+  // Passo de segurança residual
+  const ainda = textBlocks.find((b) => b.top < end - 2 && b.bottom > end + 2)
+  if (ainda) {
+    const lh = Math.max(10, ainda.lineH)
+    const origin = ainda.top
+    const n = Math.floor((end - origin) / lh)
+    const snapped = origin + Math.max(0, n) * lh
+    if (snapped > srcY + lh * 0.4 && snapped <= hardMax) {
+      end = snapped
+    } else if (ainda.top > srcY + lh && ainda.top <= hardMax) {
+      end = ainda.top
+    }
+  }
+
+  end = Math.min(Math.floor(end), hardMax)
+  return Math.max(srcY + 8, end)
+}
+
 function adicionarCanvasAoPdf(
   pdf: InstanceType<typeof jsPDF>,
   canvas: HTMLCanvasElement,
   keepZones: { top: number; bottom: number }[] = [],
+  textBlocks: TextBlock[] = [],
+  scale = 1.5,
 ) {
   const pageW = pdf.internal.pageSize.getWidth()
   const pageHFull = pdf.internal.pageSize.getHeight()
   const mt = MARGEM_PETICAO_PT.top
   const mb = MARGEM_PETICAO_PT.bottom
-  const footerBand = 8
-  const usableH = pageHFull - mt - mb - footerBand
+  // Faixa extra acima do rodapé — evita texto colado/cortado na linha do footer
+  const footerBand = 18
+  const lineSafetyPt = 8
+  const usableH = pageHFull - mt - mb - footerBand - lineSafetyPt
   const pxPerPt = canvas.width / pageW
   const pageSlicePx = Math.max(1, Math.floor(usableH * pxPerPt))
+  const defaultLineH = SM_LINE_HEIGHT_CSS * scale
 
   type Slice = { y: number; h: number }
   const slices: Slice[] = []
   let srcY = 0
-  while (srcY < canvas.height - 1) {
+  let guard = 0
+  while (srcY < canvas.height - 1 && guard < 200) {
+    guard += 1
     const remaining = canvas.height - srcY
+    if (remaining <= 2) break
     const idealEnd = srcY + Math.min(pageSlicePx, remaining)
-    const end = corteSemQuebrarKeep(srcY, idealEnd, pageSlicePx, keepZones)
-    const sliceH = Math.min(end - srcY, remaining)
-    if (sliceH < 8) break
+    const end =
+      remaining <= pageSlicePx
+        ? srcY + remaining
+        : corteComSnapLinha(srcY, idealEnd, pageSlicePx, keepZones, textBlocks, defaultLineH)
+    let sliceH = Math.min(end - srcY, remaining)
+    if (sliceH < defaultLineH * 0.6 && remaining > defaultLineH) {
+      const snapped = corteComSnapLinha(
+        srcY,
+        srcY + Math.min(pageSlicePx, remaining),
+        pageSlicePx,
+        keepZones,
+        textBlocks,
+        defaultLineH,
+      )
+      sliceH = Math.min(snapped - srcY, remaining)
+    }
+    if (sliceH < 4) break
     slices.push({ y: srcY, h: sliceH })
     srcY += sliceH
   }
 
-  // Funde fatias órfãs (última e penúltima pequenas) para evitar página em branco
-  // entre pedidos/assinaturas e a planilha.
+  // Funde órfãs só com merge completo — nunca “take” parcial (causava mid-line)
   const fundirOrfas = () => {
     if (slices.length < 2) return false
     const last = slices[slices.length - 1]
@@ -360,16 +550,6 @@ function adicionarCanvasAoPdf(
       slices.splice(slices.length - 2, 2, { y: prev.y, h: prev.h + last.h })
       return true
     }
-    if (last.h < pageSlicePx * 0.48) {
-      const room = pageSlicePx - last.h
-      const take = Math.min(room, prev.h - Math.floor(pageSlicePx * 0.32))
-      if (take > 40) {
-        prev.h -= take
-        last.y = prev.y + prev.h
-        last.h += take
-        return true
-      }
-    }
     return false
   }
   fundirOrfas()
@@ -377,15 +557,7 @@ function adicionarCanvasAoPdf(
 
   slices.forEach((slice, pageIdx) => {
     const slicePtH = Math.min(usableH, slice.h / pxPerPt)
-    const isLast = pageIdx === slices.length - 1
-
-    if (pageIdx === 0) {
-      // página inicial já existe
-    } else if (isLast && slicePtH < usableH * 0.55) {
-      pdf.addPage()
-    } else {
-      pdf.addPage()
-    }
+    if (pageIdx > 0) pdf.addPage()
 
     const pageCanvas = document.createElement('canvas')
     pageCanvas.width = canvas.width
@@ -519,6 +691,7 @@ async function gerarPdfBlob(
     }
 
     const keepZones = coletarZonasKeep(pageEl, CAPTURE_SCALE)
+    const textBlocks = coletarBlocosTexto(pageEl, CAPTURE_SCALE)
 
     const canvas = await html2canvas(pageEl, {
       useCORS: true,
@@ -590,7 +763,7 @@ async function gerarPdfBlob(
     }
 
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' })
-    adicionarCanvasAoPdf(pdf, finalCanvas, keepZones)
+    adicionarCanvasAoPdf(pdf, finalCanvas, keepZones, textBlocks, CAPTURE_SCALE)
     desenharRodapesPdf(pdf, advComLogo)
 
     return pdf.output('blob')
