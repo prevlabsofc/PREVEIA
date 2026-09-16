@@ -260,30 +260,33 @@ function desenharRodapesPdf(
 
 /**
  * Fatia o canvas em páginas A4.
- * Respeita zonas data-pdf-keep (timeline etc.) — NÃO todos os itens de pedido
- * (seção VI é grande demais e keep agressivo deixa página quase vazia).
- * Se a última fatia for pequena, tenta fundir com a anterior.
+ * Keep só em zonas pequenas (timeline). NUNCA seção VI / pedidos —
+ * keep agressivo deixa página quase em branco após item i.
  */
 function coletarZonasKeep(pageEl: HTMLElement, scale: number): { top: number; bottom: number }[] {
   const rootRect = pageEl.getBoundingClientRect()
-  // Só keep explícito + timeline + barras de seção (evita cortar "III – SÍNTESE…").
-  // Pedidos fluem com orphans/widows no CSS.
-  const nodes = pageEl.querySelectorAll('[data-pdf-keep], .sm-timeline, .sm-section-bar')
+  const nodes = pageEl.querySelectorAll('[data-pdf-keep], .sm-timeline')
   return Array.from(nodes)
     .map((node) => {
       const el = node as HTMLElement
-      // Ignora keep em containers grandes (seção VI / pedidos inteiros)
+      // Nunca keep em containers grandes / pedidos / seção VI / fecho
       if (
         el.classList.contains('sm-pedidos') ||
         el.classList.contains('sm-secao-vi') ||
-        el.classList.contains('sm-fecho-bloco')
+        el.classList.contains('sm-fecho-bloco') ||
+        el.classList.contains('sm-pedido-item') ||
+        el.closest('.sm-secao-vi, .sm-pedidos, .sm-pedido-item, .sm-fecho-bloco')
       ) {
+        return null
+      }
+      // Barras de seção dentro da VI não entram como keep de bloco grande
+      if (el.classList.contains('sm-section-bar') && el.closest('.sm-secao-vi')) {
         return null
       }
       const r = el.getBoundingClientRect()
       const h = r.height * scale
-      // Blocos > ~55% da página A4 (em px de captura) não devem forçar keep
-      if (h > 900) return null
+      // Blocos > ~40% da página A4 (em px de captura) não devem forçar keep
+      if (h > 650) return null
       const top = (r.top - rootRect.top + pageEl.scrollTop) * scale
       const bottom = (r.bottom - rootRect.top + pageEl.scrollTop) * scale
       return { top, bottom }
@@ -307,9 +310,9 @@ function corteSemQuebrarKeep(
         end = z.bottom
       } else if (z.top > srcY + 24) {
         const fill = z.top - srcY
-        // Evita página quase vazia: se o recuo deixa menos de ~40% da página,
-        // permite cortar (não deixa só o item i sozinho).
-        if (fill < maxSlice * 0.4) {
+        // Evita página quase vazia: se o recuo deixa menos de ~55% da página,
+        // permite cortar (não deixa só o item i sozinho numa página vazia).
+        if (fill < maxSlice * 0.55) {
           break
         }
         end = z.top
@@ -432,98 +435,116 @@ async function gerarPdfBlob(
     agentType,
   })
 
-  const W = A4_WIDTH_PX
-  // Offscreen visível ao layout engine (NÃO display:none — html2canvas precisa medir)
+  const W = A4_WIDTH_PX // 794
+  const CAPTURE_SCALE = 1.5
+
+  // Offscreen VISÍVEL ao layout (nunca display:none / visibility:hidden / height:0 / z-index:-1)
   const container = document.createElement('div')
   container.setAttribute('data-pdf-capture', '1')
   container.style.cssText = [
-    'position:absolute',
+    'position:fixed',
+    'top:-9999px',
     'left:-9999px',
-    'top:0',
     `width:${W}px`,
     `max-width:${W}px`,
-    'min-width:0',
+    'display:block',
     'overflow:visible',
     'opacity:1',
     'visibility:visible',
-    'background:#fff',
+    'background:#ffffff',
     'box-sizing:border-box',
-    'pointer-events:none',
-    'z-index:-1',
+    'margin:0',
+    'padding:0',
   ].join(';')
   container.innerHTML = html
   document.body.appendChild(container)
 
   try {
-    // Elemento com TODO o conteúdo montado (.pdf-page / .sm-rural)
     const pageEl =
       (container.querySelector('.pdf-page.sm-rural') as HTMLElement) ||
-      (container.querySelector('.pdf-page') as HTMLElement) ||
-      container
-    const forceA4 = (el: HTMLElement) => {
-      el.style.setProperty('width', `${W}px`, 'important')
-      el.style.setProperty('max-width', `${W}px`, 'important')
-      el.style.setProperty('min-width', '0', 'important')
-      el.style.setProperty('box-sizing', 'border-box', 'important')
-      // visible: overflow:hidden cortava pedidos / seções / títulos no canvas
-      el.style.setProperty('overflow', 'visible', 'important')
-      el.style.setProperty('overflow-x', 'visible', 'important')
-      el.style.setProperty('overflow-y', 'visible', 'important')
-      el.style.setProperty('height', 'auto', 'important')
-      el.style.setProperty('min-height', '0', 'important')
-      el.style.setProperty('max-height', 'none', 'important')
-      el.style.setProperty('opacity', '1', 'important')
-      el.style.setProperty('visibility', 'visible', 'important')
-      el.style.setProperty('background', '#fff', 'important')
-      el.style.setProperty('padding-top', '0', 'important')
-      el.style.setProperty('padding-bottom', '0', 'important')
+      (container.querySelector('.pdf-page') as HTMLElement)
+
+    if (!pageEl) {
+      throw new Error('Elemento .pdf-page não encontrado para captura PDF')
     }
-    forceA4(pageEl)
+
+    // Largura A4 + overflow visível — sem height:0 / overflow:hidden que zerariam a captura
+    pageEl.style.width = `${W}px`
+    pageEl.style.maxWidth = `${W}px`
+    pageEl.style.boxSizing = 'border-box'
+    pageEl.style.overflow = 'visible'
+    pageEl.style.opacity = '1'
+    pageEl.style.visibility = 'visible'
+    pageEl.style.display = 'block'
+    pageEl.style.background = '#ffffff'
+    // height natural do conteúdo (não forçar 0 / min-height que colapsa)
+    pageEl.style.height = 'auto'
+    pageEl.style.maxHeight = 'none'
 
     pageEl
       .querySelectorAll('.sm-footer, .pdf-footer, [data-pdf-footer], .sm-sheet-foot')
       .forEach((n) => n.remove())
 
-    // Garantir títulos de seção sem clipping antes da captura
-    pageEl.querySelectorAll('.sm-section-bar').forEach((node) => {
+    // Seção VI: sem keep / avoid no fatiamento
+    pageEl.querySelectorAll('.sm-secao-vi, .sm-pedidos, .sm-pedido-item').forEach((node) => {
       const n = node as HTMLElement
-      n.style.setProperty('white-space', 'normal', 'important')
-      n.style.setProperty('word-wrap', 'break-word', 'important')
-      n.style.setProperty('overflow-wrap', 'anywhere', 'important')
-      n.style.setProperty('overflow', 'visible', 'important')
-      n.style.setProperty('max-height', 'none', 'important')
-      n.style.setProperty('height', 'auto', 'important')
-      n.style.setProperty('width', '100%', 'important')
-      n.style.setProperty('box-sizing', 'border-box', 'important')
+      n.removeAttribute('data-pdf-keep')
+      n.classList.remove('keep-together')
+      n.style.pageBreakInside = 'auto'
+      n.style.breakInside = 'auto'
+      n.style.pageBreakBefore = 'auto'
+      n.style.pageBreakAfter = 'auto'
     })
 
     await inlineImagesAsDataUrls(container)
     await waitForImages(container)
     await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))
-    // Delay obrigatório: layout/fonts/imagens estabilizam antes do html2canvas
-    await new Promise<void>((resolve) => setTimeout(resolve, 1000))
+    await new Promise<void>((r) => setTimeout(r, 1000))
 
-    // Zonas que não podem ser cortadas no meio (itens de requerimento)
-    const keepZones = coletarZonasKeep(pageEl, 2)
+    // Se ainda sem altura, forçar pelo scrollHeight (causa típica de canvas branco)
+    if (!pageEl.offsetHeight) {
+      const h = Math.max(pageEl.scrollHeight, container.scrollHeight, 200)
+      pageEl.style.minHeight = `${h}px`
+      container.style.minHeight = `${h}px`
+    }
 
-    console.log('html2canvas element:', pageEl, pageEl.innerHTML.length)
+    console.log('elemento:', pageEl)
+    console.log('innerHTML length:', pageEl?.innerHTML?.length)
+    console.log('offsetHeight:', pageEl?.offsetHeight)
+
+    if (!pageEl.offsetHeight) {
+      throw new Error(
+        `PDF capture: .pdf-page com offsetHeight=0 (innerHTML=${pageEl.innerHTML.length}). Container offscreen colapsou.`,
+      )
+    }
+
+    const keepZones = coletarZonasKeep(pageEl, CAPTURE_SCALE)
 
     const canvas = await html2canvas(pageEl, {
-      scale: 2,
-      width: W,
-      windowWidth: W,
       useCORS: true,
       allowTaint: true,
+      scale: CAPTURE_SCALE,
       backgroundColor: '#ffffff',
+      width: W,
+      windowWidth: W,
       logging: true,
       imageTimeout: 15000,
-      scrollX: 0,
-      scrollY: 0,
-      x: 0,
-      y: 0,
       onclone: (_doc, cloned) => {
         const el = cloned as HTMLElement
-        forceA4(el)
+        el.style.width = `${W}px`
+        el.style.maxWidth = `${W}px`
+        el.style.boxSizing = 'border-box'
+        el.style.overflow = 'visible'
+        el.style.opacity = '1'
+        el.style.visibility = 'visible'
+        el.style.display = 'block'
+        el.style.background = '#ffffff'
+        el.style.height = 'auto'
+        el.style.maxHeight = 'none'
+        // Clone às vezes herda left:-9999 — reposiciona para o motor pintar
+        el.style.position = 'relative'
+        el.style.left = '0'
+        el.style.top = '0'
         el
           .querySelectorAll('.sm-footer, .pdf-footer, [data-pdf-footer], .sm-sheet-foot')
           .forEach((n) => n.remove())
@@ -538,40 +559,23 @@ async function gerarPdfBlob(
             img.replaceWith(slot)
           }
         })
-        el.querySelectorAll('.sm-section-bar').forEach((node) => {
-          const n = node as HTMLElement
-          if (!n.style) return
-          n.style.setProperty('white-space', 'normal', 'important')
-          n.style.setProperty('word-wrap', 'break-word', 'important')
-          n.style.setProperty('overflow-wrap', 'anywhere', 'important')
-          n.style.setProperty('overflow', 'visible', 'important')
-          n.style.setProperty('max-height', 'none', 'important')
-          n.style.setProperty('height', 'auto', 'important')
-          n.style.setProperty('width', '100%', 'important')
-          n.style.setProperty('box-sizing', 'border-box', 'important')
-        })
-        el.querySelectorAll(
-          '.sm-pedidos, .sm-secao-vi, .sm-fecho-bloco, .sm-para, .sm-body, .pdf-page.sm-rural',
-        ).forEach((node) => {
-          const n = node as HTMLElement
-          if (!n.style) return
-          n.style.setProperty('overflow', 'visible', 'important')
-          n.style.setProperty('height', 'auto', 'important')
-          n.style.setProperty('max-height', 'none', 'important')
-          n.style.setProperty('min-height', '0', 'important')
-        })
-        el.querySelectorAll('*').forEach((node) => {
-          const n = node as HTMLElement
-          if (!n.style) return
-          n.style.maxWidth = '100%'
-          n.style.overflowWrap = 'anywhere'
-          n.style.wordWrap = 'break-word'
-        })
+        el.querySelectorAll('.sm-secao-vi, .sm-pedidos, .sm-pedido-item, .sm-fecho-bloco').forEach(
+          (node) => {
+            const n = node as HTMLElement
+            n.removeAttribute('data-pdf-keep')
+            n.classList.remove('keep-together')
+            n.style.setProperty('page-break-inside', 'auto', 'important')
+            n.style.setProperty('break-inside', 'auto', 'important')
+            n.style.setProperty('overflow', 'visible', 'important')
+            n.style.setProperty('height', 'auto', 'important')
+            n.style.setProperty('max-height', 'none', 'important')
+          },
+        )
       },
     })
 
     let finalCanvas = canvas
-    const expectedW = W * 2
+    const expectedW = Math.round(W * CAPTURE_SCALE)
     if (canvas.width !== expectedW) {
       const cropped = document.createElement('canvas')
       cropped.width = expectedW

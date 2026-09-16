@@ -121,7 +121,7 @@ const checks: [string, boolean][] = [
     /\.sm-pedidos\s*\{[^}]*page-break-inside:\s*auto/.test(html) &&
       !/class="sm-pedidos"[^>]*page-break-inside:\s*avoid/.test(html),
   ],
-  ['orphans widows nos pedidos', /\.sm-pedido-item[\s\S]*?orphans:\s*3/.test(html) && html.includes('widows: 3')],
+  ['orphans widows nos pedidos', /\.sm-pedido-item[\s\S]*?orphans:\s*2/.test(html) && html.includes('widows: 2')],
   ['subhead sem border-left', /\.sm-subhead\s*\{[^}]*border-left:\s*none/.test(html)],
   ['subhead sem barra (só bold)', html.includes('sm-subhead') && !/sm-subhead[^>]*(border-left:\s*[1-9]|background:\s*#)/.test(pedidosBlock)],
   ['sem data-pdf-keep nos pedidos', !/sm-pedido-item[^>]*data-pdf-keep/.test(html)],

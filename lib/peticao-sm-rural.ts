@@ -791,7 +791,7 @@ function pedidosHtml(items: string[], comIntro = true): string {
     ? `<p class="sm-para sm-pedidos-intro">Diante do exposto, requer:</p>`
     : ''
   // Sem data-pdf-keep / avoid no container (seção VI é grande demais).
-  // orphans/widows mantêm intro+itens legíveis sem página quase vazia.
+  // Só orphans/widows nos itens — nunca page-break-inside:avoid no bloco.
   const rows = items
     .map((it) => {
       const m = it.match(/^((?:viii|vii|vi|iv|ix|iii|ii|v|i|x)+)\.\s*([\s\S]*)$/i)
@@ -799,9 +799,9 @@ function pedidosHtml(items: string[], comIntro = true): string {
       const body = m ? m[2] : it
       return `
         <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0"
-          style="width:100%;border-collapse:collapse;margin:0 0 10px;page-break-inside:auto;break-inside:auto;height:auto;min-height:0;max-height:none;overflow:visible;">
+          style="width:100%;border-collapse:collapse;margin:0 0 8px;height:auto;max-height:none;overflow:visible;">
           <tr>
-            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;orphans:3;widows:3;overflow:visible;height:auto;max-height:none;">
+            <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;orphans:2;widows:2;overflow:visible;height:auto;max-height:none;">
               <span class="sm-rom">${escapar(num)}.</span> ${escapar(limparMarkdownResidual(body))}
             </td>
           </tr>
@@ -809,7 +809,7 @@ function pedidosHtml(items: string[], comIntro = true): string {
     })
     .join('')
   return `
-    <div class="sm-pedidos" style="page-break-inside:auto;break-inside:auto;height:auto;min-height:0;max-height:none;overflow:visible;">
+    <div class="sm-pedidos" style="height:auto;max-height:none;overflow:visible;margin:0;padding:0;">
       ${intro}
       ${rows}
     </div>
@@ -1018,8 +1018,8 @@ export function cssSmRural(comMargens: boolean): string {
     .sm-para-qualif,
     .sm-pedidos-intro,
     .sm-pedido-item td {
-      orphans: 3;
-      widows: 3;
+      orphans: 2;
+      widows: 2;
     }
     .sm-sheet {
       position: relative;
@@ -1298,54 +1298,80 @@ export function cssSmRural(comMargens: boolean): string {
     table.sm-provas-table td.sm-prova-txt { width: auto; }
 
     .sm-pedidos-list { list-style: none; padding: 0; margin: 8px 0 0; }
+    /* Seção VI: NUNCA avoid no container — força página em branco após item i */
     .sm-secao-vi {
-      page-break-inside: auto !important;
-      break-inside: auto !important;
       height: auto !important;
-      min-height: 0 !important;
       max-height: none !important;
       overflow: visible !important;
+      margin-top: 4px !important;
+      margin-bottom: 0 !important;
+      padding-top: 0 !important;
+      page-break-inside: auto !important;
+      break-inside: auto !important;
+      page-break-before: auto !important;
+      page-break-after: auto !important;
+      break-before: auto !important;
+      break-after: auto !important;
+    }
+    .sm-secao-vi .sm-section-bar {
+      /* Só o título curto: evita cortar a barra; NÃO agrupa com todos os pedidos */
+      page-break-after: avoid;
+      page-break-inside: avoid;
+      break-inside: avoid;
+      margin-top: 10px;
+      margin-bottom: 8px;
+    }
+    .sm-secao-vi .keep-together {
+      page-break-inside: auto !important;
+      break-inside: auto !important;
     }
     .sm-pedidos {
-      page-break-inside: auto !important;
-      break-inside: auto !important;
       height: auto !important;
-      min-height: 0 !important;
       max-height: none !important;
       overflow: visible !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      page-break-inside: auto !important;
+      break-inside: auto !important;
+      page-break-before: auto !important;
+      page-break-after: auto !important;
+      break-before: auto !important;
+      break-after: auto !important;
     }
     .sm-pedidos-list li,
     table.sm-pedido-item {
       font-size: 12px; line-height: 1.6; text-align: justify;
-      margin: 0 0 10px;
+      margin: 0 0 8px;
       text-transform: none;
-      page-break-inside: auto;
-      break-inside: auto;
-      orphans: 3;
-      widows: 3;
+      orphans: 2;
+      widows: 2;
       overflow: visible;
       height: auto;
       max-height: none;
+      page-break-inside: auto !important;
+      break-inside: auto !important;
+      page-break-before: auto !important;
+      page-break-after: auto !important;
     }
     .sm-pedidos-intro {
-      margin-bottom: 8px;
-      page-break-after: avoid;
-      orphans: 3;
-      widows: 3;
+      margin-bottom: 6px;
+      margin-top: 0;
+      orphans: 2;
+      widows: 2;
+      page-break-after: auto;
     }
     .sm-rom { font-weight: bold; margin-right: 4px; }
 
     .sm-fechamento { margin-top: 12px; margin-bottom: 0; text-transform: none; overflow: visible; }
     .sm-fecho-bloco {
-      page-break-inside: auto;
-      break-inside: auto;
-      page-break-before: auto;
-      break-before: auto;
       margin-bottom: 0;
       margin-top: 0;
       overflow: visible;
       height: auto;
-      min-height: 0;
+      page-break-inside: auto !important;
+      break-inside: auto !important;
+      page-break-before: auto !important;
+      break-before: auto !important;
     }
     .sm-local-data { text-align: center; font-size: 12px; margin: 14px 0 16px; font-weight: 500; text-transform: none; }
     table.sm-sign-row {
@@ -1487,12 +1513,12 @@ export function montarHtmlSmRural(opts: {
     ${parasHtml(provasFecho)}
     ${sectionBar('V – FUNDAMENTAÇÃO JURÍDICA')}
     ${parasHtml(fund)}
-    <div class="sm-secao-vi" style="page-break-inside:auto;break-inside:auto;height:auto;min-height:0;max-height:none;overflow:visible;">
-      ${sectionBar('VI – PEDIDO / REQUERIMENTOS')}
+    <div class="sm-secao-vi" style="height:auto;max-height:none;overflow:visible;margin-top:4px;padding-top:0;page-break-inside:auto;break-inside:auto;">
+      <div class="sm-section-bar">${escapar('VI – PEDIDO / REQUERIMENTOS')}</div>
       ${pedidosHtml(pedidosP4.length ? pedidosP4 : pedidosAll, true)}
       ${pedidosP5.length ? pedidosHtml(pedidosP5, false) : ''}
     </div>
-    <div class="sm-fecho-bloco" style="page-break-before:auto;break-before:auto;page-break-inside:auto;break-inside:auto;margin-top:0;overflow:visible;">
+    <div class="sm-fecho-bloco" style="margin-top:0;overflow:visible;height:auto;">
       ${assinaturas}
       ${planilhaHtml(planilha)}
     </div>
