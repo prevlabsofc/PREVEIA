@@ -5,7 +5,7 @@ import path from 'path'
 /** Só para teste local — salva PDF (ou imagem) gerado no browser. */
 export async function POST(req: NextRequest) {
   if (process.env.NODE_ENV === 'production') {
-    return NextResponse.json({ error: 'disabled' }, { status: 404 })
+    return new Response('Not found', { status: 404 })
   }
   const buf = Buffer.from(await req.arrayBuffer())
   const ct = req.headers.get('content-type') || ''

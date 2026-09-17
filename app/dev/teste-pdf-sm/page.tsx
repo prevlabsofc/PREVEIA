@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useState } from 'react'
+import { notFound } from 'next/navigation'
 import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 import { montarHtmlPeticao } from '@/lib/montar-html-peticao'
@@ -201,6 +202,8 @@ export default function TestePdfSmPage() {
       setStatus(`Erro: ${e instanceof Error ? e.message : String(e)}`)
     }
   }, [])
+
+  if (process.env.NODE_ENV === 'production') notFound()
 
   return (
     <div style={{ padding: 24, fontFamily: 'system-ui', maxWidth: 720 }}>

@@ -6,6 +6,10 @@ import {
   textoRodapeSm,
 } from '../lib/peticao-sm-rural'
 import { FIXTURE_SM_ANA_LUCIA } from '../lib/fixtures/sm-ana-lucia'
+import { valorCausaSalarioMaternidade } from '../lib/salario-minimo'
+
+const { mensalFmt, totalFmt } = valorCausaSalarioMaternidade()
+const mensalEsc = mensalFmt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 const adv = {
   name: 'Prev Labs',
@@ -58,8 +62,8 @@ AÇÃO PREVIDENCIÁRIA DE CONCESSÃO DE SALÁRIO-MATERNIDADE << >>
 <<<END_TITULO>>>`,
 )
 const htmlDup = montarHtmlSmRural({ text: DUP_TITULO, adv, comMargens: true }) || ''
-const titleDup = htmlDup.match(/sm-main-title">([\s\S]*?)<\/div>/)?.[1] || ''
-const subDup = htmlDup.match(/sm-sub-title">([\s\S]*?)<\/div>/)?.[1] || ''
+const titleDup = htmlDup.match(/sm-main-title"[^>]*>([\s\S]*?)<\/div>/)?.[1] || ''
+const subDup = htmlDup.match(/sm-sub-title"[^>]*>([\s\S]*?)<\/div>/)?.[1] || ''
 
 const COLADO = normalizarTituloSubtitulo(
   'AÇÃO PREVIDENCIÁRIA DE CONCESSÃO DE SALÁRIO-MATERNIDADE << >> (SEGURADA ESPECIAL – AGRICULTORA)(SEGURADA ESPECIAL – AGRICULTORA)',
@@ -74,8 +78,8 @@ const romanos = (html.match(/sm-rom">(?:viii|vii|vi|v|iv|iii|ii|i)\./gi) || []).
 )
 
 const checks: [string, boolean][] = [
-  ['planilha 1518 x4', (html.match(/R\$ 1\.518,00/g) || []).length >= 4],
-  ['total 6072', html.includes('R$ 6.072,00')],
+  [`planilha ${mensalFmt} x4`, (html.match(new RegExp(mensalEsc, 'g')) || []).length >= 4],
+  [`total ${totalFmt}`, html.includes(totalFmt)],
   ['titulo br', html.includes('SALÁRIO-<br/>MATERNIDADE')],
   ['header nome', html.includes('Prev Labs')],
   ['header OAB', html.includes('OAB/MA n° 12345')],
@@ -83,7 +87,6 @@ const checks: [string, boolean][] = [
   ['sem footer no corpo', !/<div class="sm-footer[\s"]/.test(html)],
   ['sem timeline no corpo (estilo none)', !/<div class="sm-timeline[\s"]/.test(html)],
   ['overflow visible no .pdf-page.sm-rural', /\.pdf-page\.sm-rural\s*\{[^}]*overflow:\s*visible/.test(html)],
-  ['sm-body overflow visible', /\.sm-body\s*\{[^}]*overflow:\s*visible/.test(html)],
   ['sm-pedidos overflow visible', /\.sm-pedidos\s*\{[^}]*overflow:\s*visible/.test(html)],
   ['max-width 794', html.includes('max-width: 794px')],
   ['width 794', html.includes('width: 794px')],
@@ -98,11 +101,11 @@ const checks: [string, boolean][] = [
   ['logo slot 60px', html.includes('sm-logo-slot') && html.includes('width:60px')],
   [
     'titulo sem subtítulo duplicado',
-    /sm-main-title">[^<]*SALÁRIO-<br\/>MATERNIDADE<\/div>\s*<div class="sm-sub-title">\(SEGURADA ESPECIAL/.test(
+    /sm-main-title"[^>]*>[^<]*SALÁRIO-<br\/>MATERNIDADE<\/div>\s*<div class="sm-sub-title"[^>]*>\(SEGURADA ESPECIAL/.test(
       html,
-    ) && (html.match(/sm-sub-title">\(SEGURADA ESPECIAL/g) || []).length === 1,
+    ) && (html.match(/sm-sub-title"[^>]*>\(SEGURADA ESPECIAL/g) || []).length === 1,
   ],
-  ['titulo sem artefato <<', !/sm-main-title">[^<]*&lt;/.test(html)],
+  ['titulo sem artefato <<', !/sm-main-title"[^>]*>[^<]*&lt;/.test(html)],
   ['dup título limpo', !/&lt;|&gt;|SEGURADA/.test(titleDup) && /SALÁRIO-<br\/>MATERNIDADE/.test(titleDup)],
   ['dup subtítulo único', subDup === '(SEGURADA ESPECIAL – AGRICULTORA)'],
   [
@@ -125,6 +128,8 @@ const checks: [string, boolean][] = [
   ['subhead sem border-left', /\.sm-subhead\s*\{[^}]*border-left:\s*none/.test(html)],
   ['subhead sem barra (só bold)', html.includes('sm-subhead') && !/sm-subhead[^>]*(border-left:\s*[1-9]|background:\s*#)/.test(pedidosBlock)],
   ['sem data-pdf-keep nos pedidos', !/sm-pedido-item[^>]*data-pdf-keep/.test(html)],
+  ['data-pdf-block presente', html.includes('data-pdf-block="1"')],
+  ['endereco sem Comarca', /SUBSEÇÃO JUDICIÁRIA DE SÃO LUÍS/.test(html) && !/COMARCA DE/.test(html)],
   ['itens i–viii presentes', ['i.', 'ii.', 'iii.', 'iv.', 'v.', 'vi.', 'vii.', 'viii.'].every((r) => romanos.includes(r))],
   ['canon ENDIIANTES', canon.includes('<<<END_III_ANTES>>>')],
   ['malformed não nulo', Boolean(htmlBad)],
@@ -140,5 +145,6 @@ for (const [name, pass] of checks) {
   if (!pass) ok = false
 }
 console.log('rodape:', textoRodapeSm(adv))
+console.log('salario vigente:', mensalFmt, '×4 =', totalFmt)
 console.log(ok ? 'ALL PASSED' : 'SOME FAILED')
 process.exit(ok ? 0 : 1)

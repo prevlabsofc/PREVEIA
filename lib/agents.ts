@@ -2,6 +2,11 @@ import {
   formatarLocalData,
   resolverLocalAdvogado,
 } from '@/lib/peticao-export'
+import {
+  FUND_ADI_2110_2111,
+  FUND_TEMA_533_STJ,
+} from '@/lib/peticoes/fundamentos'
+import { valorCausaSalarioMaternidade } from '@/lib/salario-minimo'
 
 export function getSystemPrompt(agentType: string, adv: any, cli: any): string {
   const local = resolverLocalAdvogado(adv)
@@ -25,10 +30,11 @@ DADOS DO ADVOGADO (use obrigatoriamente no cabeçalho e pedidos):
   Vara: ${adv?.vara_padrao || ''}
   Honorários: ${adv?.honorarios_pct ?? ''}%
 
-LOCAL/DATA E COMARCA:
+LOCAL/DATA E ENDEREÇAMENTO:
   - ${cidadeUfInstrucao}
   - Formato da linha de assinatura: "${local.localFormatado || '[Cidade]/[UF]'}, [data por extenso]."
-  - Na comarca: "COMARCA DE ${local.localFormatado || '[Cidade]/[UF]'}"`
+  - Endereçamento JEF (obrigatório, SEM a palavra Comarca):
+    "AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE ${local.localFormatado || '[Cidade]/[UF]'}"`
 
   const prompts: Record<string, string> = {
     'salario-maternidade-rural': advDados + PROMPT_SAL_MAT_RURAL,
@@ -92,6 +98,8 @@ Pede deferimento.
 [Nome do advogado]
 OAB/[UF] nº [número]`
 
+const _smValor = valorCausaSalarioMaternidade()
+
 const PROMPT_SAL_MAT_RURAL = `
 Você é um advogado previdenciarista especializado com 20 anos de experiência.
 Gere uma PETIÇÃO INICIAL COMPLETA para Salário-Maternidade — Segurada Especial no JEF.
@@ -111,11 +119,12 @@ prioridade_menor: false
 <<<END_META>>>
 
 <<<ENDERECO>>>
-AO JUÍZO FEDERAL DA VARA DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DA COMARCA DE [Cidade]/[UF]
+AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE [Cidade]/[UF]
 <<<END_ENDERECO>>>
 
 <<<QUALIFICACAO>>>
-[Parágrafo corrido completo com nome, profissão, data de nascimento, idade, RG, CPF, endereço, menção aos procuradores e fundamento legal, TERMINANDO exatamente com as palavras: propor a presente]
+[Parágrafo corrido completo com nome, profissão, data de nascimento, idade, CPF, endereço, menção aos procuradores e fundamento legal, TERMINANDO exatamente com as palavras: propor a presente]
+[RG: só mencione "portadora do RG …" se o RG estiver informado nos dados. Se RG vazio/ausente, OMITA qualquer menção a RG — nunca escreva "RG não informado".]
 <<<END_QUALIFICACAO>>>
 
 <<<TITULO>>>
@@ -131,7 +140,7 @@ IMPORTANTE SOBRE TÍTULO (OBRIGATÓRIO):
 - NÃO invente << >> / marcadores extras entre título e subtítulo.
 
 <<<EM_FACE>>>
-[Parágrafo "Em face do INSTITUTO NACIONAL DO SEGURO SOCIAL – INSS..." com endereço de citação na comarca]
+[Parágrafo "Em face do INSTITUTO NACIONAL DO SEGURO SOCIAL – INSS..." — para citação use "Agência da Previdência Social em [Cidade]/[UF]" (NUNCA "Agência do INSS na Comarca de")]
 <<<END_EM_FACE>>>
 
 <<<I_PRELIMINARES>>>
@@ -143,7 +152,7 @@ DA GRATUIDADE DA JUSTIÇA:
 | Campo | Valor |
 | --- | --- |
 | Nome | [nome] |
-| Idade no Req. Adm. | [idade] |
+| Idade no Req. Adm. | [idade — se desconhecida, use "Não informada"] |
 | Pedido | Salário-Maternidade – Segurado Especial |
 | Criança | [nome da criança] |
 | Data de Nascimento | [dd/mm/aaaa] |
@@ -155,10 +164,11 @@ DA GRATUIDADE DA JUSTIÇA:
 | Tempo de trabalho antes do parto | [texto] |
 | Período de Segurado Especial declarado | [texto] |
 | Ponto controvertido | [texto] |
-| Benefício anterior | [texto ou Não consta] |
-| Período averbado no CNIS | [texto ou Não consta] |
+| Benefício anterior | [texto ou omita a linha se vazio] |
+| Período averbado no CNIS | [texto ou omita a linha se vazio] |
 | Vínculo urbano | [texto] |
 <<<END_II>>>
+[No quadro: omita linhas de campos opcionais vazios. "Não informada" só para idade.]
 
 <<<III_SINTESE_ANTES>>>
 [2–3 parágrafos narrativos sobre a autora, atividade rural e economia familiar]
@@ -177,16 +187,20 @@ DA GRATUIDADE DA JUSTIÇA:
 ✓ [prova 1]
 ✓ [prova 2]
 ✓ [prova 3]
-✓ [prova 4]
-✓ [prova 5]
+✓ Autodeclaração de segurado especial (art. 38-B, §2º, Lei 8.213/91)
+✓ [outras provas]
 <<<END_IV>>>
 
 <<<IV_FECHO>>>
-[Parágrafo de fechamento da seção de provas — início de prova material + economia familiar + carência]
+[Parágrafo de fechamento da seção de provas — início de prova material + economia familiar + carência.
+Se houver declaração de sindicato rural, descreva-a como prova complementar (NÃO cite art. 106, III, da Lei 8.213/91).]
 <<<END_IV_FECHO>>>
 
 <<<V_FUNDAMENTACAO>>>
-[4–6 parágrafos: art. 71 e art. 39 p.u. Lei 8.213/91; STF ADIs 2110 e 2111 (28/03/2024); CF/88 art. 7º, XVIII; STJ/TRFs; TNU; conclusão]
+[4–6 parágrafos: art. 71 e art. 39 p.u. Lei 8.213/91; CF/88 art. 7º, XVIII; conclusão.
+Inclua obrigatoriamente estes trechos (sem alterar):
+"${FUND_ADI_2110_2111}"
+"${FUND_TEMA_533_STJ}"]
 <<<END_V>>>
 
 <<<VI_PEDIDOS>>>
@@ -194,7 +208,7 @@ i. [comunicações em nome dos advogados — art. 272, §5º, CPC]
 ii. [procedência e concessão do salário-maternidade]
 iii. [averbação no CNIS]
 iv. [citação da ré + juntada do PA NB]
-v. [pagamento de 120 dias + correção e juros]
+v. [pagamento de 120 dias, com atualização nos termos do Manual de Cálculos da Justiça Federal, com incidência da taxa SELIC a partir de dezembro/2021, conforme art. 3º da EC nº 113/2021]
 vi. [audiência UNA]
 vii. [justiça gratuita]
 viii. [destaque de honorários contratuais de [honorários]% em favor do escritório]
@@ -203,7 +217,7 @@ viii. [destaque de honorários contratuais de [honorários]% em favor do escrit�
 <<<FECHAMENTO>>>
 Protesta o alegado por todos os meios admitidos em direito, especialmente o depoimento pessoal da parte autora e das testemunhas que comparecerão em audiência, independente de intimação.
 
-Dá-se à causa o valor de R$ 6.072,00 (seis mil e setenta e dois reais), renunciando-se a eventual excedente da alçada do Juizado Especial Federal, especificamente para fins de fixação da competência.
+Dá-se à causa o valor de ${_smValor.totalFmt} (${_smValor.total.toLocaleString('pt-BR')} reais), renunciando-se a eventual excedente da alçada do Juizado Especial Federal, especificamente para fins de fixação da competência.
 
 Termos em que, pede e espera deferimento.
 
@@ -214,22 +228,25 @@ OAB/[UF] nº [número]
 <<<PLANILHA>>>
 | Campo | Valor |
 | --- | --- |
-| 1º Mês de benefício | R$ 1.518,00 |
-| 2º Mês de benefício | R$ 1.518,00 |
-| 3º Mês de benefício | R$ 1.518,00 |
-| 4º Mês de benefício | R$ 1.518,00 |
-| TOTAL | R$ 6.072,00 |
+| 1º Mês de benefício | ${_smValor.mensalFmt} |
+| 2º Mês de benefício | ${_smValor.mensalFmt} |
+| 3º Mês de benefício | ${_smValor.mensalFmt} |
+| 4º Mês de benefício | ${_smValor.mensalFmt} |
+| TOTAL | ${_smValor.totalFmt} |
 nota: Referência do valor: quantia devida por fato gerador (cada nascimento)
 <<<END_PLANILHA>>>
 
 REGRAS:
 - Tom formal, humanizado e persuasivo
 - Usar EXATAMENTE os dados fornecidos pelo usuário
-- Sempre citar STF ADIs 2110 e 2111, j. 28/03/2024
+- Endereçamento SEM "Comarca"; citação INSS como "Agência da Previdência Social em"
+- Sempre citar STF ADIs 2110 e 2111, j. 28/03/2024 (texto fixo acima)
+- Declaração de sindicato: prova complementar — NÃO mencionar art. 106, III, Lei 8.213
+- Incluir checklist "Autodeclaração de segurado especial (art. 38-B, §2º, Lei 8.213/91)" nas provas
 - Na TIMELINE: 4 a 7 eventos reais do caso (nascimento, labor rural, requerimento, indeferimento etc.). O sistema pode sobrescrever este bloco com a configuração do usuário (estilo: horizontal | vertical | none).
 - prioridade_menor: true se a autora for menor de 18 anos
 - Local/data da assinatura: o sistema completa com a cidade do escritório — no FECHAMENTO NÃO escreva a linha de cidade/data
-- Valor da causa padrão: R$ 6.072,00 (4 × salário mínimo R$ 1.518,00), salvo outro valor informado
+- Valor da causa padrão: ${_smValor.totalFmt} (4 × salário mínimo ${_smValor.mensalFmt}), salvo outro valor informado
 - Texto corrido em caixa de sentença (primeira letra maiúscula, resto minúsculo conforme o português). NUNCA escreva parágrafos inteiros em CAIXA ALTA.
 - Copie os nomes dos marcadores EXATAMENTE, com underscores: <<<END_III_ANTES>>> (nunca <<<ENDIIANTES>>>). Todo bloco aberto DEVE ser fechado.
 - Os marcadores são instruções internas do sistema: não os explique, não os repita fora do formato e não os deixe no meio do texto jurídico.

@@ -46,6 +46,7 @@ import {
   validarNb,
   validarNomeCrianca,
   validarPeriodoSegurado,
+  avisoPrescricaoQuinquenal,
   type ErrosFormSm,
 } from '@/lib/validar-form-peticao'
 
@@ -374,6 +375,7 @@ function AgentesPageContent() {
     'Certidão de nascimento da criança (zona rural)',
     'Certidão eleitoral (endereço rural)',
     'Declaração de sindicato rural',
+    'Autodeclaração de segurado especial (art. 38-B, §2º, Lei 8.213/91)',
     'Declaração de associação de moradores',
     'ITR/INCRA em nome do cônjuge ou pais',
     'Contrato de arrendamento ou parceria rural',
@@ -382,6 +384,12 @@ function AgentesPageContent() {
     'Fotos de atividade agrícola',
     'Testemunhas disponíveis',
   ]
+
+  function confirmarPrescricaoSeNecessario(): boolean {
+    const aviso = avisoPrescricaoQuinquenal(formData.data_indeferimento || '')
+    if (!aviso) return true
+    return window.confirm(`${aviso}\n\nDeseja continuar mesmo assim?`)
+  }
 
   function handleImagemUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || [])
@@ -414,6 +422,7 @@ function AgentesPageContent() {
         alert('Corrija os campos destacados em vermelho antes de gerar o documento.')
         return
       }
+      if (!confirmarPrescricaoSeNecessario()) return
     }
     // SM rural: configurar timeline antes de gerar o documento final
     if (selectedAgent.key === 'salario-maternidade-rural') {
@@ -436,6 +445,10 @@ function AgentesPageContent() {
       if (formSmTemErros(erros)) {
         setShowTimelineConfig(false)
         alert('Corrija os campos destacados em vermelho antes de gerar o documento.')
+        return
+      }
+      if (!confirmarPrescricaoSeNecessario()) {
+        setShowTimelineConfig(false)
         return
       }
     }
@@ -1034,8 +1047,16 @@ function AgentesPageContent() {
                               value={formData.data_nascimento_crianca || ''}
                               onChange={e => setFormData(p => ({ ...p, data_nascimento_crianca: e.target.value }))}
                               onBlur={e => {
-                                const msg = validarDataPeticao(e.target.value, true)
-                                setFormErrors(p => ({ ...p, data_nascimento_crianca: msg || undefined }))
+                                setFormData(p => ({ ...p, data_nascimento_crianca: e.target.value }))
+                                const erros = validarFormularioSm({
+                                  ...formData,
+                                  data_nascimento_crianca: e.target.value,
+                                })
+                                setFormErrors(p => ({
+                                  ...p,
+                                  data_nascimento_crianca: erros.data_nascimento_crianca,
+                                  data_requerimento: erros.data_requerimento,
+                                }))
                               }}
                               style={formErrors.data_nascimento_crianca ? { borderColor: '#ef4444', borderWidth: 1 } : undefined}
                             />
@@ -1080,8 +1101,16 @@ function AgentesPageContent() {
                               value={formData.data_requerimento || ''}
                               onChange={e => setFormData(p => ({ ...p, data_requerimento: e.target.value }))}
                               onBlur={e => {
-                                const msg = validarDataPeticao(e.target.value, true)
-                                setFormErrors(p => ({ ...p, data_requerimento: msg || undefined }))
+                                setFormData(p => ({ ...p, data_requerimento: e.target.value }))
+                                const erros = validarFormularioSm({
+                                  ...formData,
+                                  data_requerimento: e.target.value,
+                                })
+                                setFormErrors(p => ({
+                                  ...p,
+                                  data_requerimento: erros.data_requerimento,
+                                  data_indeferimento: erros.data_indeferimento,
+                                }))
                               }}
                               style={formErrors.data_requerimento ? { borderColor: '#ef4444', borderWidth: 1 } : undefined}
                             />
@@ -1102,8 +1131,16 @@ function AgentesPageContent() {
                               value={formData.data_indeferimento || ''}
                               onChange={e => setFormData(p => ({ ...p, data_indeferimento: e.target.value }))}
                               onBlur={e => {
-                                const msg = validarDataPeticao(e.target.value, true)
-                                setFormErrors(p => ({ ...p, data_indeferimento: msg || undefined }))
+                                setFormData(p => ({ ...p, data_indeferimento: e.target.value }))
+                                const erros = validarFormularioSm({
+                                  ...formData,
+                                  data_indeferimento: e.target.value,
+                                })
+                                setFormErrors(p => ({
+                                  ...p,
+                                  data_requerimento: erros.data_requerimento,
+                                  data_indeferimento: erros.data_indeferimento,
+                                }))
                               }}
                               style={formErrors.data_indeferimento ? { borderColor: '#ef4444', borderWidth: 1 } : undefined}
                             />
@@ -1132,6 +1169,19 @@ function AgentesPageContent() {
                             ) : null}
                           </div>
                         </div>
+                        {avisoPrescricaoQuinquenal(formData.data_indeferimento || '') ? (
+                          <div
+                            className="rounded-lg px-3 py-2 text-[11px] leading-snug"
+                            style={{
+                              background: 'rgba(234,179,8,0.15)',
+                              border: '1px solid rgba(234,179,8,0.55)',
+                              color: '#CA8A04',
+                            }}
+                            role="alert"
+                          >
+                            {avisoPrescricaoQuinquenal(formData.data_indeferimento || '')}
+                          </div>
+                        ) : null}
                         <div>
                           <label className="block text-[10px] font-bold tracking-widest mb-1.5"
                             style={{ color: 'rgba(212,175,55,0.7)' }}>MOTIVO DO INDEFERIMENTO INSS*</label>

@@ -15,6 +15,7 @@ import {
   limparMarkdownResidual,
   resolverLocalAdvogado,
 } from '@/lib/peticao-export'
+import { valorCausaSalarioMaternidade } from '@/lib/salario-minimo'
 
 export const AGENT_SM_RURAL = 'salario-maternidade-rural'
 
@@ -325,6 +326,18 @@ function parseMeta(raw: string): {
   }
 }
 
+/** Idade no quadro: "Não informada" faz sentido; demais opcionais vazios são omitidos. */
+function quadroValorOmitivel(campo: string, valor: string): boolean {
+  const v = valor.trim()
+  if (!v) return true
+  const ehIdade = /idade/i.test(campo)
+  if (/^não\s+informad[oa]s?$/i.test(v) || /^n\/?a$/i.test(v) || /^—$|^-$/.test(v)) {
+    return !ehIdade
+  }
+  if (/^não\s+consta$/i.test(v)) return false
+  return false
+}
+
 function parseQuadro(md: string): QuadroRow[] {
   const rows: QuadroRow[] = []
   for (const line of md.split('\n')) {
@@ -337,6 +350,7 @@ function parseQuadro(md: string): QuadroRow[] {
       let valor = limparMarkdownResidual(m[2].trim())
       if (!campo || /^[-:]+$/.test(campo) || /^campo$/i.test(campo)) continue
       if (/^valor$/i.test(valor)) continue
+      if (quadroValorOmitivel(campo, valor)) continue
       const pareceData =
         campoEhData(campo) ||
         /^\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}$/.test(valor) ||
@@ -347,6 +361,55 @@ function parseQuadro(md: string): QuadroRow[] {
     }
   }
   return rows
+}
+
+/** Remove "portadora do RG …" / "RG não informado" quando RG vazio. */
+export function limparRgNaQualificacao(texto: string): string {
+  let s = String(texto || '')
+  s = s.replace(
+    /,?\s*(?:portador(?:a)?\s+do\s+)?RG\s*(?:n[º°o.]?\s*)?(?:não\s+informado|não\s+informada|n\/?a|—|-)?\s*(?:,|\s+SSP|\s+e\s+CPF|\s+CPF|$)/gi,
+    (m) => {
+      if (/não\s+informad|n\/?a|—|-?\s*$/i.test(m) || /RG\s*,/i.test(m) || /RG\s+e\s+CPF/i.test(m)) {
+        if (/e\s+CPF/i.test(m)) return ', CPF'
+        if (/SSP/i.test(m)) return ','
+        return ','
+      }
+      return m
+    },
+  )
+  s = s.replace(/,?\s*RG\s+não\s+informad[oa]\s*,?/gi, ',')
+  s = s.replace(/,\s*,+/g, ',').replace(/\s{2,}/g, ' ').replace(/,\s*\./g, '.')
+  return s.trim()
+}
+
+/** Normaliza endereçamento JEF e citação do INSS (sem "Comarca"). */
+export function normalizarEnderecoJef(texto: string, cidadeUf?: string): string {
+  let s = String(texto || '').trim()
+  const local = (cidadeUf || '').trim()
+  s = s.replace(
+    /AO\s+JU[IÍ]ZO\s+FEDERAL\s+(?:DA\s+VARA\s+DO\s+)?JUIZADO\s+ESPECIAL\s+FEDERAL\s+DA\s+SUBSE[CÇ][AÃ]O\s+JUDICI[AÁ]RIA\s+(?:DA\s+)?COMARCA\s+DE\s+/gi,
+    'AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE ',
+  )
+  s = s.replace(
+    /AO\s+JU[IÍ]ZO\s+FEDERAL\s+DA\s+VARA\s+DO\s+JUIZADO\s+ESPECIAL\s+FEDERAL\s+DA\s+SUBSE[CÇ][AÃ]O\s+JUDICI[AÁ]RIA\s+(?:DE\s+)?/gi,
+    'AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE ',
+  )
+  if (local && /\[CIDADE\]|\[UF\]/i.test(s)) {
+    s = s.replace(/\[CIDADE\]\s*\/\s*\[UF\]/gi, local)
+  }
+  return s
+}
+
+export function normalizarCitacaoInss(texto: string): string {
+  return String(texto || '')
+    .replace(
+      /Ag[eê]ncia\s+do\s+INSS\s+na\s+Comarca\s+de/gi,
+      'Agência da Previdência Social em',
+    )
+    .replace(
+      /Ag[eê]ncia\s+do\s+INSS\s+(?:em|de|na)\s+/gi,
+      'Agência da Previdência Social em ',
+    )
 }
 
 function parseProvas(raw: string): string[] {
@@ -572,7 +635,7 @@ function parasHtml(raw: string, extraClass = ''): string {
         )
         .replace(/(\d{4})-(\d{2})-(\d{2})/g, (piece) => sanitizarDataPeticao(piece))
       const inner = escapar(comDatas).replace(/\n/g, '<br/>')
-      return `<p class="${cls}" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">${inner}</p>`
+      return `<p class="${cls}" data-pdf-block="1" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">${inner}</p>`
     })
     .join('')
 }
@@ -620,7 +683,7 @@ export function renderTimelineSvg(data: TimelineData): string {
   })
 
   return `
-    <div class="sm-timeline keep-together" data-pdf-keep="1" style="page-break-inside:avoid;break-inside:avoid;overflow:visible;overflow-x:visible;width:100%;box-sizing:border-box;">
+    <div class="sm-timeline keep-together" data-pdf-block="1" data-pdf-keep="1" style="page-break-inside:avoid;break-inside:avoid;overflow:visible;overflow-x:visible;width:100%;box-sizing:border-box;">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="100%" height="${h}" overflow="visible" style="overflow:visible;" role="img" aria-label="${escapar(title)}">
         <rect x="0" y="0" width="${w}" height="${h}" rx="12" ry="12" fill="#EEF1F5" stroke="#D0D7E2"/>
         <text x="16" y="28" fill="#0A2540" font-size="12" font-family="Arial,sans-serif" font-weight="700">${escapar(title)}</text>
@@ -649,7 +712,7 @@ export function renderTimelineVertical(data: TimelineData): string {
     .join('')
 
   return `
-    <div class="sm-timeline sm-timeline-vertical keep-together" data-pdf-keep="1" style="page-break-inside:avoid;break-inside:avoid;">
+    <div class="sm-timeline sm-timeline-vertical keep-together" data-pdf-block="1" data-pdf-keep="1" style="page-break-inside:avoid;break-inside:avoid;">
       <div class="sm-tl-title">${escapar(title)}</div>
       <table class="sm-tl-table" cellpadding="0" cellspacing="0">
         <tbody>${items}</tbody>
@@ -751,7 +814,7 @@ function quadroHtml(rows: QuadroRow[]): string {
   const body = rows
     .map(
       (r, i) => `
-      <tr class="${i % 2 === 0 ? 'even' : 'odd'}">
+      <tr class="${i % 2 === 0 ? 'even' : 'odd'}" data-pdf-block="1">
         <td class="campo">${escapar(r.campo)}</td>
         <td class="valor">${escapar(r.valor)}</td>
       </tr>`,
@@ -759,7 +822,7 @@ function quadroHtml(rows: QuadroRow[]): string {
     .join('')
   return `
     <div class="sm-table-wrap keep-together">
-      <div class="sm-table-caption">RESUMO DAS PRINCIPAIS INFORMAÇÕES DO PROCESSO</div>
+      <div class="sm-table-caption" data-pdf-block="1" data-pdf-keep-with-next="1">RESUMO DAS PRINCIPAIS INFORMAÇÕES DO PROCESSO</div>
       <table class="sm-quadro" cellpadding="0" cellspacing="0" width="100%" border="1">
         <tbody>${body}</tbody>
       </table>
@@ -774,7 +837,7 @@ function provasHtml(items: string[]): string {
         ${items
           .map(
             (it, i) => `
-          <tr class="${i % 2 === 0 ? 'even' : 'odd'}">
+          <tr class="${i % 2 === 0 ? 'even' : 'odd'}" data-pdf-block="1">
             <td class="sm-check">✓</td>
             <td class="sm-prova-txt">${escapar(it)}</td>
           </tr>`,
@@ -787,9 +850,6 @@ function provasHtml(items: string[]): string {
 
 function pedidosHtml(items: string[], comIntro = true): string {
   if (!items.length) return ''
-  const intro = comIntro
-    ? `<p class="sm-para sm-pedidos-intro">Diante do exposto, requer:</p>`
-    : ''
   // Sem data-pdf-keep / avoid no container (seção VI é grande demais).
   // Só orphans/widows nos itens — nunca page-break-inside:avoid no bloco.
   const rows = items
@@ -798,7 +858,7 @@ function pedidosHtml(items: string[], comIntro = true): string {
       const num = m ? m[1].toLowerCase() : ''
       const body = m ? m[2] : it
       return `
-        <table class="sm-pedido-item" cellpadding="0" cellspacing="0" width="100%" border="0"
+        <table class="sm-pedido-item" data-pdf-block="1" cellpadding="0" cellspacing="0" width="100%" border="0"
           style="width:100%;border-collapse:collapse;margin:0 0 8px;height:auto;max-height:none;overflow:visible;">
           <tr>
             <td style="font-size:12px;line-height:1.6;text-align:justify;padding:0;vertical-align:top;text-transform:none;orphans:2;widows:2;overflow:visible;height:auto;max-height:none;">
@@ -808,9 +868,12 @@ function pedidosHtml(items: string[], comIntro = true): string {
         </table>`
     })
     .join('')
+  const introHtml = comIntro
+    ? `<p class="sm-para sm-pedidos-intro" data-pdf-block="1" data-pdf-keep-with-next="1">Diante do exposto, requer:</p>`
+    : ''
   return `
     <div class="sm-pedidos" style="height:auto;max-height:none;overflow:visible;margin:0;padding:0;">
-      ${intro}
+      ${introHtml}
       ${rows}
     </div>
   `
@@ -823,23 +886,26 @@ function notaDocumentoGeradoHtml(): string {
     year: 'numeric',
   })
   return `
-    <div class="sm-doc-fecho-wrap">
+    <div class="sm-doc-fecho-wrap" data-pdf-block="1">
       <div class="sm-doc-gerado">Documento gerado em ${escapar(dataTxt)} pela plataforma Marple</div>
     </div>
   `
 }
 
-const PLANILHA_PADRAO: QuadroRow[] = [
-  { campo: '1º Mês de benefício', valor: 'R$ 1.518,00' },
-  { campo: '2º Mês de benefício', valor: 'R$ 1.518,00' },
-  { campo: '3º Mês de benefício', valor: 'R$ 1.518,00' },
-  { campo: '4º Mês de benefício', valor: 'R$ 1.518,00' },
-  { campo: 'TOTAL', valor: 'R$ 6.072,00' },
-]
+function planilhaPadraoRows(): QuadroRow[] {
+  const { mensalFmt, totalFmt } = valorCausaSalarioMaternidade()
+  return [
+    { campo: '1º Mês de benefício', valor: mensalFmt },
+    { campo: '2º Mês de benefício', valor: mensalFmt },
+    { campo: '3º Mês de benefício', valor: mensalFmt },
+    { campo: '4º Mês de benefício', valor: mensalFmt },
+    { campo: 'TOTAL', valor: totalFmt },
+  ]
+}
 
 function planilhaHtml(raw: string): string {
   const parsed = parseQuadro(raw)
-  const rows = parsed.length ? parsed : PLANILHA_PADRAO
+  const rows = parsed.length ? parsed : planilhaPadraoRows()
   const notaMatch = raw.match(/nota:\s*(.+)/i)
   const nota =
     notaMatch?.[1]?.trim() ||
@@ -852,7 +918,7 @@ function planilhaHtml(raw: string): string {
     })
     .join('')
   return `
-    <div class="sm-anexo" style="margin-top:8pt;margin-bottom:0;padding-top:4pt;padding-bottom:0;border-top:0.5pt solid #ccc;page-break-before:auto;break-before:auto;page-break-inside:auto;break-inside:auto;height:auto;min-height:0;overflow:visible;">
+    <div class="sm-anexo" data-pdf-block="1" style="margin-top:8pt;margin-bottom:0;padding-top:4pt;padding-bottom:0;border-top:0.5pt solid #ccc;page-break-before:auto;break-before:auto;page-break-inside:auto;break-inside:auto;height:auto;min-height:0;overflow:visible;">
       <div class="sm-anexo-title">ANEXO – PLANILHA DE CÁLCULO</div>
       <div class="sm-table-wrap" style="margin:4px 0 0;page-break-inside:avoid;break-inside:avoid;">
         <div class="sm-table-caption">PLANILHA DE CÁLCULO</div>
@@ -917,7 +983,7 @@ function assinaturasHtml(adv: DadosAdvogadoPeticao, fechamentoRaw: string): stri
     .trim()
 
   return `
-    <div class="sm-fechamento">
+    <div class="sm-fechamento" data-pdf-block="1">
       ${parasHtml(body)}
       <p class="sm-local-data">${escapar(localData)}.</p>
       <table class="sm-sign-row" cellpadding="0" cellspacing="0" width="100%">
@@ -936,13 +1002,13 @@ export function textoRodapeSm(adv: DadosAdvogadoPeticao): string {
 }
 
 function sectionBar(title: string): string {
-  return `<div class="sm-section-bar keep-together">${escapar(title)}</div>`
+  return `<div class="sm-section-bar keep-together" data-pdf-block="1" data-pdf-keep-with-next="1">${escapar(title)}</div>`
 }
 
 function subheadSimples(title: string): string {
   // Tipografia bold apenas — sem barra lateral / fundo / border-left
   // (diferente de sectionBar azul I–VI).
-  return `<div class="sm-subhead keep-together">${escapar(title)}</div>`
+  return `<div class="sm-subhead keep-together" data-pdf-block="1" data-pdf-keep-with-next="1">${escapar(title)}</div>`
 }
 
 export function isSmRuralStructured(text: string): boolean {
@@ -1459,12 +1525,19 @@ export function montarHtmlSmRural(opts: {
 
   const assinaturas = assinaturasHtml(opts.adv, fechamento)
 
-  const enderecoTexto = normalizarEspacos(
-    limparMarkdownResidual(
-      endereco ||
-        'AO JUÍZO FEDERAL DA VARA DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DA COMARCA DE [CIDADE]/[UF]',
+  const { localFormatado } = resolverLocalAdvogado(opts.adv)
+  const enderecoTexto = normalizarEnderecoJef(
+    normalizarEspacos(
+      limparMarkdownResidual(
+        endereco ||
+          `AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE ${localFormatado || '[Cidade]/[UF]'}`,
+      ),
     ),
+    localFormatado,
   )
+
+  const qualificacaoLimpa = limparRgNaQualificacao(qualificacao || '')
+  const emFaceLimpo = normalizarCitacaoInss(emFace || '')
 
   const timelineHtml = renderTimelineHtml(timeline)
   const temTimeline = Boolean(timelineHtml.trim())
@@ -1492,13 +1565,13 @@ export function montarHtmlSmRural(opts: {
   }
 
   const corpo = `
-    ${cabecalhoSm(opts.adv)}
-    <div class="sm-endereco">${escapar(enderecoTexto)}</div>
-    ${metaBoxHtml(meta.tipoAcao, meta.juizoDigital, meta.prioridades)}
-    ${parasHtml(qualificacao, 'sm-para-qualif')}
-    <div class="sm-main-title">${tituloHtml}</div>
-    <div class="sm-sub-title">${escapar(subtitulo)}</div>
-    ${parasHtml(emFace)}
+    <div data-pdf-block="1">${cabecalhoSm(opts.adv)}</div>
+    <div class="sm-endereco" data-pdf-block="1">${escapar(enderecoTexto)}</div>
+    <div data-pdf-block="1">${metaBoxHtml(meta.tipoAcao, meta.juizoDigital, meta.prioridades)}</div>
+    ${parasHtml(qualificacaoLimpa, 'sm-para-qualif')}
+    <div class="sm-main-title" data-pdf-block="1" data-pdf-keep-with-next="1">${tituloHtml}</div>
+    <div class="sm-sub-title" data-pdf-block="1">${escapar(subtitulo)}</div>
+    ${parasHtml(emFaceLimpo)}
     ${sectionBar('I – PRELIMINARMENTE')}
     ${subheadSimples(limparMarkdownResidual(prelimTitle))}
     ${parasHtml(prelimBody)}
@@ -1514,7 +1587,7 @@ export function montarHtmlSmRural(opts: {
     ${sectionBar('V – FUNDAMENTAÇÃO JURÍDICA')}
     ${parasHtml(fund)}
     <div class="sm-secao-vi" style="height:auto;max-height:none;overflow:visible;margin-top:4px;padding-top:0;page-break-inside:auto;break-inside:auto;">
-      <div class="sm-section-bar">${escapar('VI – PEDIDO / REQUERIMENTOS')}</div>
+      <div class="sm-section-bar" data-pdf-block="1" data-pdf-keep-with-next="1">${escapar('VI – PEDIDO / REQUERIMENTOS')}</div>
       ${pedidosHtml(pedidosP4.length ? pedidosP4 : pedidosAll, true)}
       ${pedidosP5.length ? pedidosHtml(pedidosP5, false) : ''}
     </div>
