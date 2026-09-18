@@ -6,7 +6,16 @@ import { getSystemPrompt } from '@/lib/agents'
 import { temAcessoTotal } from '@/lib/permissions/cargos'
 import { rateLimit } from '@/lib/rateLimit'
 import { registrarContato } from '@/lib/registrar-contato'
-import { AGENT_SM_RURAL, canonicalizarMarcadoresSm } from '@/lib/peticao-sm-rural'
+import {
+  AGENT_SM_RURAL,
+  ERRO_GERACAO_INTERROMPIDA,
+  canonicalizarMarcadoresSm,
+  validarCompletudeSmRural,
+} from '@/lib/peticao-sm-rural'
+import {
+  gerarDocumentoComContinuacao,
+  gerarPeticaoSmRuralEmBlocos,
+} from '@/lib/gerar-documento-claude'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -201,6 +210,9 @@ export async function POST(request: Request) {
           profession: cli?.profession ?? null,
           zone: cli?.zone ?? null,
           address: cli?.address ?? null,
+          rua: cli?.rua ?? null,
+          numero: cli?.numero ?? null,
+          bairro: cli?.bairro ?? null,
           city: cli?.city ?? null,
           state: cli?.state ?? null,
           notes: cli?.notes ?? null,
@@ -247,35 +259,38 @@ export async function POST(request: Request) {
     const systemPrompt = getSystemPrompt(agentType, lawyerForPrompt, cliForPrompt)
     const anthropic = new Anthropic({ apiKey })
     const encoder = new TextEncoder()
+    const formJson = JSON.stringify(normalizedFormData ?? {})
     let fullText = ''
 
     const readable = new ReadableStream({
       async start(controller) {
         try {
-          const stream = anthropic.messages.stream({
-            model: 'claude-sonnet-4-6',
-            max_tokens: 6000,
-            system: systemPrompt,
-            messages: [
-              {
-                role: 'user',
-                content: JSON.stringify(normalizedFormData ?? {}),
-              },
-            ],
-          })
-
-          for await (const chunk of stream) {
-            if (
-              chunk.type === 'content_block_delta' &&
-              chunk.delta.type === 'text_delta'
-            ) {
-              fullText += chunk.delta.text
-              controller.enqueue(encoder.encode(chunk.delta.text))
-            }
+          const onDelta = (t: string) => {
+            controller.enqueue(encoder.encode(t))
           }
 
           if (agentType === AGENT_SM_RURAL) {
-            fullText = canonicalizarMarcadoresSm(fullText)
+            fullText = await gerarPeticaoSmRuralEmBlocos(
+              anthropic,
+              systemPrompt,
+              formJson,
+              onDelta,
+            )
+          } else {
+            fullText = await gerarDocumentoComContinuacao(
+              anthropic,
+              systemPrompt,
+              formJson,
+              onDelta,
+            )
+            if (
+              fullText.includes('<<<SM_RURAL_V2>>>') ||
+              fullText.includes('<<<VI_PEDIDOS>>>')
+            ) {
+              fullText = canonicalizarMarcadoresSm(fullText)
+              const v = validarCompletudeSmRural(fullText)
+              if (!v.ok) throw new Error(v.motivo)
+            }
           }
 
           const { data: novoDoc } = await supabaseAdmin
@@ -349,7 +364,11 @@ export async function POST(request: Request) {
           })
         } catch (err) {
           console.error('ERRO GERAR-DOCUMENTO (stream):', err)
-          controller.enqueue(encoder.encode(`[ERRO_GERACAO] ${String(err)}`))
+          const msg =
+            err instanceof Error && err.message === ERRO_GERACAO_INTERROMPIDA
+              ? ERRO_GERACAO_INTERROMPIDA
+              : String(err)
+          controller.enqueue(encoder.encode(`\n[ERRO_GERACAO] ${msg}`))
         } finally {
           controller.close()
         }

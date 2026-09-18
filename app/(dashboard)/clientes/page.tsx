@@ -185,6 +185,9 @@ export default function ClientesPage() {
       profession: form.profession,
       zone: form.zone,
       cep: form.cep,
+      rua: form.rua || null,
+      numero: form.numero || null,
+      bairro: form.bairro || null,
       address: juntarEnderecoLegado(form),
       city: form.city,
       state: form.state,
@@ -192,8 +195,33 @@ export default function ClientesPage() {
       status: 'active',
     }
 
-    const { error } = await supabase.from('clients').insert(payload)
+    const { data: inserted, error } = await supabase
+      .from('clients')
+      .insert(payload)
+      .select('id')
+      .maybeSingle()
     if (error) {
+      // Fallback: base sem colunas rua/numero/bairro ainda
+      if (/rua|numero|bairro/i.test(error.message)) {
+        const { rua: _r, numero: _n, bairro: _b, ...semEndereco } = payload
+        const retry = await supabase.from('clients').insert(semEndereco).select('id').maybeSingle()
+        if (retry.error) {
+          console.error('[clientes] insert falhou:', retry.error.message)
+          setSaving(false)
+          return
+        }
+        await loadClients()
+        setShowModal(false)
+        setForm({
+          name: '', cpf: '', rg: '', birth_date: '', phone: '',
+          whatsapp: '', email: '', profession: '', zone: 'rural',
+          cep: '', rua: '', numero: '', bairro: '', city: '', state: '', notes: ''
+        })
+        setErrors({})
+        setSaving(false)
+        if (retry.data?.id) window.location.href = `/clientes/${retry.data.id}`
+        return
+      }
       console.error('[clientes] insert falhou:', error.message)
       setSaving(false)
       return
@@ -216,6 +244,9 @@ export default function ClientesPage() {
     })
     setErrors({})
     setSaving(false)
+    if (inserted?.id) {
+      window.location.href = `/clientes/${inserted.id}`
+    }
   }
 
   async function handleImportCSV(e: React.ChangeEvent<HTMLInputElement>) {
@@ -533,12 +564,12 @@ export default function ClientesPage() {
               <motion.div key={client.id}
                 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.05 }}
-                className="p-5 rounded-2xl cursor-pointer group transition-all hover:border-yellow-500/30"
+                className="p-5 rounded-2xl group transition-all hover:border-yellow-500/30"
                 style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)' }}>
 
                 <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="relative">
+                  <Link href={`/clientes/${client.id}`} className="flex items-center gap-3 min-w-0">
+                    <div className="relative flex-shrink-0">
                       <div className="w-12 h-12 rounded-full flex items-center justify-center font-black text-base"
                         style={{ background: '#D4AF37', color: '#000' }}>
                         {iniciais(client.name).toUpperCase()}
@@ -546,9 +577,9 @@ export default function ClientesPage() {
                       <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-500 border-2"
                         style={{ borderColor: '#111' }} />
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <div className="font-bold text-sm" style={{ color: isLight ? '#1E1E1E' : '#fff' }}>{client.name}</div>
+                        <div className="font-bold text-sm truncate hover:underline" style={{ color: isLight ? '#1E1E1E' : '#fff' }}>{client.name}</div>
                         {isClienteArquivado(client) && (
                           <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold" style={{ background: 'rgba(136,136,136,0.18)', color: '#888' }}>
                             Arquivado
@@ -559,8 +590,8 @@ export default function ClientesPage() {
                         CPF {cpfMascarado(client.cpf)}
                       </div>
                     </div>
-                  </div>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                  </Link>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0"
                     style={{ background: zona.bg, color: zona.color, border: `1px solid ${zona.border}` }}>
                     {zona.label}
                   </span>
@@ -581,10 +612,13 @@ export default function ClientesPage() {
                 </div>
 
                 {/* Botão */}
-                <button className="w-full py-2 rounded-xl text-xs font-bold transition-all hover:opacity-80"
-                  style={{ border: '1px solid rgba(212,175,55,0.25)', color: '#D4AF37', background: 'rgba(212,175,55,0.05)' }}>
+                <Link
+                  href={`/clientes/${client.id}`}
+                  className="w-full py-2 rounded-xl text-xs font-bold transition-all hover:opacity-80 text-center block"
+                  style={{ border: '1px solid rgba(212,175,55,0.25)', color: '#D4AF37', background: 'rgba(212,175,55,0.05)' }}
+                >
                   Acessar Formulário →
-                </button>
+                </Link>
                 <Link href={`/clientes/${client.id}`} className="flex items-center gap-1 text-[10px] mt-2" style={{ color: '#D4AF37' }}>
                   Ver detalhes →
                 </Link>

@@ -19,6 +19,10 @@ import { valorCausaSalarioMaternidade } from '@/lib/salario-minimo'
 
 export const AGENT_SM_RURAL = 'salario-maternidade-rural'
 
+/** Mensagem exibida quando a geração Claude truncou / seções ficaram vazias. */
+export const ERRO_GERACAO_INTERROMPIDA =
+  'A geração foi interrompida. Tente novamente.'
+
 export type TimelineEstilo = 'horizontal' | 'vertical' | 'none'
 
 export type TimelineEvento = {
@@ -412,12 +416,55 @@ export function normalizarCitacaoInss(texto: string): string {
     )
 }
 
+/**
+ * Extrai itens de prova como tópicos. Aceita ✓ / - / * / números / "Nome — expl".
+ * Nunca devolve parágrafos corridos longos sem marcador (quebra por frase se preciso).
+ */
 function parseProvas(raw: string): string[] {
-  return raw
-    .split('\n')
-    .map((l) => l.replace(/^✓\s*/, '').replace(/^[-*]\s*/, '').trim())
+  const text = String(raw || '').trim()
+  if (!text) return []
+
+  // Preferência: linhas com marcador
+  const porLinha = text
+    .split(/\n+/)
+    .map((l) =>
+      l
+        .replace(/^✓\s*/, '')
+        .replace(/^[-*•]\s*/, '')
+        .replace(/^\d+[.)]\s*/, '')
+        .trim(),
+    )
     .filter(Boolean)
     .filter((l) => !l.startsWith('<') && !/^#{1,6}\s/.test(l))
+    .filter((l) => !/^das?\s+provas/i.test(l))
+
+  if (porLinha.length >= 2) {
+    return porLinha.map(normalizarItemProva).filter(Boolean)
+  }
+
+  // Fallback: vários ✓ no mesmo parágrafo
+  const porCheck = text
+    .split(/✓/)
+    .map((p) => p.replace(/^[-*•]\s*/, '').trim())
+    .filter(Boolean)
+    .filter((l) => !l.startsWith('<'))
+
+  if (porCheck.length >= 2) {
+    return porCheck.map(normalizarItemProva).filter(Boolean)
+  }
+
+  // Último recurso: uma linha só ainda vira item único (se não for parágrafo enorme)
+  if (porLinha.length === 1 && porLinha[0].length < 280) {
+    return [normalizarItemProva(porLinha[0])].filter(Boolean)
+  }
+  return []
+}
+
+function normalizarItemProva(item: string): string {
+  let s = item.replace(/\s+/g, ' ').trim()
+  // Unifica travessões para o formato "Nome — explicação"
+  s = s.replace(/\s+[–—\-]\s+/g, ' — ')
+  return s
 }
 
 function parsePedidos(raw: string): string[] {
@@ -640,45 +687,83 @@ function parasHtml(raw: string, extraClass = ''): string {
     .join('')
 }
 
+/** Trunca texto da timeline (~60 chars) com reticências. */
+function truncarLabelTimeline(s: string, max = 60): string {
+  const t = String(s || '').replace(/\s+/g, ' ').trim()
+  if (t.length <= max) return t
+  return `${t.slice(0, Math.max(1, max - 1)).trimEnd()}…`
+}
+
+/** Quebra rótulo em até 2 linhas centradas (aprox. por caracteres). */
+function linhasSvgRotulo(texto: string, maxCharsLinha: number): string[] {
+  const t = truncarLabelTimeline(texto, maxCharsLinha * 2)
+  if (t.length <= maxCharsLinha) return [t]
+  const mid = Math.min(maxCharsLinha, t.length)
+  let breakAt = t.lastIndexOf(' ', mid)
+  if (breakAt < maxCharsLinha * 0.35) breakAt = mid
+  const l1 = t.slice(0, breakAt).trim()
+  const l2 = t.slice(breakAt).trim()
+  return l2 ? [l1, l2] : [l1]
+}
+
 /** SVG da linha do tempo horizontal — pontos numerados (modelo Custódio). */
 export function renderTimelineSvg(data: TimelineData): string {
   const w = 720
-  const h = 260
-  // padX maior + text-anchor start/end nos extremos evita cortar labels nas bordas
-  const padX = 88
-  const lineY = 130
   const events = data.eventos.length
     ? data.eventos
     : [{ data: '—', titulo: 'Sem eventos', detalhe: '' }]
   const n = events.length
+  const muitos = n >= 6
+  const h = muitos ? 300 : n >= 5 ? 280 : 260
+  // Respiro entre blocos: largura útil / n com gap implícito no step
+  const padX = muitos ? 56 : n >= 5 ? 70 : 88
+  const lineY = muitos ? 150 : 130
   const usable = w - padX * 2
+  const gap = muitos ? 10 : 14
+  const blocoW = n > 0 ? usable / n - gap : usable
   const step = n > 1 ? usable / (n - 1) : 0
+  const maxChars = Math.max(12, Math.floor(blocoW / (muitos ? 6.2 : 7)))
 
   const title = `LINHA DO TEMPO — ${data.nome.toUpperCase()} | ${data.atividade}${data.local ? ` • ${data.local}` : ''}`
+  const titleSize = muitos ? 9 : n >= 5 ? 9.5 : 10
+  const dataSize = muitos ? 8 : n >= 5 ? 9 : 9.5
+  const labelSize = muitos ? 8.5 : n >= 5 ? 9.5 : 10
+  const detailSize = muitos ? 7.5 : 8.5
 
   let nodes = ''
   events.forEach((ev, i) => {
     const x = padX + i * step
+    // Alterna acima/abaixo — vizinhos nunca na mesma faixa
     const above = i % 2 === 0
     const cy = lineY
-    const textY = above ? lineY - 52 : lineY + 38
-    const detailY = above ? lineY - 34 : lineY + 56
-    const dataY = above ? lineY - 70 : lineY + 74
-    // Extremidades: âncora para dentro do canvas (ponto 1 → start, último → end)
+    const bandSign = above ? -1 : 1
+    const dataY = lineY + bandSign * (muitos ? 78 : 70)
+    const titleBaseY = lineY + bandSign * (muitos ? 58 : 52)
+    const detailBaseY = lineY + bandSign * (muitos ? 38 : 34)
+
     const isFirst = i === 0
     const isLast = i === n - 1 && n > 1
     const labelAnchor = isFirst ? 'start' : isLast ? 'end' : 'middle'
-    const labelX = isFirst ? x - 6 : isLast ? x + 6 : x
-    const titleSize = n >= 5 ? 9.5 : 10
-    const dataSize = n >= 5 ? 9 : 9.5
-    const detailSize = 8.5
+    const labelX = isFirst ? x - 4 : isLast ? x + 4 : x
+
+    const tituloLinhas = linhasSvgRotulo(ev.titulo || '', maxChars)
+    const detalheTxt = ev.detalhe ? truncarLabelTimeline(ev.detalhe, 60) : ''
+    // 2 linhas: na faixa de cima empilha para cima; embaixo, para baixo
+    const tituloTspans = tituloLinhas
+      .map((ln, li) => {
+        const dyReal = li === 0 ? 0 : above ? -12 : 12
+        return `<tspan x="${labelX}" dy="${dyReal}">${escapar(ln)}</tspan>`
+      })
+      .join('')
+    const titleYAdjust = above && tituloLinhas.length > 1 ? -12 : 0
+    const detailYAdjust = above && tituloLinhas.length > 1 ? -12 : 0
 
     nodes += `
-      <circle cx="${x}" cy="${cy}" r="14" fill="#0A2540" stroke="#D4AF37" stroke-width="2"/>
-      <text x="${x}" y="${cy + 5}" text-anchor="middle" fill="#fff" font-size="11" font-family="Arial,sans-serif" font-weight="700">${i + 1}</text>
-      <text x="${labelX}" y="${dataY}" text-anchor="${labelAnchor}" fill="#555" font-size="${dataSize}" font-family="Arial,sans-serif">${escapar(ev.data)}</text>
-      <text x="${labelX}" y="${textY}" text-anchor="${labelAnchor}" fill="#0A2540" font-size="${titleSize}" font-family="Arial,sans-serif" font-weight="700">${escapar(ev.titulo)}</text>
-      ${ev.detalhe ? `<text x="${labelX}" y="${detailY}" text-anchor="${labelAnchor}" fill="#666" font-size="${detailSize}" font-family="Arial,sans-serif">${escapar(ev.detalhe)}</text>` : ''}
+      <circle cx="${x}" cy="${cy}" r="${muitos ? 12 : 14}" fill="#0A2540" stroke="#D4AF37" stroke-width="2"/>
+      <text x="${x}" y="${cy + 4}" text-anchor="middle" fill="#fff" font-size="${muitos ? 10 : 11}" font-family="Arial,sans-serif" font-weight="700">${i + 1}</text>
+      <text x="${labelX}" y="${dataY}" text-anchor="${labelAnchor}" fill="#555" font-size="${dataSize}" font-family="Arial,sans-serif">${escapar(truncarLabelTimeline(ev.data, 28))}</text>
+      <text x="${labelX}" y="${titleBaseY + titleYAdjust}" text-anchor="${labelAnchor}" fill="#0A2540" font-size="${labelSize}" font-family="Arial,sans-serif" font-weight="700">${tituloTspans}</text>
+      ${detalheTxt ? `<text x="${labelX}" y="${detailBaseY + detailYAdjust}" text-anchor="${labelAnchor}" fill="#666" font-size="${detailSize}" font-family="Arial,sans-serif">${escapar(detalheTxt)}</text>` : ''}
     `
   })
 
@@ -686,7 +771,7 @@ export function renderTimelineSvg(data: TimelineData): string {
     <div class="sm-timeline keep-together" data-pdf-block="1" data-pdf-keep="1" style="page-break-inside:avoid;break-inside:avoid;overflow:visible;overflow-x:visible;width:100%;box-sizing:border-box;">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="100%" height="${h}" overflow="visible" style="overflow:visible;" role="img" aria-label="${escapar(title)}">
         <rect x="0" y="0" width="${w}" height="${h}" rx="12" ry="12" fill="#EEF1F5" stroke="#D0D7E2"/>
-        <text x="16" y="28" fill="#0A2540" font-size="12" font-family="Arial,sans-serif" font-weight="700">${escapar(title)}</text>
+        <text x="16" y="26" fill="#0A2540" font-size="${titleSize + 2}" font-family="Arial,sans-serif" font-weight="700">${escapar(truncarLabelTimeline(title, 90))}</text>
         <line x1="${padX}" y1="${lineY}" x2="${w - padX}" y2="${lineY}" stroke="#0A2540" stroke-width="2.5"/>
         ${nodes}
       </svg>
@@ -918,7 +1003,7 @@ function planilhaHtml(raw: string): string {
     })
     .join('')
   return `
-    <div class="sm-anexo" data-pdf-block="1" style="margin-top:8pt;margin-bottom:0;padding-top:4pt;padding-bottom:0;border-top:0.5pt solid #ccc;page-break-before:auto;break-before:auto;page-break-inside:auto;break-inside:auto;height:auto;min-height:0;overflow:visible;">
+    <div class="sm-anexo" style="margin-top:8pt;margin-bottom:0;padding-top:4pt;padding-bottom:0;border-top:0.5pt solid #ccc;page-break-before:auto;break-before:auto;page-break-inside:avoid;break-inside:avoid;height:auto;min-height:0;overflow:visible;">
       <div class="sm-anexo-title">ANEXO – PLANILHA DE CÁLCULO</div>
       <div class="sm-table-wrap" style="margin:4px 0 0;page-break-inside:avoid;break-inside:avoid;">
         <div class="sm-table-caption">PLANILHA DE CÁLCULO</div>
@@ -983,7 +1068,7 @@ function assinaturasHtml(adv: DadosAdvogadoPeticao, fechamentoRaw: string): stri
     .trim()
 
   return `
-    <div class="sm-fechamento" data-pdf-block="1">
+    <div class="sm-fechamento">
       ${parasHtml(body)}
       <p class="sm-local-data">${escapar(localData)}.</p>
       <table class="sm-sign-row" cellpadding="0" cellspacing="0" width="100%">
@@ -1008,7 +1093,109 @@ function sectionBar(title: string): string {
 function subheadSimples(title: string): string {
   // Tipografia bold apenas — sem barra lateral / fundo / border-left
   // (diferente de sectionBar azul I–VI).
-  return `<div class="sm-subhead keep-together" data-pdf-block="1" data-pdf-keep-with-next="1">${escapar(title)}</div>`
+  return `<div class="sm-subhead keep-together" data-pdf-block="1" data-pdf-keep-with-next="1" style="font-weight:bold;text-align:left;text-indent:0;text-transform:uppercase;margin:14px 0 6px;">${escapar(title)}</div>`
+}
+
+/**
+ * Renderiza TODOS os subtítulos "DA …:" da seção I (negrito, esquerda, sem faixa azul).
+ */
+function renderPreliminaresHtml(raw: string): string {
+  const text = limparMarkdownResidual(String(raw || '').trim())
+  if (!text) return ''
+
+  const re = /(?:^|\n)\s*(DA\s+[A-ZÀ-ŸÁÉÍÓÚÂÊÔÃÕÇ][^:\n]{2,120}:)\s*/gi
+  const matches: { title: string; start: number; bodyStart: number }[] = []
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    matches.push({
+      title: m[1].trim(),
+      start: m.index,
+      bodyStart: m.index + m[0].length,
+    })
+  }
+
+  if (!matches.length) {
+    // Fallback: trata primeira linha como título se parecer subtítulo
+    const first = text.match(/^(DA\s+[^:\n]+:)\s*/i)
+    if (first) {
+      return (
+        subheadSimples(first[1].trim()) +
+        parasHtml(text.slice(first[0].length))
+      )
+    }
+    return parasHtml(text)
+  }
+
+  let html = ''
+  // Prefácio antes do primeiro "DA …:" (raro)
+  const before = text.slice(0, matches[0].start).trim()
+  if (before) html += parasHtml(before)
+
+  for (let i = 0; i < matches.length; i++) {
+    const end = i + 1 < matches.length ? matches[i + 1].start : text.length
+    const body = text.slice(matches[i].bodyStart, end).trim()
+    html += subheadSimples(matches[i].title)
+    if (body) html += parasHtml(body)
+  }
+  return html
+}
+
+/**
+ * Valida seções I–VI + pedidos i–viii antes do PDF.
+ * Bloqueia petição truncada / faixas azuis vazias.
+ */
+export function validarCompletudeSmRural(
+  text: string,
+): { ok: true } | { ok: false; motivo: string } {
+  const t = canonicalizarMarcadoresSm(String(text || ''))
+  if (!isSmRuralStructured(t)) {
+    return { ok: false, motivo: ERRO_GERACAO_INTERROMPIDA }
+  }
+
+  const secoes: [string, string, string][] = [
+    ['I', '<<<I_PRELIMINARES>>>', '<<<END_I>>>'],
+    ['II', '<<<II_QUADRO>>>', '<<<END_II>>>'],
+    ['III', '<<<III_SINTESE_ANTES>>>', '<<<END_III_ANTES>>>'],
+    ['IV', '<<<IV_PROVAS>>>', '<<<END_IV>>>'],
+    ['V', '<<<V_FUNDAMENTACAO>>>', '<<<END_V>>>'],
+    ['VI', '<<<VI_PEDIDOS>>>', '<<<END_VI>>>'],
+  ]
+
+  for (const [nome, open, close] of secoes) {
+    const body = bloco(t, open, close)
+    if (!body || body.length < 20) {
+      console.warn(`[SM_RURAL] Seção ${nome} vazia ou truncada (${body.length} chars)`)
+      return { ok: false, motivo: ERRO_GERACAO_INTERROMPIDA }
+    }
+    // Texto sem pontuação final (corte no meio da frase)
+    const tail = body.replace(/\s+/g, ' ').trim()
+    if (tail.length > 40 && !/[.!?…:;"')\]]$/.test(tail) && !/\|\s*$/.test(tail)) {
+      // Tabelas (II) e listas (IV/VI) podem terminar sem ponto
+      if (nome !== 'II' && nome !== 'IV' && nome !== 'VI') {
+        console.warn(`[SM_RURAL] Seção ${nome} sem pontuação final — possível truncamento`)
+        return { ok: false, motivo: ERRO_GERACAO_INTERROMPIDA }
+      }
+    }
+  }
+
+  const pedidos = parsePedidos(bloco(t, '<<<VI_PEDIDOS>>>', '<<<END_VI>>>'))
+  const romanos = new Set(
+    pedidos.map((p) => (p.match(/^(viii|vii|vi|iv|ix|iii|ii|v|i|x)\./i)?.[1] || '').toLowerCase()),
+  )
+  const exigidos = ['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii']
+  const faltando = exigidos.filter((r) => !romanos.has(r))
+  if (faltando.length > 0 || pedidos.length < 8) {
+    console.warn(`[SM_RURAL] Pedidos incompletos. Faltando: ${faltando.join(', ') || 'itens'}`)
+    return { ok: false, motivo: ERRO_GERACAO_INTERROMPIDA }
+  }
+
+  const provas = parseProvas(bloco(t, '<<<IV_PROVAS>>>', '<<<END_IV>>>'))
+  if (provas.length < 1) {
+    console.warn('[SM_RURAL] Seção IV sem itens de prova estruturados')
+    return { ok: false, motivo: ERRO_GERACAO_INTERROMPIDA }
+  }
+
+  return { ok: true }
 }
 
 export function isSmRuralStructured(text: string): boolean {
@@ -1241,10 +1428,13 @@ export function cssSmRural(comMargens: boolean): string {
       line-height: 1.35;
     }
     .sm-subhead {
-      font-weight: bold;
+      font-weight: bold !important;
       font-size: 11.5px;
       color: #1a1a1a;
-      margin: 10px 0 8px;
+      text-align: left !important;
+      text-indent: 0 !important;
+      text-transform: uppercase;
+      margin: 14px 0 6px;
       padding: 0;
       background: none;
       background-color: transparent;
@@ -1518,10 +1708,7 @@ export function montarHtmlSmRural(opts: {
   const pedidosP4 = pedidosAll.filter((p) => !/^viii\./i.test(p.trim()))
   const pedidosP5 = pedidosAll.filter((p) => /^viii\./i.test(p.trim()))
 
-  const prelimSub = preliminares.match(/DA GRATUIDADE[\s\S]*/i)?.[0] || preliminares
-  const prelimTitleMatch = prelimSub.match(/^(DA GRATUIDADE[^:\n]*:?)/im)
-  const prelimTitle = prelimTitleMatch?.[1] || 'DA GRATUIDADE DA JUSTIÇA:'
-  const prelimBody = prelimSub.replace(/^(DA GRATUIDADE[^:\n]*:?)\s*/im, '')
+  const preliminaresHtml = renderPreliminaresHtml(preliminares)
 
   const assinaturas = assinaturasHtml(opts.adv, fechamento)
 
@@ -1573,8 +1760,7 @@ export function montarHtmlSmRural(opts: {
     <div class="sm-sub-title" data-pdf-block="1">${escapar(subtitulo)}</div>
     ${parasHtml(emFaceLimpo)}
     ${sectionBar('I – PRELIMINARMENTE')}
-    ${subheadSimples(limparMarkdownResidual(prelimTitle))}
-    ${parasHtml(prelimBody)}
+    ${preliminaresHtml}
     ${sectionBar('II – QUADRO SINÓPTICO')}
     ${quadroHtml(quadro)}
     ${sectionBar('III – SÍNTESE DO CONTEXTO FÁTICO')}
@@ -1591,7 +1777,7 @@ export function montarHtmlSmRural(opts: {
       ${pedidosHtml(pedidosP4.length ? pedidosP4 : pedidosAll, true)}
       ${pedidosP5.length ? pedidosHtml(pedidosP5, false) : ''}
     </div>
-    <div class="sm-fecho-bloco" style="margin-top:0;overflow:visible;height:auto;">
+    <div class="sm-fecho-bloco keep-together" data-pdf-block="1" data-pdf-keep="1" style="margin-top:0;overflow:visible;height:auto;page-break-inside:avoid;break-inside:avoid;">
       ${assinaturas}
       ${planilhaHtml(planilha)}
     </div>

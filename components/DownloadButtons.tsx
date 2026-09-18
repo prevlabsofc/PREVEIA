@@ -34,7 +34,11 @@ import {
   limitesCanvasDePaginas,
 } from '@/lib/pdf-paginacao'
 import { montarHtmlPeticao } from '@/lib/montar-html-peticao'
-import { textoRodapeSm } from '@/lib/peticao-sm-rural'
+import {
+  ERRO_GERACAO_INTERROMPIDA,
+  textoRodapeSm,
+  validarCompletudeSmRural,
+} from '@/lib/peticao-sm-rural'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -318,6 +322,13 @@ async function gerarPdfBlob(
   estilo: EstiloPeticao,
   agentType: string | null,
 ): Promise<Blob> {
+  if (agentType === 'salario-maternidade-rural' || text.includes('<<<SM_RURAL_V2>>>')) {
+    const v = validarCompletudeSmRural(text)
+    if (!v.ok) {
+      throw new Error(v.motivo || ERRO_GERACAO_INTERROMPIDA)
+    }
+  }
+
   const corPeticao = String(advogado.cor_peticao || '#1d4ed8')
   const advComLogo = await prepararAdvComLogo(advogado)
 
@@ -335,7 +346,7 @@ async function gerarPdfBlob(
   const scrollAntes = { x: window.scrollX, y: window.scrollY }
   window.scrollTo(0, 0)
 
-  // Offscreen: fixed + top 0 (evita herdar margin do dashboard / blank no topo)
+  // Offscreen: fixed + top 0 (evita herdar margin/padding do dashboard / blank no topo)
   const container = document.createElement('div')
   container.setAttribute('data-pdf-capture', '1')
   container.style.cssText = [
@@ -353,6 +364,7 @@ async function gerarPdfBlob(
     'margin:0',
     'padding:0',
     'border:0',
+    'transform:none',
   ].join(';')
   container.innerHTML = html
   document.body.appendChild(container)
@@ -420,6 +432,8 @@ async function gerarPdfBlob(
       useCORS: true,
       allowTaint: true,
       backgroundColor: '#ffffff',
+      x: 0,
+      y: 0,
       scrollX: 0,
       scrollY: -window.scrollY,
       windowWidth: pageEl.scrollWidth,
@@ -555,7 +569,12 @@ export function DownloadButtons({
       setPdfUrl(url)
     } catch (err) {
       console.error('Falha ao gerar preview PDF:', err)
-      setPreviewErro('Não foi possível gerar o preview do PDF. Tente novamente.')
+      const msg = err instanceof Error ? err.message : ''
+      setPreviewErro(
+        msg === ERRO_GERACAO_INTERROMPIDA
+          ? ERRO_GERACAO_INTERROMPIDA
+          : 'Não foi possível gerar o preview do PDF. Tente novamente.',
+      )
     } finally {
       setGenerating(false)
     }
@@ -619,7 +638,12 @@ export function DownloadButtons({
       saveAs(blob, `${fileName}.pdf`)
     } catch (err) {
       console.error('Falha ao gerar PDF:', err)
-      alert('Não foi possível gerar o PDF. Tente novamente.')
+      const msg = err instanceof Error ? err.message : ''
+      alert(
+        msg === ERRO_GERACAO_INTERROMPIDA
+          ? ERRO_GERACAO_INTERROMPIDA
+          : 'Não foi possível gerar o PDF. Tente novamente.',
+      )
     } finally {
       setGenerating(false)
     }

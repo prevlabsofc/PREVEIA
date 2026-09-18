@@ -2,6 +2,10 @@
  * Paginação por blocos (DOM) antes da captura html2canvas.
  * Insere espaçadores para que títulos não fiquem órfãos e blocos
  * não sejam cortados no meio — o canvas é fatiado nos limites calculados.
+ *
+ * Regra do fecho (assinatura + planilha): tratados como unidade atômica
+ * (data-pdf-keep no .sm-fecho-bloco). Só quebra página se o bloco inteiro
+ * não couber — evita página final quase vazia só com a planilha.
  */
 
 import { A4_HEIGHT_PX, A4_WIDTH_PX, MARGEM_PETICAO_CM } from '@/lib/peticao-export'
@@ -59,6 +63,13 @@ function isTituloOuSubhead(el: HTMLElement): boolean {
   )
 }
 
+function isBlocoAtomico(el: HTMLElement): boolean {
+  return (
+    el.getAttribute('data-pdf-keep') === '1' ||
+    el.classList.contains('sm-fecho-bloco')
+  )
+}
+
 function criarEspacador(heightPx: number): HTMLElement {
   const spacer = document.createElement('div')
   spacer.className = 'pdf-page-spacer'
@@ -76,7 +87,16 @@ export function coletarBlocosPaginacao(root: HTMLElement): HTMLElement[] {
   const marked = Array.from(
     root.querySelectorAll('[data-pdf-block="1"]'),
   ) as HTMLElement[]
-  if (marked.length > 0) return marked
+  // Evita blocos aninhados (ex.: parágrafos dentro de .sm-fecho-bloco)
+  const topLevel = marked.filter((el) => {
+    let p = el.parentElement
+    while (p && p !== root) {
+      if (p.getAttribute('data-pdf-block') === '1') return false
+      p = p.parentElement
+    }
+    return true
+  })
+  if (topLevel.length > 0) return topLevel
 
   const fallbackSel = [
     '.sm-header',
@@ -95,6 +115,7 @@ export function coletarBlocosPaginacao(root: HTMLElement): HTMLElement[] {
     'table.sm-pedido-item',
     '.sm-pedidos-intro',
     '.sm-fechamento',
+    '.sm-fecho-bloco',
     '.sm-anexo',
     '.sm-doc-fecho-wrap',
     'p.doc-para',
@@ -173,6 +194,19 @@ export function aplicarPaginacaoPorBlocos(
       }
       i += 1
       continue
+    }
+
+    // Bloco atômico (fecho assinatura+planilha, timeline…): nunca partir
+    if (isBlocoAtomico(el) && h <= pageUsablePx && bottom > pageEnd + 0.5 && top > pageStart + 2) {
+      const falta = pageEnd - top
+      if (falta > 1) {
+        el.parentNode?.insertBefore(criarEspacador(falta), el)
+        pageBreaks.push(pageEnd)
+        pageStart = pageEnd
+        pageEnd = pageStart + pageUsablePx
+        blocks = getBlocks()
+        continue
+      }
     }
 
     // Bloco cabe na página
@@ -274,11 +308,11 @@ export function limitesCanvasDePaginas(
     slices.push({ y: 0, h: canvasHeight })
   }
 
-  // Remove última página quase vazia (< 3% da altura típica)
+  // Remove última página quase vazia (< 15% da altura média)
   if (slices.length > 1) {
     const last = slices[slices.length - 1]
     const avg = slices.slice(0, -1).reduce((s, x) => s + x.h, 0) / (slices.length - 1)
-    if (last.h < avg * 0.08) {
+    if (last.h < avg * 0.15) {
       slices.pop()
       if (slices.length) slices[slices.length - 1].h += last.h
     }

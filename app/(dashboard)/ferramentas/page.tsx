@@ -4,8 +4,9 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Calculator, CheckSquare, Clock, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react'
 import { GlassCard } from '@/components/GlassCard'
 import { CARENCIAS_INSS as CARENCIAS, CHECKLIST_INSS as CHECKLIST } from '@/lib/checklist-inss'
+import { getSalarioMinimo } from '@/lib/salario-minimo'
 
-const SALARIO_MINIMO = 1518
+const SALARIO_MINIMO = getSalarioMinimo()
 const TETO_INSS = 7786.02
 
 export default function FerramentasPage() {

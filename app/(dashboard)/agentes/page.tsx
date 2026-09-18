@@ -519,6 +519,15 @@ function AgentesPageContent() {
         setResult(acumulado)
       }
 
+      if (acumulado.includes('[ERRO_GERACAO]')) {
+        const msg =
+          acumulado.match(/\[ERRO_GERACAO\]\s*(.+)/)?.[1]?.trim() ||
+          'A geração foi interrompida. Tente novamente.'
+        setResult(`⚠️ ${msg}`)
+        setStreaming(false)
+        return
+      }
+
       // Canonicaliza marcadores SM (corrige <<<ENDIIANTES>>> etc.) e injeta timeline
       if (selectedAgent.key === 'salario-maternidade-rural') {
         acumulado = canonicalizarMarcadoresSm(acumulado)
@@ -1150,6 +1159,44 @@ function AgentesPageContent() {
                           </div>
                           <div>
                             <label className="block text-[10px] font-bold tracking-widest mb-1.5"
+                              style={{ color: 'rgba(212,175,55,0.7)' }}>MOTIVO DO INDEFERIMENTO INSS*</label>
+                            <input
+                              type="text"
+                              placeholder="Ex: Falta de período de carência"
+                              className="input-glass w-full text-sm"
+                              value={formData.motivo_inss || ''}
+                              onChange={e => setFormData(p => ({ ...p, motivo_inss: e.target.value }))}
+                              spellCheck={true}
+                            />
+                          </div>
+                        </div>
+                        {avisoPrescricaoQuinquenal(formData.data_indeferimento || '') ? (
+                          <div
+                            className="rounded-lg px-3 py-2 text-[11px] leading-snug"
+                            style={{
+                              background: 'rgba(234,179,8,0.15)',
+                              border: '1px solid rgba(234,179,8,0.55)',
+                              color: '#CA8A04',
+                            }}
+                            role="alert"
+                          >
+                            {avisoPrescricaoQuinquenal(formData.data_indeferimento || '')}
+                          </div>
+                        ) : null}
+
+                        {/* Bloco MÃE / AUTORA */}
+                        <div
+                          className="rounded-xl p-3 space-y-3"
+                          style={{
+                            border: isLight ? '1px solid #E5E7EB' : '1px solid rgba(212,175,55,0.2)',
+                            background: isLight ? '#FAFAFA' : 'rgba(212,175,55,0.04)',
+                          }}
+                        >
+                          <div className="text-[10px] font-bold tracking-widest" style={{ color: 'rgba(212,175,55,0.85)' }}>
+                            👩 DADOS DA MÃE / AUTORA (ATIVIDADE RURAL)
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold tracking-widest mb-1.5"
                               style={{ color: 'rgba(212,175,55,0.7)' }}>PERÍODO DE ATIVIDADE RURAL*</label>
                             <input
                               type="text"
@@ -1168,27 +1215,32 @@ function AgentesPageContent() {
                               <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>{formErrors.periodo_segurado}</p>
                             ) : null}
                           </div>
-                        </div>
-                        {avisoPrescricaoQuinquenal(formData.data_indeferimento || '') ? (
-                          <div
-                            className="rounded-lg px-3 py-2 text-[11px] leading-snug"
-                            style={{
-                              background: 'rgba(234,179,8,0.15)',
-                              border: '1px solid rgba(234,179,8,0.55)',
-                              color: '#CA8A04',
-                            }}
-                            role="alert"
-                          >
-                            {avisoPrescricaoQuinquenal(formData.data_indeferimento || '')}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[10px] font-bold tracking-widest mb-1.5"
+                                style={{ color: 'rgba(212,175,55,0.7)' }}>TEMPO DE TRABALHO ANTES DO PARTO</label>
+                              <input
+                                type="text"
+                                placeholder="Ex: 10 meses contínuos antes do parto"
+                                className="input-glass w-full text-sm"
+                                value={formData.tempo_trabalho_parto || ''}
+                                onChange={e => setFormData(p => ({ ...p, tempo_trabalho_parto: e.target.value }))}
+                                spellCheck={true}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold tracking-widest mb-1.5"
+                                style={{ color: 'rgba(212,175,55,0.7)' }}>PERÍODO DE SEGURADO ESPECIAL</label>
+                              <input
+                                type="text"
+                                placeholder="Ex: 01/2018 a 12/2025 (declarado)"
+                                className="input-glass w-full text-sm"
+                                value={formData.periodo_segurado_especial || ''}
+                                onChange={e => setFormData(p => ({ ...p, periodo_segurado_especial: e.target.value }))}
+                                spellCheck={true}
+                              />
+                            </div>
                           </div>
-                        ) : null}
-                        <div>
-                          <label className="block text-[10px] font-bold tracking-widest mb-1.5"
-                            style={{ color: 'rgba(212,175,55,0.7)' }}>MOTIVO DO INDEFERIMENTO INSS*</label>
-                          <textarea placeholder="Ex: Falta de período de carência anterior ao nascimento"
-                            className="input-glass w-full text-sm" style={{ height: 80, resize: 'none' }}
-                            value={formData.motivo_inss || ''}
-                            onChange={e => setFormData(p => ({ ...p, motivo_inss: e.target.value }))} spellCheck={true} />
                         </div>
                       </>
                     )}

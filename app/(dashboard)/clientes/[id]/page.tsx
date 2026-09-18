@@ -154,6 +154,9 @@ export default function ClienteDetalhesPage() {
       profession: form.profession,
       zone: form.zone,
       cep: form.cep,
+      rua: form.rua || null,
+      numero: form.numero || null,
+      bairro: form.bairro || null,
       address: juntarEnderecoLegado(form) || form.address || '',
       city: form.city,
       state: form.state,
@@ -161,12 +164,41 @@ export default function ClienteDetalhesPage() {
     }
     const { error } = await supabase.from('clients').update(payload).eq('id', id)
     if (error) {
-      console.error('[clientes/id] salvar:', error.message)
-      setSaving(false)
-      return
+      if (/rua|numero|bairro/i.test(error.message)) {
+        const { rua: _r, numero: _n, bairro: _b, ...semEnd } = payload
+        const retry = await supabase.from('clients').update(semEnd).eq('id', id)
+        if (retry.error) {
+          console.error('[clientes/id] salvar:', retry.error.message)
+          mostrarFeedback('erro', `Erro ao salvar: ${retry.error.message}`)
+          setSaving(false)
+          return
+        }
+      } else {
+        console.error('[clientes/id] salvar:', error.message)
+        mostrarFeedback('erro', `Erro ao salvar: ${error.message}`)
+        setSaving(false)
+        return
+      }
     }
-    const next = { ...client, ...payload, address: payload.address }
-    setClient(next); setForm(next); setEditing(false); setSaving(false)
+    // Recarrega do banco para garantir persistência (rua/bairro etc.)
+    let refreshed: Record<string, any> | null = null
+    for (const cols of [CLIENTS_SELECT_PT, CLIENTS_SELECT_EN, '*'] as const) {
+      const { data, error: selErr } = await supabase
+        .from('clients')
+        .select(cols as string)
+        .eq('id', id)
+        .maybeSingle()
+      if (!selErr && data) {
+        refreshed = normalizeCliente(data as unknown as Record<string, unknown>)
+        break
+      }
+    }
+    const next = refreshed || { ...client, ...payload, address: payload.address }
+    setClient(next)
+    setForm(next)
+    setEditing(false)
+    setSaving(false)
+    mostrarFeedback('sucesso', 'Dados do cliente salvos com sucesso.')
   }
 
   async function arquivar() {

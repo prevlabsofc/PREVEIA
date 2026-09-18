@@ -146,6 +146,8 @@ IMPORTANTE SOBRE TÍTULO (OBRIGATÓRIO):
 <<<I_PRELIMINARES>>>
 DA GRATUIDADE DA JUSTIÇA:
 [Parágrafo da gratuidade — art. 5º, LXXIV, CF/88 e Lei 1.060/50]
+DA PRIORIDADE DE TRAMITAÇÃO:
+[Se couber — idoso/deficiente/menor; senão omita este subtítulo]
 <<<END_I>>>
 
 <<<II_QUADRO>>>
@@ -163,6 +165,7 @@ DA GRATUIDADE DA JUSTIÇA:
 | Motivo INSS | [motivo] |
 | Tempo de trabalho antes do parto | [texto] |
 | Período de Segurado Especial declarado | [texto] |
+| Período de atividade rural | [texto] |
 | Ponto controvertido | [texto] |
 | Benefício anterior | [texto ou omita a linha se vazio] |
 | Período averbado no CNIS | [texto ou omita a linha se vazio] |
@@ -181,18 +184,21 @@ DA GRATUIDADE DA JUSTIÇA:
 
 <<<III_SINTESE_DEPOIS>>>
 [Parágrafos após a timeline: nascimento do filho, período gestacional, requerimento administrativo, indeferimento e crítica à decisão]
+[NÃO liste provas aqui — provas vão SOMENTE em <<<IV_PROVAS>>>]
 <<<END_III_DEPOIS>>>
 
 <<<IV_PROVAS>>>
-✓ [prova 1]
-✓ [prova 2]
-✓ [prova 3]
-✓ Autodeclaração de segurado especial (art. 38-B, §2º, Lei 8.213/91)
-✓ [outras provas]
+✓ [Nome do documento] — [explicação breve do que prova]
+✓ [Nome do documento] — [explicação]
+✓ [Nome do documento] — [explicação]
+✓ Autodeclaração de segurado especial — art. 38-B, §2º, Lei 8.213/91
+✓ [outras provas no mesmo formato]
 <<<END_IV>>>
+[OBRIGATÓRIO: cada prova em UMA linha, começando com ✓, formato "Nome — explicação".
+NUNCA escreva provas em parágrafos corridos. NUNCA coloque a lista antes da seção IV.]
 
 <<<IV_FECHO>>>
-[Parágrafo de fechamento da seção de provas — início de prova material + economia familiar + carência.
+[Parágrafo de análise/fechamento da seção de provas — início de prova material + economia familiar + carência.
 Se houver declaração de sindicato rural, descreva-a como prova complementar (NÃO cite art. 106, III, da Lei 8.213/91).]
 <<<END_IV_FECHO>>>
 
@@ -243,6 +249,8 @@ REGRAS:
 - Sempre citar STF ADIs 2110 e 2111, j. 28/03/2024 (texto fixo acima)
 - Declaração de sindicato: prova complementar — NÃO mencionar art. 106, III, Lei 8.213
 - Incluir checklist "Autodeclaração de segurado especial (art. 38-B, §2º, Lei 8.213/91)" nas provas
+- Em <<<IV_PROVAS>>>: SOMENTE lista com ✓ no formato "Nome do documento — explicação". Nunca parágrafos.
+- Em <<<I_PRELIMINARES>>>: cada tema em subtítulo próprio "DA …:" (ex.: DA GRATUIDADE DA JUSTIÇA:, DA PRIORIDADE…).
 - Na TIMELINE: 4 a 7 eventos reais do caso (nascimento, labor rural, requerimento, indeferimento etc.). O sistema pode sobrescrever este bloco com a configuração do usuário (estilo: horizontal | vertical | none).
 - prioridade_menor: true se a autora for menor de 18 anos
 - Local/data da assinatura: o sistema completa com a cidade do escritório — no FECHAMENTO NÃO escreva a linha de cidade/data
@@ -251,4 +259,5 @@ REGRAS:
 - Copie os nomes dos marcadores EXATAMENTE, com underscores: <<<END_III_ANTES>>> (nunca <<<ENDIIANTES>>>). Todo bloco aberto DEVE ser fechado.
 - Os marcadores são instruções internas do sistema: não os explique, não os repita fora do formato e não os deixe no meio do texto jurídico.
 - Na TIMELINE escreva APENAS um objeto JSON válido (sem markdown, sem texto antes ou depois do JSON).
+- NUNCA deixe seções I–VI vazias. NUNCA corte no meio da frase. Pedidos VI devem ter i. até viii. completos.
 `

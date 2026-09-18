@@ -3,15 +3,15 @@
  *
  * Colunas EXATAS:
  * id, lawyer_id, name, cpf, rg, birth_date, phone, whatsapp, email,
- * profession, zone, cep, address, city, state, notes, status, created_at,
- * ultimo_contato, lembrete_enviado_em
+ * profession, zone, cep, address, rua, numero, bairro, city, state, notes,
+ * status, created_at, ultimo_contato, lembrete_enviado_em
  *
  * NÃO existem: nome, telefone, tipo_beneficio, etapa_funil, stage, arquivado,
- * last_contact_at, office_id, assigned_lawyer_id, rua, numero, bairro…
+ * last_contact_at, office_id, assigned_lawyer_id…
  */
 
 export const CLIENTS_COLUMNS =
-  'id, lawyer_id, name, cpf, rg, birth_date, phone, whatsapp, email, profession, zone, cep, address, city, state, notes, status, created_at, ultimo_contato, lembrete_enviado_em' as const
+  'id, lawyer_id, name, cpf, rg, birth_date, phone, whatsapp, email, profession, zone, cep, address, rua, numero, bairro, city, state, notes, status, created_at, ultimo_contato, lembrete_enviado_em' as const
 
 export const CLIENTS_SELECT_SAFE = CLIENTS_COLUMNS
 
@@ -40,6 +40,9 @@ export type ClienteNormalizado = Record<string, unknown> & {
   status: 'active' | 'archived'
   arquivado: boolean
   address: string
+  rua: string
+  numero: string
+  bairro: string
   city: string
   state: string
   zone: string
@@ -85,6 +88,12 @@ export function normalizeCliente(row: Record<string, unknown> | null | undefined
   const telefone = String(r.phone ?? '')
   const zone = zonaUi(r.zone)
   const ultimo = (r.ultimo_contato ?? null) as string | null
+  const address = String(r.address ?? '')
+  const ruaDb = String(r.rua ?? r.logradouro ?? '').trim()
+  const numero = String(r.numero ?? '').trim()
+  const bairro = String(r.bairro ?? '').trim()
+  // Sem campos estruturados: usa address legado como rua
+  const rua = ruaDb || (!numero && !bairro ? address : '')
 
   return {
     ...r,
@@ -100,7 +109,10 @@ export function normalizeCliente(row: Record<string, unknown> | null | undefined
     etapa_funil: 'atendimento_triagem',
     status: arquivado ? STATUS_ARQUIVADO : STATUS_ATIVO,
     arquivado,
-    address: String(r.address ?? ''),
+    address,
+    rua,
+    numero,
+    bairro,
     city: String(r.city ?? ''),
     state: String(r.state ?? ''),
     zone,
@@ -128,16 +140,19 @@ export async function fetchClientsByLawyer(
   lawyerId: string,
 ): Promise<ClienteNormalizado[]> {
   try {
-    const { data, error } = await supabase
-      .from('clients')
-      .select(CLIENTS_SELECT_SAFE)
-      .eq('lawyer_id', lawyerId)
-      .order('created_at', { ascending: false })
+    const attempts = [CLIENTS_SELECT_SAFE, CLIENTS_COLUMNS.replace(/, rua, numero, bairro/, ''), '*'] as const
+    for (const cols of attempts) {
+      const { data, error } = await supabase
+        .from('clients')
+        .select(cols as string)
+        .eq('lawyer_id', lawyerId)
+        .order('created_at', { ascending: false })
 
-    if (!error) {
-      return ((data as unknown as Record<string, unknown>[]) || []).map(normalizeCliente)
+      if (!error) {
+        return ((data as unknown as Record<string, unknown>[]) || []).map(normalizeCliente)
+      }
+      console.warn('[clients] select falhou com cols:', cols, error.message)
     }
-    console.error('[clients] select falhou:', error.message)
     return []
   } catch (err) {
     console.error('[clients] fetchClientsByLawyer catch:', err)
@@ -167,6 +182,9 @@ export function buildClientInsertPayload(input: {
   zone?: string
   cep?: string
   address?: string
+  rua?: string
+  numero?: string
+  bairro?: string
   city?: string
   state?: string
   notes?: string
@@ -186,6 +204,9 @@ export function buildClientInsertPayload(input: {
     zone: input.zone || 'rural',
     cep: input.cep || '',
     address: input.address || '',
+    rua: input.rua || '',
+    numero: input.numero || '',
+    bairro: input.bairro || '',
     city: input.city || '',
     state: input.state || '',
     notes: input.notes || '',
