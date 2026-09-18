@@ -256,7 +256,12 @@ export async function POST(request: Request) {
       return Response.json({ error: 'ANTHROPIC_API_KEY não configurada' }, { status: 500 })
     }
 
-    const systemPrompt = getSystemPrompt(agentType, lawyerForPrompt, cliForPrompt)
+    const systemPrompt = getSystemPrompt(
+      agentType,
+      lawyerForPrompt,
+      cliForPrompt,
+      normalizedFormData,
+    )
     const anthropic = new Anthropic({ apiKey })
     const encoder = new TextEncoder()
     const formJson = JSON.stringify(normalizedFormData ?? {})

@@ -216,6 +216,23 @@ export function aplicarPaginacaoPorBlocos(
     }
 
     // Bloco não cabe: se já há conteúdo nesta página, empurra
+    // (exceto parágrafo longo > meia página — quebra em line-height)
+    const lh = Math.max(10, lineHeightPx(el))
+    const halfPage = pageUsablePx / 2
+    const room = pageEnd - top
+
+    // BUG3: parágrafo > restante E > meia página → cortar só em múltiplo exato do line-height
+    if (h > halfPage && room >= lh && bottom > pageEnd + 0.5) {
+      const lines = Math.max(1, Math.floor(room / lh))
+      const cutAt = top + lines * lh
+      if (cutAt > top + lh * 0.5 && cutAt < bottom - lh * 0.5) {
+        pageBreaks.push(cutAt)
+        pageStart = cutAt
+        pageEnd = pageStart + pageUsablePx
+        continue
+      }
+    }
+
     if (top > pageStart + 2 && h <= pageUsablePx) {
       const falta = pageEnd - top
       if (falta > 1) {
@@ -228,19 +245,15 @@ export function aplicarPaginacaoPorBlocos(
       }
     }
 
-    // Bloco maior que uma página: permite quebra, mas só em múltiplos de line-height
+    // Bloco maior que uma página (sem ter entrado no corte acima): múltiplos de lh
     if (h > pageUsablePx || bottom > pageEnd + 0.5) {
-      const lh = Math.max(10, lineHeightPx(el))
-      // Quanto cabe nesta página a partir de top
-      const room = pageEnd - top
-      if (room > lh * 1.5) {
-        const lines = Math.floor(room / lh)
+      const room2 = pageEnd - top
+      if (room2 > lh) {
+        const lines = Math.floor(room2 / lh)
         const cutAt = top + lines * lh
-        // Marca limite de página no corte de linha
         pageBreaks.push(Math.min(cutAt, pageEnd))
         pageStart = pageBreaks[pageBreaks.length - 1]
         pageEnd = pageStart + pageUsablePx
-        // Continua no mesmo bloco (agora em nova página)
         continue
       }
       // Room insuficiente: empurra bloco inteiro
@@ -267,14 +280,40 @@ export function aplicarPaginacaoPorBlocos(
 
   // Altura final do conteúdo → último limite
   const totalH = Math.max(root.scrollHeight, root.offsetHeight)
-  // Garante que o último pageEnd cobriu o conteúdo
-  while (pageEnd < totalH - 1 && pageBreaks.length < 80) {
-    pageBreaks.push(pageEnd)
-    pageEnd += pageUsablePx
+
+  // BUG4: se o último pageBreak deixa uma fatia final que caberia na página anterior
+  // (ex.: fecho empurrado indevidamente), remove o break e o espaçador imediatamente anterior.
+  while (pageBreaks.length > 0) {
+    const lastBreak = pageBreaks[pageBreaks.length - 1]
+    const rem = totalH - lastBreak
+    if (rem <= 0) {
+      pageBreaks.pop()
+      continue
+    }
+    // Página final quase vazia (< 22% da útil) → fundir na anterior
+    if (rem < pageUsablePx * 0.22) {
+      // Remove espaçador colado no break, se houver
+      root.querySelectorAll('[data-pdf-spacer="1"]').forEach((n) => {
+        const sp = n as HTMLElement
+        const top = relOffsetTop(sp, root)
+        if (Math.abs(top + sp.offsetHeight - lastBreak) < 2 || Math.abs(top - lastBreak) < 2) {
+          sp.remove()
+        }
+      })
+      pageBreaks.pop()
+      continue
+    }
+    break
   }
-  // Se sobrou fração de página com conteúdo, o fim do conteúdo é o último corte
-  if (totalH > (pageBreaks[pageBreaks.length - 1] || 0) + 2) {
-    // não adiciona página em branco: o último slice vai até totalH
+
+  // Garante que o último pageEnd cobriu o conteúdo
+  let pageEndCursor =
+    pageBreaks.length > 0 ? pageBreaks[pageBreaks.length - 1] + pageUsablePx : pageUsablePx
+  // Recalcula total após possível remoção de spacers
+  const totalH2 = Math.max(root.scrollHeight, root.offsetHeight)
+  while (pageEndCursor < totalH2 - 1 && pageBreaks.length < 80) {
+    pageBreaks.push(pageEndCursor)
+    pageEndCursor += pageUsablePx
   }
 
   return pageBreaks
@@ -308,11 +347,11 @@ export function limitesCanvasDePaginas(
     slices.push({ y: 0, h: canvasHeight })
   }
 
-  // Remove última página quase vazia (< 15% da altura média)
+  // Remove última página quase vazia (< 28% da altura média) — evita meia página em branco
   if (slices.length > 1) {
     const last = slices[slices.length - 1]
     const avg = slices.slice(0, -1).reduce((s, x) => s + x.h, 0) / (slices.length - 1)
-    if (last.h < avg * 0.15) {
+    if (last.h < avg * 0.28) {
       slices.pop()
       if (slices.length) slices[slices.length - 1].h += last.h
     }

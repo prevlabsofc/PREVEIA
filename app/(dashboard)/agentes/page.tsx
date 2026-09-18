@@ -1047,6 +1047,21 @@ function AgentesPageContent() {
                           </div>
                           <div>
                             <label className="block text-[10px] font-bold tracking-widest mb-1.5"
+                              style={{ color: 'rgba(212,175,55,0.7)' }}>SEXO DA CRIANÇA</label>
+                            <select
+                              className="input-glass w-full text-sm"
+                              value={formData.sexo_crianca || ''}
+                              onChange={e => setFormData(p => ({ ...p, sexo_crianca: e.target.value }))}
+                            >
+                              <option value="">Não informado</option>
+                              <option value="masculino">Masculino</option>
+                              <option value="feminino">Feminino</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[10px] font-bold tracking-widest mb-1.5"
                               style={{ color: 'rgba(212,175,55,0.7)' }}>DATA DE NASCIMENTO DA CRIANÇA*</label>
                             <input
                               type="date"
@@ -1073,8 +1088,6 @@ function AgentesPageContent() {
                               <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>{formErrors.data_nascimento_crianca}</p>
                             ) : null}
                           </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="block text-[10px] font-bold tracking-widest mb-1.5"
                               style={{ color: 'rgba(212,175,55,0.7)' }}>NB (NÚMERO DO BENEFÍCIO)</label>
@@ -1099,6 +1112,8 @@ function AgentesPageContent() {
                               <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>{formErrors.nb}</p>
                             ) : null}
                           </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="block text-[10px] font-bold tracking-widest mb-1.5"
                               style={{ color: 'rgba(212,175,55,0.7)' }}>DATA DO REQUERIMENTO*</label>
@@ -1127,8 +1142,6 @@ function AgentesPageContent() {
                               <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>{formErrors.data_requerimento}</p>
                             ) : null}
                           </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="block text-[10px] font-bold tracking-widest mb-1.5"
                               style={{ color: 'rgba(212,175,55,0.7)' }}>DATA DO INDEFERIMENTO*</label>
@@ -1157,7 +1170,8 @@ function AgentesPageContent() {
                               <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>{formErrors.data_indeferimento}</p>
                             ) : null}
                           </div>
-                          <div>
+                        </div>
+                        <div>
                             <label className="block text-[10px] font-bold tracking-widest mb-1.5"
                               style={{ color: 'rgba(212,175,55,0.7)' }}>MOTIVO DO INDEFERIMENTO INSS*</label>
                             <input
@@ -1168,7 +1182,6 @@ function AgentesPageContent() {
                               onChange={e => setFormData(p => ({ ...p, motivo_inss: e.target.value }))}
                               spellCheck={true}
                             />
-                          </div>
                         </div>
                         {avisoPrescricaoQuinquenal(formData.data_indeferimento || '') ? (
                           <div

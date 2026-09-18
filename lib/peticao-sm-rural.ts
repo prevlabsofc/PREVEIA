@@ -17,6 +17,18 @@ import {
 } from '@/lib/peticao-export'
 import { valorCausaSalarioMaternidade } from '@/lib/salario-minimo'
 
+export type TimelineLabelLayout = {
+  i: number
+  x: number
+  above: boolean
+  blocoW: number
+  dataY: number
+  titleYs: number[]
+  detailY: number | null
+  blocoTop: number
+  blocoBottom: number
+}
+
 export const AGENT_SM_RURAL = 'salario-maternidade-rural'
 
 /** Mensagem exibida quando a geração Claude truncou / seções ficaram vazias. */
@@ -467,6 +479,86 @@ function normalizarItemProva(item: string): string {
   return s
 }
 
+/** Linha curta no padrão "Documento — explicação" (não parágrafo narrativo). */
+function pareceLinhaProva(linha: string): boolean {
+  const s = String(linha || '')
+    .replace(/^✓\s*/, '')
+    .replace(/^[-*•]\s*/, '')
+    .replace(/^\d+[.)]\s*/, '')
+    .trim()
+  if (s.length < 8 || s.length > 220) return false
+  if (!/\s+[—–\-]\s+/.test(s)) return false
+  // Parágrafo narrativo: duas frases (". " + maiúscula). Abreviações (art. 8.213) ok.
+  if (/\.\s+[A-ZÁÉÍÓÚÀÃÕÂÊÔ]/.test(s)) return false
+  return true
+}
+
+/**
+ * Se a IA listou provas no fim da III (padrão "Documento — explicação"),
+ * remove da síntese e devolve os itens para a seção IV.
+ */
+export function extrairProvasDoFimDaSintese(texto: string): {
+  limpo: string
+  provas: string[]
+} {
+  const raw = String(texto || '')
+  if (!raw.trim()) return { limpo: raw, provas: [] }
+
+  const lines = raw.split(/\n/)
+  let end = lines.length - 1
+  while (end >= 0 && !lines[end].trim()) end -= 1
+
+  const collected: string[] = []
+  let i = end
+  while (i >= 0) {
+    const t = lines[i].trim()
+    if (!t) {
+      // linha em branco no meio do bloco de provas: interrompe
+      if (collected.length) break
+      i -= 1
+      continue
+    }
+    if (pareceLinhaProva(t)) {
+      collected.unshift(t)
+      i -= 1
+      continue
+    }
+    break
+  }
+
+  if (collected.length < 2) return { limpo: raw, provas: [] }
+
+  const keep = lines.slice(0, i + 1)
+  while (keep.length && !keep[keep.length - 1].trim()) keep.pop()
+  return {
+    limpo: keep.join('\n').trim(),
+    provas: collected.map(normalizarItemProva).filter(Boolean),
+  }
+}
+
+function mesclarProvas(base: string[], extras: string[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const p of [...base, ...extras]) {
+    const n = normalizarItemProva(p)
+    if (!n) continue
+    const key = n.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(n)
+  }
+  return out
+}
+
+/** Data de nascimento da criança no quadro sinóptico (dd/mm/aaaa ou ISO). */
+function dataNascimentoDoQuadro(quadro: QuadroRow[]): string | null {
+  const row = quadro.find((r) =>
+    /data\s+de\s+nascimento|nascimento\s+da\s+crian|parto/i.test(r.campo),
+  )
+  const v = row?.valor?.trim()
+  return v || null
+}
+
 function parsePedidos(raw: string): string[] {
   const items: string[] = []
   // Ordem: números romanos mais longos primeiro (viii antes de v, etc.)
@@ -687,14 +779,19 @@ function parasHtml(raw: string, extraClass = ''): string {
     .join('')
 }
 
-/** Trunca texto da timeline (~60 chars) com reticências. */
+const TL_LINE_H = 14
+const TL_BAND_LINES = 4 // data + título(1–2) + descrição
+const TL_BAND_H = TL_LINE_H * TL_BAND_LINES
+const TL_GAP_LINE = 18 // espaço entre eixo e bloco de rótulos
+
+/** Trunca texto da timeline com reticências. */
 function truncarLabelTimeline(s: string, max = 60): string {
   const t = String(s || '').replace(/\s+/g, ' ').trim()
   if (t.length <= max) return t
   return `${t.slice(0, Math.max(1, max - 1)).trimEnd()}…`
 }
 
-/** Quebra rótulo em até 2 linhas centradas (aprox. por caracteres). */
+/** Quebra título em até 2 linhas (aprox. por caracteres / largura do bloco). */
 function linhasSvgRotulo(texto: string, maxCharsLinha: number): string[] {
   const t = truncarLabelTimeline(texto, maxCharsLinha * 2)
   if (t.length <= maxCharsLinha) return [t]
@@ -702,8 +799,147 @@ function linhasSvgRotulo(texto: string, maxCharsLinha: number): string[] {
   let breakAt = t.lastIndexOf(' ', mid)
   if (breakAt < maxCharsLinha * 0.35) breakAt = mid
   const l1 = t.slice(0, breakAt).trim()
-  const l2 = t.slice(breakAt).trim()
+  const l2 = truncarLabelTimeline(t.slice(breakAt).trim(), maxCharsLinha)
   return l2 ? [l1, l2] : [l1]
+}
+
+/**
+ * Layout fixo dos rótulos: y incremental a partir do topo do bloco.
+ * Ímpares (1-based) acima; pares abaixo. Sem centralização vertical.
+ */
+export function layoutTimelineLabels(
+  n: number,
+  w = 720,
+): {
+  w: number
+  h: number
+  padX: number
+  lineY: number
+  usable: number
+  blocoW: number
+  step: number
+  maxChars: number
+  labels: Omit<TimelineLabelLayout, 'dataY' | 'titleYs' | 'detailY' | 'blocoTop' | 'blocoBottom'>[]
+} {
+  const padX = n >= 6 ? 48 : n >= 5 ? 60 : 80
+  const headerH = 34
+  const footerPad = 16
+  // 3 linhas acima + eixo + 3 linhas abaixo (+ folga p/ 4ª linha do título)
+  const h = headerH + TL_BAND_H + TL_GAP_LINE + 28 + TL_GAP_LINE + TL_BAND_H + footerPad
+  const lineY = headerH + TL_BAND_H + TL_GAP_LINE + 14
+  const usable = w - padX * 2
+  const blocoW = n > 0 ? Math.max(48, usable / n - 12) : usable
+  const step = n > 1 ? usable / (n - 1) : 0
+  const maxChars = Math.max(10, Math.floor(blocoW / 6.5))
+
+  const labels = Array.from({ length: Math.max(n, 1) }, (_, i) => {
+    const x = padX + i * step
+    const above = i % 2 === 0 // marco 1,3,5… acima
+    return { i, x, above, blocoW }
+  })
+
+  return { w, h, padX, lineY, usable, blocoW, step, maxChars, labels }
+}
+
+/**
+ * Calcula Y absolutos de cada linha do rótulo (empilhados, line-height fixo).
+ * titleLines: 1 ou 2; hasDetail: se há descrição.
+ */
+export function computarYsMarco(opts: {
+  lineY: number
+  above: boolean
+  titleLines: number
+  hasDetail: boolean
+}): Pick<TimelineLabelLayout, 'dataY' | 'titleYs' | 'detailY' | 'blocoTop' | 'blocoBottom'> {
+  const nTitle = Math.min(2, Math.max(1, opts.titleLines))
+  const lineCount = 1 + nTitle + (opts.hasDetail ? 1 : 0)
+  const blockH = lineCount * TL_LINE_H
+
+  let y0: number
+  if (opts.above) {
+    y0 = opts.lineY - TL_GAP_LINE - blockH + TL_LINE_H
+  } else {
+    y0 = opts.lineY + TL_GAP_LINE + TL_LINE_H
+  }
+
+  const dataY = y0
+  const titleYs: number[] = []
+  for (let t = 0; t < nTitle; t++) {
+    titleYs.push(y0 + (1 + t) * TL_LINE_H)
+  }
+  const detailY = opts.hasDetail ? y0 + (1 + nTitle) * TL_LINE_H : null
+  return {
+    dataY,
+    titleYs,
+    detailY,
+    blocoTop: y0 - TL_LINE_H + 2,
+    blocoBottom: (detailY ?? titleYs[titleYs.length - 1] ?? dataY) + 2,
+  }
+}
+
+/** Valida que rótulos do mesmo lado não se sobrepõem (y e x). */
+export function timelineLabelsSemOverlap(
+  layouts: TimelineLabelLayout[],
+): { ok: boolean; motivo?: string } {
+  for (const a of layouts) {
+    for (const y of [a.dataY, ...a.titleYs, a.detailY].filter((v): v is number => v != null)) {
+      // y deve ser múltiplo aproximado da progressão (tolerância 0.01)
+      if (!Number.isFinite(y)) return { ok: false, motivo: `y inválido no marco ${a.i + 1}` }
+    }
+    // linhas internas com dy == TL_LINE_H
+    const ys = [a.dataY, ...a.titleYs, ...(a.detailY != null ? [a.detailY] : [])]
+    for (let k = 1; k < ys.length; k++) {
+      if (Math.abs(ys[k] - ys[k - 1] - TL_LINE_H) > 0.01) {
+        return {
+          ok: false,
+          motivo: `marco ${a.i + 1}: dy != ${TL_LINE_H}px entre linhas`,
+        }
+      }
+    }
+  }
+
+  for (let i = 0; i < layouts.length; i++) {
+    for (let j = i + 1; j < layouts.length; j++) {
+      const a = layouts[i]
+      const b = layouts[j]
+      if (a.above !== b.above) continue
+      const ax0 = a.x - a.blocoW / 2
+      const ax1 = a.x + a.blocoW / 2
+      const bx0 = b.x - b.blocoW / 2
+      const bx1 = b.x + b.blocoW / 2
+      const overlapX = ax0 < bx1 && bx0 < ax1
+      const overlapY = a.blocoTop < b.blocoBottom && b.blocoTop < a.blocoBottom
+      if (overlapX && overlapY) {
+        return {
+          ok: false,
+          motivo: `overlap marcos ${a.i + 1} e ${b.i + 1} no mesmo lado`,
+        }
+      }
+    }
+  }
+  return { ok: true }
+}
+
+/** Monta layouts completos para N eventos (teste / render). */
+export function montarLayoutsTimeline(
+  eventos: TimelineEvento[],
+  w = 720,
+): { meta: ReturnType<typeof layoutTimelineLabels>; layouts: TimelineLabelLayout[] } {
+  const n = Math.max(eventos.length, 1)
+  const meta = layoutTimelineLabels(n, w)
+  const layouts: TimelineLabelLayout[] = meta.labels.map((lab, i) => {
+    const ev = eventos[i] || { data: '—', titulo: '—', detalhe: '' }
+    const tituloLinhas = linhasSvgRotulo(ev.titulo || '', meta.maxChars)
+    const hasDetail = Boolean((ev.detalhe || '').trim())
+    const ys = computarYsMarco({
+      lineY: meta.lineY,
+      above: lab.above,
+      titleLines: tituloLinhas.length,
+      hasDetail,
+    })
+    return { ...lab, ...ys }
+  })
+  return { meta, layouts }
 }
 
 /** SVG da linha do tempo horizontal — pontos numerados (modelo Custódio). */
@@ -712,58 +948,49 @@ export function renderTimelineSvg(data: TimelineData): string {
   const events = data.eventos.length
     ? data.eventos
     : [{ data: '—', titulo: 'Sem eventos', detalhe: '' }]
+  const { meta, layouts } = montarLayoutsTimeline(events, w)
+  const { h, padX, lineY, maxChars } = meta
   const n = events.length
   const muitos = n >= 6
-  const h = muitos ? 300 : n >= 5 ? 280 : 260
-  // Respiro entre blocos: largura útil / n com gap implícito no step
-  const padX = muitos ? 56 : n >= 5 ? 70 : 88
-  const lineY = muitos ? 150 : 130
-  const usable = w - padX * 2
-  const gap = muitos ? 10 : 14
-  const blocoW = n > 0 ? usable / n - gap : usable
-  const step = n > 1 ? usable / (n - 1) : 0
-  const maxChars = Math.max(12, Math.floor(blocoW / (muitos ? 6.2 : 7)))
 
   const title = `LINHA DO TEMPO — ${data.nome.toUpperCase()} | ${data.atividade}${data.local ? ` • ${data.local}` : ''}`
-  const titleSize = muitos ? 9 : n >= 5 ? 9.5 : 10
-  const dataSize = muitos ? 8 : n >= 5 ? 9 : 9.5
-  const labelSize = muitos ? 8.5 : n >= 5 ? 9.5 : 10
+  const dataSize = muitos ? 8 : 9
+  const labelSize = muitos ? 9 : 10
   const detailSize = muitos ? 7.5 : 8.5
+  const titleSize = muitos ? 9 : 10
 
   let nodes = ''
   events.forEach((ev, i) => {
-    const x = padX + i * step
-    // Alterna acima/abaixo — vizinhos nunca na mesma faixa
-    const above = i % 2 === 0
+    const lay = layouts[i]
+    const x = lay.x
     const cy = lineY
-    const bandSign = above ? -1 : 1
-    const dataY = lineY + bandSign * (muitos ? 78 : 70)
-    const titleBaseY = lineY + bandSign * (muitos ? 58 : 52)
-    const detailBaseY = lineY + bandSign * (muitos ? 38 : 34)
-
     const isFirst = i === 0
     const isLast = i === n - 1 && n > 1
     const labelAnchor = isFirst ? 'start' : isLast ? 'end' : 'middle'
     const labelX = isFirst ? x - 4 : isLast ? x + 4 : x
 
     const tituloLinhas = linhasSvgRotulo(ev.titulo || '', maxChars)
-    const detalheTxt = ev.detalhe ? truncarLabelTimeline(ev.detalhe, 60) : ''
-    // 2 linhas: na faixa de cima empilha para cima; embaixo, para baixo
+    const detalheTxt = ev.detalhe
+      ? truncarLabelTimeline(ev.detalhe, Math.max(18, Math.floor(maxChars * 1.4)))
+      : ''
+
     const tituloTspans = tituloLinhas
       .map((ln, li) => {
-        const dyReal = li === 0 ? 0 : above ? -12 : 12
-        return `<tspan x="${labelX}" dy="${dyReal}">${escapar(ln)}</tspan>`
+        const y = lay.titleYs[li] ?? lay.titleYs[0]
+        return `<tspan x="${labelX}" y="${y}">${escapar(ln)}</tspan>`
       })
       .join('')
-    const titleYAdjust = above && tituloLinhas.length > 1 ? -12 : 0
-    const detailYAdjust = above && tituloLinhas.length > 1 ? -12 : 0
 
     nodes += `
       <circle cx="${x}" cy="${cy}" r="${muitos ? 12 : 14}" fill="#0A2540" stroke="#D4AF37" stroke-width="2"/>
       <text x="${x}" y="${cy + 4}" text-anchor="middle" fill="#fff" font-size="${muitos ? 10 : 11}" font-family="Arial,sans-serif" font-weight="700">${i + 1}</text>
-      <text x="${labelX}" y="${dataY}" text-anchor="${labelAnchor}" fill="#555" font-size="${dataSize}" font-family="Arial,sans-serif">${escapar(truncarLabelTimeline(ev.data, 28))}</text>
-      <text x="${labelX}" y="${titleBaseY + titleYAdjust}" text-anchor="${labelAnchor}" fill="#0A2540" font-size="${labelSize}" font-family="Arial,sans-serif" font-weight="700">${tituloTspans}</text>
-      ${detalheTxt ? `<text x="${labelX}" y="${detailBaseY + detailYAdjust}" text-anchor="${labelAnchor}" fill="#666" font-size="${detailSize}" font-family="Arial,sans-serif">${escapar(detalheTxt)}</text>` : ''}
+      <text x="${labelX}" y="${lay.dataY}" text-anchor="${labelAnchor}" fill="#555" font-size="${dataSize}" font-family="Arial,sans-serif">${escapar(truncarLabelTimeline(ev.data, 28))}</text>
+      <text text-anchor="${labelAnchor}" fill="#0A2540" font-size="${labelSize}" font-family="Arial,sans-serif" font-weight="700">${tituloTspans}</text>
+      ${
+        detalheTxt && lay.detailY != null
+          ? `<text x="${labelX}" y="${lay.detailY}" text-anchor="${labelAnchor}" fill="#666" font-size="${detailSize}" font-family="Arial,sans-serif">${escapar(detalheTxt)}</text>`
+          : ''
+      }
     `
   })
 
@@ -771,7 +998,7 @@ export function renderTimelineSvg(data: TimelineData): string {
     <div class="sm-timeline keep-together" data-pdf-block="1" data-pdf-keep="1" style="page-break-inside:avoid;break-inside:avoid;overflow:visible;overflow-x:visible;width:100%;box-sizing:border-box;">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="100%" height="${h}" overflow="visible" style="overflow:visible;" role="img" aria-label="${escapar(title)}">
         <rect x="0" y="0" width="${w}" height="${h}" rx="12" ry="12" fill="#EEF1F5" stroke="#D0D7E2"/>
-        <text x="16" y="26" fill="#0A2540" font-size="${titleSize + 2}" font-family="Arial,sans-serif" font-weight="700">${escapar(truncarLabelTimeline(title, 90))}</text>
+        <text x="16" y="24" fill="#0A2540" font-size="${titleSize + 2}" font-family="Arial,sans-serif" font-weight="700">${escapar(truncarLabelTimeline(title, 90))}</text>
         <line x1="${padX}" y1="${lineY}" x2="${w - padX}" y2="${lineY}" stroke="#0A2540" stroke-width="2.5"/>
         ${nodes}
       </svg>
@@ -977,8 +1204,8 @@ function notaDocumentoGeradoHtml(): string {
   `
 }
 
-function planilhaPadraoRows(): QuadroRow[] {
-  const { mensalFmt, totalFmt } = valorCausaSalarioMaternidade()
+function planilhaPadraoRows(dataReferencia?: string | null): QuadroRow[] {
+  const { mensalFmt, totalFmt } = valorCausaSalarioMaternidade(dataReferencia)
   return [
     { campo: '1º Mês de benefício', valor: mensalFmt },
     { campo: '2º Mês de benefício', valor: mensalFmt },
@@ -988,13 +1215,25 @@ function planilhaPadraoRows(): QuadroRow[] {
   ]
 }
 
-function planilhaHtml(raw: string): string {
+/** Reescreve valores da planilha com o SM vigente na data do parto. */
+function normalizarPlanilhaPorParto(
+  raw: string,
+  dataParto: string | null,
+): { rows: QuadroRow[]; nota: string } {
+  const vc = valorCausaSalarioMaternidade(dataParto)
   const parsed = parseQuadro(raw)
-  const rows = parsed.length ? parsed : planilhaPadraoRows()
+  const rows = (parsed.length ? parsed : planilhaPadraoRows(dataParto)).map((r) => {
+    if (/^total$/i.test(r.campo)) return { ...r, valor: vc.totalFmt }
+    if (/mês|mes/i.test(r.campo)) return { ...r, valor: vc.mensalFmt }
+    return r
+  })
   const notaMatch = raw.match(/nota:\s*(.+)/i)
-  const nota =
-    notaMatch?.[1]?.trim() ||
-    'Referência do valor: quantia devida por fato gerador (cada nascimento)'
+  const nota = vc.nota || notaMatch?.[1]?.trim() || vc.nota
+  return { rows, nota }
+}
+
+function planilhaHtml(raw: string, dataParto?: string | null): string {
+  const { rows, nota } = normalizarPlanilhaPorParto(raw || '', dataParto ?? null)
   const body = rows
     .map((r, i) => {
       const isTotal = /^total$/i.test(r.campo)
@@ -1694,7 +1933,7 @@ export function montarHtmlSmRural(opts: {
   let timeline = parseTimeline(timelineRaw)
   if (!timeline) timeline = parseTimeline(extrairJsonTimeline(text) || '')
   let sinteseDepois = bloco(text, '<<<III_SINTESE_DEPOIS>>>', '<<<END_III_DEPOIS>>>')
-  const provas = parseProvas(bloco(text, '<<<IV_PROVAS>>>', '<<<END_IV>>>'))
+  let provas = parseProvas(bloco(text, '<<<IV_PROVAS>>>', '<<<END_IV>>>'))
   const provasFecho = bloco(text, '<<<IV_FECHO>>>', '<<<END_IV_FECHO>>>')
   const fund = bloco(text, '<<<V_FUNDAMENTACAO>>>', '<<<END_V>>>')
   const pedidosAll = parsePedidos(bloco(text, '<<<VI_PEDIDOS>>>', '<<<END_VI>>>'))
@@ -1703,6 +1942,25 @@ export function montarHtmlSmRural(opts: {
 
   sinteseAntes = removerJsonTimelineDoTexto(sinteseAntes)
   sinteseDepois = removerJsonTimelineDoTexto(sinteseDepois)
+
+  // Fallback: provas listadas no fim da III → mover para IV (caixas com check)
+  {
+    const movido = extrairProvasDoFimDaSintese(sinteseDepois)
+    if (movido.provas.length) {
+      sinteseDepois = movido.limpo
+      provas = mesclarProvas(provas, movido.provas)
+    }
+  }
+  // Também varre síntese antes (caso raro)
+  {
+    const movido = extrairProvasDoFimDaSintese(sinteseAntes)
+    if (movido.provas.length) {
+      sinteseAntes = movido.limpo
+      provas = mesclarProvas(provas, movido.provas)
+    }
+  }
+
+  const dataParto = dataNascimentoDoQuadro(quadro)
 
   // Divide pedidos: i–vii no bloco principal; viii+ (honorários) junto das assinaturas
   const pedidosP4 = pedidosAll.filter((p) => !/^viii\./i.test(p.trim()))
@@ -1779,7 +2037,7 @@ export function montarHtmlSmRural(opts: {
     </div>
     <div class="sm-fecho-bloco keep-together" data-pdf-block="1" data-pdf-keep="1" style="margin-top:0;overflow:visible;height:auto;page-break-inside:avoid;break-inside:avoid;">
       ${assinaturas}
-      ${planilhaHtml(planilha)}
+      ${planilhaHtml(planilha, dataParto)}
     </div>
     ${notaDocumentoGeradoHtml()}
   `

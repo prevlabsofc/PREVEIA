@@ -1,14 +1,17 @@
 import { writeFileSync } from 'fs'
 import {
   canonicalizarMarcadoresSm,
+  extrairProvasDoFimDaSintese,
   montarHtmlSmRural,
+  montarLayoutsTimeline,
   normalizarTituloSubtitulo,
   textoRodapeSm,
+  timelineLabelsSemOverlap,
 } from '../lib/peticao-sm-rural'
 import { FIXTURE_SM_ANA_LUCIA } from '../lib/fixtures/sm-ana-lucia'
-import { valorCausaSalarioMaternidade } from '../lib/salario-minimo'
+import { getSalarioMinimo, valorCausaSalarioMaternidade } from '../lib/salario-minimo'
 
-const { mensalFmt, totalFmt } = valorCausaSalarioMaternidade()
+const { mensalFmt, totalFmt } = valorCausaSalarioMaternidade('10/01/2025')
 const mensalEsc = mensalFmt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 const adv = {
@@ -77,6 +80,57 @@ const romanos = (html.match(/sm-rom">(?:viii|vii|vi|v|iv|iii|ii|i)\./gi) || []).
   s.replace(/sm-rom">/i, '').toLowerCase(),
 )
 
+// BUG1: provas no fim da III devem migrar para IV (depois da faixa)
+const COM_PROVAS_NA_III = FIXTURE_SM_ANA_LUCIA.replace(
+  /<<<III_SINTESE_DEPOIS>>>[\s\S]*?<<<END_III_DEPOIS>>>/,
+  `<<<III_SINTESE_DEPOIS>>>
+Em 10/01/2025 nasceu o filho da autora. Requereu o benefício e foi indeferido.
+
+Certidão de nascimento — comprova o parto e o vínculo maternal
+CNIS — demonstra ausência de vínculos urbanos
+Declaração de atividade rural — prova o labor em economia familiar
+Notas fiscais de produtor — corroboram a comercialização agrícola
+Autodeclaração de segurado especial — art. 38-B, §2º, Lei 8.213/91
+<<<END_III_DEPOIS>>>`,
+).replace(/<<<IV_PROVAS>>>[\s\S]*?<<<END_IV>>>/, `<<<IV_PROVAS>>>\n<<<END_IV>>>`)
+
+const extr = extrairProvasDoFimDaSintese(`Narrativa ok.
+
+Doc A — prova A
+Doc B — prova B
+Doc C — prova C`)
+const htmlProvasIII = montarHtmlSmRural({ text: COM_PROVAS_NA_III, adv, comMargens: true }) || ''
+const idxIV = htmlProvasIII.search(/IV\s*[–—\-]\s*DAS PROVAS/)
+const ordemProvasOk =
+  /IV\s*[–—\-]\s*DAS PROVAS[\s\S]*?class="sm-provas[\s\S]*?class="sm-check"/.test(htmlProvasIII)
+const antesIV = idxIV >= 0 ? htmlProvasIII.slice(0, idxIV) : ''
+const temProvaAntesIV =
+  /class="sm-prova-txt"|Certidão de nascimento —|CNIS —|Notas fiscais de produtor —/.test(antesIV)
+
+// Timeline 5 e 6 marcos
+const ev5 = Array.from({ length: 5 }, (_, i) => ({
+  data: `0${i + 1}/01/2020`,
+  titulo: `Evento longo numero ${i + 1} com titulo`,
+  detalhe: `Detalhe do marco ${i + 1} bem descritivo`,
+}))
+const ev6 = Array.from({ length: 6 }, (_, i) => ({
+  data: `0${i + 1}/01/2020`,
+  titulo: `Marco ${i + 1} titulo completo`,
+  detalhe: `Descricao ${i + 1}`,
+}))
+const lay5 = montarLayoutsTimeline(ev5)
+const lay6 = montarLayoutsTimeline(ev6)
+const ov5 = timelineLabelsSemOverlap(lay5.layouts)
+const ov6 = timelineLabelsSemOverlap(lay6.layouts)
+const yIncremental6 = lay6.layouts.every((l) => {
+  const ys = [l.dataY, ...l.titleYs, ...(l.detailY != null ? [l.detailY] : [])]
+  return ys.every((y, i) => i === 0 || Math.abs(y - ys[i - 1] - 14) < 0.01)
+})
+
+const sm2000 = getSalarioMinimo('12/02/2000')
+const sm2000b = getSalarioMinimo('2000-02-12')
+const vc2000 = valorCausaSalarioMaternidade('12/02/2000')
+
 const checks: [string, boolean][] = [
   [`planilha ${mensalFmt} x4`, (html.match(new RegExp(mensalEsc, 'g')) || []).length >= 4],
   [`total ${totalFmt}`, html.includes(totalFmt)],
@@ -137,6 +191,21 @@ const checks: [string, boolean][] = [
   ['malformed sem END_TITULO', !htmlBad.includes('END_TITULO') && !htmlBad.includes('ENDIIANTES')],
   ['malformed timeline parseada', htmlBad.includes('sm-timeline') && !htmlBad.includes('"eventos"')],
   ['malformed fundamentação', htmlBad.includes('art. 71')],
+  // BUG1
+  ['extrairProvasDoFim remove da III', extr.provas.length === 3 && !/Doc A/.test(extr.limpo)],
+  ['provasHtml depois da faixa IV', ordemProvasOk],
+  ['provas NÃO antes de IV', !temProvaAntesIV],
+  ['sm-check CSS verde', /\.sm-check[\s\S]*?#15803d/.test(html)],
+  ['provas migradas renderizam check', (htmlProvasIII.match(/class="sm-check"/g) || []).length >= 5],
+  // BUG2
+  ['timeline 5 marcos sem overlap', ov5.ok],
+  ['timeline 6 marcos sem overlap', ov6.ok],
+  ['timeline 6 y incremental 14px', yIncremental6],
+  ['timeline SVG height suficiente', lay6.meta.h >= 200],
+  // BUG6
+  ['SM 12/02/2000 != 1621', sm2000 !== 1621 && sm2000b !== 1621],
+  ['SM 12/02/2000 = 136', sm2000 === 136 && sm2000b === 136],
+  ['nota planilha ano 1999', /1999/.test(vc2000.nota)],
 ]
 
 let ok = true
@@ -145,6 +214,7 @@ for (const [name, pass] of checks) {
   if (!pass) ok = false
 }
 console.log('rodape:', textoRodapeSm(adv))
-console.log('salario vigente:', mensalFmt, '×4 =', totalFmt)
+console.log('salario fixture (parto 2025):', mensalFmt, '×4 =', totalFmt)
+console.log('salario parto 12/02/2000:', sm2000, vc2000.mensalFmt)
 console.log(ok ? 'ALL PASSED' : 'SOME FAILED')
 process.exit(ok ? 0 : 1)

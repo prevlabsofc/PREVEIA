@@ -8,7 +8,7 @@ import {
 } from '@/lib/peticoes/fundamentos'
 import { valorCausaSalarioMaternidade } from '@/lib/salario-minimo'
 
-const _v = valorCausaSalarioMaternidade()
+const _v = valorCausaSalarioMaternidade('10/01/2025')
 
 export const FIXTURE_SM_ANA_LUCIA = `<<<SM_RURAL_V2>>>
 <<<META>>>
@@ -128,5 +128,6 @@ OAB/MA nº 12345
 | 3º Mês de benefício | ${_v.mensalFmt} |
 | 4º Mês de benefício | ${_v.mensalFmt} |
 | TOTAL | ${_v.totalFmt} |
+nota: ${_v.nota}
 <<<END_PLANILHA>>>
 `

@@ -8,7 +8,12 @@ import {
 } from '@/lib/peticoes/fundamentos'
 import { valorCausaSalarioMaternidade } from '@/lib/salario-minimo'
 
-export function getSystemPrompt(agentType: string, adv: any, cli: any): string {
+export function getSystemPrompt(
+  agentType: string,
+  adv: any,
+  cli: any,
+  formData?: Record<string, unknown> | null,
+): string {
   const local = resolverLocalAdvogado(adv)
   const exemploLocalData = formatarLocalData(adv)
   const cidadeUfInstrucao = local.cidade
@@ -36,8 +41,13 @@ LOCAL/DATA E ENDEREÇAMENTO:
   - Endereçamento JEF (obrigatório, SEM a palavra Comarca):
     "AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE ${local.localFormatado || '[Cidade]/[UF]'}"`
 
+  const fd = formData && typeof formData === 'object' ? formData : {}
+  const dataParto =
+    String(fd.data_nascimento_crianca || fd.data_parto || '').trim() || null
+  const sexoRaw = String(fd.sexo_crianca || '').trim().toLowerCase()
   const prompts: Record<string, string> = {
-    'salario-maternidade-rural': advDados + PROMPT_SAL_MAT_RURAL,
+    'salario-maternidade-rural':
+      advDados + buildPromptSalMatRural(dataParto, sexoRaw),
   }
 
   const base =
@@ -100,9 +110,39 @@ OAB/[UF] nº [número]`
 
 const _smValor = valorCausaSalarioMaternidade()
 
-const PROMPT_SAL_MAT_RURAL = `
+function instrucaoGeneroCrianca(sexoRaw: string): string {
+  if (sexoRaw === 'masculino' || sexoRaw === 'm' || sexoRaw === 'male') {
+    return `GÊNERO DA CRIANÇA (obrigatório): masculino.
+- Use SEMPRE: "o filho", "seu filho", "do filho", "nascido", "o menor".
+- NUNCA use "filha", "nascida", "a menor" nem "o(a) filho(a)".`
+  }
+  if (sexoRaw === 'feminino' || sexoRaw === 'f' || sexoRaw === 'female') {
+    return `GÊNERO DA CRIANÇA (obrigatório): feminino.
+- Use SEMPRE: "a filha", "sua filha", "da filha", "nascida", "a menor".
+- NUNCA use "filho", "nascido", "o menor" nem "o(a) filho(a)".`
+  }
+  return `GÊNERO DA CRIANÇA: não informado.
+- Use formas neutras: "o(a) filho(a)", "a criança", "nascido(a)".
+- Evite assumir masculino ou feminino.`
+}
+
+function buildPromptSalMatRural(
+  dataParto: string | null,
+  sexoRaw: string,
+): string {
+  const smValor = valorCausaSalarioMaternidade(dataParto)
+  const genero = instrucaoGeneroCrianca(sexoRaw)
+  return `
 Você é um advogado previdenciarista especializado com 20 anos de experiência.
 Gere uma PETIÇÃO INICIAL COMPLETA para Salário-Maternidade — Segurada Especial no JEF.
+
+${genero}
+
+SALÁRIO MÍNIMO / VALOR DA CAUSA (obrigatório):
+- Use o salário mínimo vigente na DATA DO PARTO (fato gerador): ${smValor.mensalFmt} (ano de referência ${smValor.anoVigencia}).
+- Valor da causa = 4 × esse salário = ${smValor.totalFmt}.
+- NÃO use o salário mínimo de ${new Date().getFullYear()} se a data do parto for anterior.
+- Na PLANILHA, a nota deve indicar o ano ${smValor.anoVigencia}.
 
 FORMATO OBRIGATÓRIO (PRIORIDADE MÁXIMA — sobrescreve as regras genéricas de hierarquia/fechamento abaixo):
 A saída DEVE começar com <<<SM_RURAL_V2>>> e usar EXATAMENTE os marcadores abaixo, nesta ordem.
@@ -183,8 +223,8 @@ DA PRIORIDADE DE TRAMITAÇÃO:
 <<<END_TIMELINE>>>
 
 <<<III_SINTESE_DEPOIS>>>
-[Parágrafos após a timeline: nascimento do filho, período gestacional, requerimento administrativo, indeferimento e crítica à decisão]
-[NÃO liste provas aqui — provas vão SOMENTE em <<<IV_PROVAS>>>]
+[Parágrafos após a timeline: nascimento do filho/filha conforme gênero, período gestacional, requerimento administrativo, indeferimento e crítica à decisão]
+[PROIBIDO listar provas aqui. NÃO escreva linhas "Documento — explicação". Provas vão SOMENTE em <<<IV_PROVAS>>>]
 <<<END_III_DEPOIS>>>
 
 <<<IV_PROVAS>>>
@@ -195,10 +235,12 @@ DA PRIORIDADE DE TRAMITAÇÃO:
 ✓ [outras provas no mesmo formato]
 <<<END_IV>>>
 [OBRIGATÓRIO: cada prova em UMA linha, começando com ✓, formato "Nome — explicação".
-NUNCA escreva provas em parágrafos corridos. NUNCA coloque a lista antes da seção IV.]
+NUNCA escreva provas em parágrafos corridos. NUNCA coloque a lista antes da seção IV.
+NUNCA coloque provas em <<<III_SINTESE_DEPOIS>>> — o sistema renderiza as caixas com check somente dentro de IV.]
 
 <<<IV_FECHO>>>
 [Parágrafo de análise/fechamento da seção de provas — início de prova material + economia familiar + carência.
+Este parágrafo vem DEPOIS da lista de provas (não antes).
 Se houver declaração de sindicato rural, descreva-a como prova complementar (NÃO cite art. 106, III, da Lei 8.213/91).]
 <<<END_IV_FECHO>>>
 
@@ -223,7 +265,7 @@ viii. [destaque de honorários contratuais de [honorários]% em favor do escrit�
 <<<FECHAMENTO>>>
 Protesta o alegado por todos os meios admitidos em direito, especialmente o depoimento pessoal da parte autora e das testemunhas que comparecerão em audiência, independente de intimação.
 
-Dá-se à causa o valor de ${_smValor.totalFmt} (${_smValor.total.toLocaleString('pt-BR')} reais), renunciando-se a eventual excedente da alçada do Juizado Especial Federal, especificamente para fins de fixação da competência.
+Dá-se à causa o valor de ${smValor.totalFmt} (${smValor.total.toLocaleString('pt-BR')} reais), renunciando-se a eventual excedente da alçada do Juizado Especial Federal, especificamente para fins de fixação da competência.
 
 Termos em que, pede e espera deferimento.
 
@@ -234,12 +276,12 @@ OAB/[UF] nº [número]
 <<<PLANILHA>>>
 | Campo | Valor |
 | --- | --- |
-| 1º Mês de benefício | ${_smValor.mensalFmt} |
-| 2º Mês de benefício | ${_smValor.mensalFmt} |
-| 3º Mês de benefício | ${_smValor.mensalFmt} |
-| 4º Mês de benefício | ${_smValor.mensalFmt} |
-| TOTAL | ${_smValor.totalFmt} |
-nota: Referência do valor: quantia devida por fato gerador (cada nascimento)
+| 1º Mês de benefício | ${smValor.mensalFmt} |
+| 2º Mês de benefício | ${smValor.mensalFmt} |
+| 3º Mês de benefício | ${smValor.mensalFmt} |
+| 4º Mês de benefício | ${smValor.mensalFmt} |
+| TOTAL | ${smValor.totalFmt} |
+nota: ${smValor.nota}
 <<<END_PLANILHA>>>
 
 REGRAS:
@@ -249,15 +291,21 @@ REGRAS:
 - Sempre citar STF ADIs 2110 e 2111, j. 28/03/2024 (texto fixo acima)
 - Declaração de sindicato: prova complementar — NÃO mencionar art. 106, III, Lei 8.213
 - Incluir checklist "Autodeclaração de segurado especial (art. 38-B, §2º, Lei 8.213/91)" nas provas
-- Em <<<IV_PROVAS>>>: SOMENTE lista com ✓ no formato "Nome do documento — explicação". Nunca parágrafos.
+- Em <<<IV_PROVAS>>>: SOMENTE lista com ✓ no formato "Nome do documento — explicação". Nunca parágrafos. Renderizadas em caixas cinza com check verde DENTRO da seção IV.
 - Em <<<I_PRELIMINARES>>>: cada tema em subtítulo próprio "DA …:" (ex.: DA GRATUIDADE DA JUSTIÇA:, DA PRIORIDADE…).
 - Na TIMELINE: 4 a 7 eventos reais do caso (nascimento, labor rural, requerimento, indeferimento etc.). O sistema pode sobrescrever este bloco com a configuração do usuário (estilo: horizontal | vertical | none).
 - prioridade_menor: true se a autora for menor de 18 anos
 - Local/data da assinatura: o sistema completa com a cidade do escritório — no FECHAMENTO NÃO escreva a linha de cidade/data
-- Valor da causa padrão: ${_smValor.totalFmt} (4 × salário mínimo ${_smValor.mensalFmt}), salvo outro valor informado
+- Valor da causa: ${smValor.totalFmt} (4 × salário mínimo ${smValor.mensalFmt} vigente em ${smValor.anoVigencia} na data do parto)
 - Texto corrido em caixa de sentença (primeira letra maiúscula, resto minúsculo conforme o português). NUNCA escreva parágrafos inteiros em CAIXA ALTA.
 - Copie os nomes dos marcadores EXATAMENTE, com underscores: <<<END_III_ANTES>>> (nunca <<<ENDIIANTES>>>). Todo bloco aberto DEVE ser fechado.
 - Os marcadores são instruções internas do sistema: não os explique, não os repita fora do formato e não os deixe no meio do texto jurídico.
 - Na TIMELINE escreva APENAS um objeto JSON válido (sem markdown, sem texto antes ou depois do JSON).
 - NUNCA deixe seções I–VI vazias. NUNCA corte no meio da frase. Pedidos VI devem ter i. até viii. completos.
 `
+}
+
+// Mantém referência para compatibilidade de imports acidentais
+void _smValor
+
+const PROMPT_SAL_MAT_RURAL = buildPromptSalMatRural(null, '')

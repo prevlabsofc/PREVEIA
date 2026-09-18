@@ -120,6 +120,7 @@ NÃO gere seções II–VI ainda. Feche cada marcador aberto.`,
 <<<III_SINTESE_ANTES>>>…<<<END_III_ANTES>>>
 <<<TIMELINE>>>…<<<END_TIMELINE>>>
 <<<III_SINTESE_DEPOIS>>>…<<<END_III_DEPOIS>>>
+NÃO liste provas em III_SINTESE_DEPOIS (proibido "Documento — explicação").
 NÃO gere IV–VI. Não repita o que já foi gerado.`,
   },
   {
@@ -132,6 +133,7 @@ NÃO gere IV–VI. Não repita o que já foi gerado.`,
 Em <<<IV_PROVAS>>> liste CADA prova em linha própria, formato obrigatório:
 ✓ Nome do documento — explicação breve
 NUNCA parágrafos corridos de provas. Mínimo 4 itens com ✓.
+O fecho em <<<IV_FECHO>>> é o parágrafo de análise DEPOIS da lista.
 NÃO gere V–VI.`,
   },
   {
