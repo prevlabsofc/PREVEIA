@@ -216,6 +216,7 @@ export async function POST(request: Request) {
           city: cli?.city ?? null,
           state: cli?.state ?? null,
           notes: cli?.notes ?? null,
+          sexo: cli?.sexo ?? cli?.genero ?? null,
         }
       : null
 
@@ -256,15 +257,28 @@ export async function POST(request: Request) {
       return Response.json({ error: 'ANTHROPIC_API_KEY não configurada' }, { status: 500 })
     }
 
+    // Garante sexo da parte autora no form (cadastro do cliente como fallback)
+    const formComSexo: Record<string, unknown> = {
+      ...(normalizedFormData && typeof normalizedFormData === 'object'
+        ? (normalizedFormData as Record<string, unknown>)
+        : {}),
+    }
+    if (
+      !String(formComSexo.sexo_parte_autora || formComSexo.sexo_autor || formComSexo.sexo || '').trim() &&
+      cliForPrompt?.sexo
+    ) {
+      formComSexo.sexo_parte_autora = cliForPrompt.sexo
+    }
+
     const systemPrompt = getSystemPrompt(
       agentType,
       lawyerForPrompt,
       cliForPrompt,
-      normalizedFormData,
+      formComSexo,
     )
     const anthropic = new Anthropic({ apiKey })
     const encoder = new TextEncoder()
-    const formJson = JSON.stringify(normalizedFormData ?? {})
+    const formJson = JSON.stringify(formComSexo ?? {})
     let fullText = ''
 
     const readable = new ReadableStream({
@@ -309,7 +323,7 @@ export async function POST(request: Request) {
                 ? `Petição — ${(normalizedFormData as any).nome}`
                 : agentType,
               content: fullText,
-              form_data: normalizedFormData,
+              form_data: formComSexo,
               status: 'generated',
               lawyer_snapshot: {
                 name: lawyerName,

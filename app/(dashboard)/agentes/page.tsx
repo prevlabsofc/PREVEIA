@@ -368,6 +368,8 @@ function AgentesPageContent() {
       // faltante; usa o `address` legado como rua se o cliente ainda não
       // tiver os campos separados).
       endereco: formatarEnderecoQualificacao(cli) || prev.endereco,
+      sexo_parte_autora:
+        cli.sexo || cli.genero || prev.sexo_parte_autora || '',
     }))
   }
 
@@ -1024,6 +1026,49 @@ function AgentesPageContent() {
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="block text-[10px] font-bold tracking-widest mb-1.5"
+                              style={{ color: 'rgba(212,175,55,0.7)' }}>SEXO DA PARTE AUTORA*</label>
+                            <select
+                              className="input-glass w-full text-sm"
+                              value={formData.sexo_parte_autora || ''}
+                              onChange={e => {
+                                const v = e.target.value
+                                setFormData(p => ({ ...p, sexo_parte_autora: v }))
+                                setFormErrors(p => ({
+                                  ...p,
+                                  sexo_parte_autora: v ? undefined : 'Informe o sexo da parte autora',
+                                }))
+                              }}
+                              style={formErrors.sexo_parte_autora ? { borderColor: '#ef4444', borderWidth: 1 } : undefined}
+                            >
+                              <option value="">Selecione</option>
+                              <option value="masculino">Masculino</option>
+                              <option value="feminino">Feminino</option>
+                            </select>
+                            {formErrors.sexo_parte_autora ? (
+                              <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>{formErrors.sexo_parte_autora}</p>
+                            ) : (
+                              <p className="text-[10px] mt-1" style={{ color: '#666' }}>
+                                Define a concordância (agricultor/agricultora). Homem também pode requerer SM.
+                              </p>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold tracking-widest mb-1.5"
+                              style={{ color: 'rgba(212,175,55,0.7)' }}>SEXO DA CRIANÇA</label>
+                            <select
+                              className="input-glass w-full text-sm"
+                              value={formData.sexo_crianca || ''}
+                              onChange={e => setFormData(p => ({ ...p, sexo_crianca: e.target.value }))}
+                            >
+                              <option value="">Não informado</option>
+                              <option value="masculino">Masculino</option>
+                              <option value="feminino">Feminino</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[10px] font-bold tracking-widest mb-1.5"
                               style={{ color: 'rgba(212,175,55,0.7)' }}>NOME DA CRIANÇA*</label>
                             <input
                               type="text"
@@ -1047,21 +1092,6 @@ function AgentesPageContent() {
                           </div>
                           <div>
                             <label className="block text-[10px] font-bold tracking-widest mb-1.5"
-                              style={{ color: 'rgba(212,175,55,0.7)' }}>SEXO DA CRIANÇA</label>
-                            <select
-                              className="input-glass w-full text-sm"
-                              value={formData.sexo_crianca || ''}
-                              onChange={e => setFormData(p => ({ ...p, sexo_crianca: e.target.value }))}
-                            >
-                              <option value="">Não informado</option>
-                              <option value="masculino">Masculino</option>
-                              <option value="feminino">Feminino</option>
-                            </select>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-[10px] font-bold tracking-widest mb-1.5"
                               style={{ color: 'rgba(212,175,55,0.7)' }}>DATA DE NASCIMENTO DA CRIANÇA*</label>
                             <input
                               type="date"
@@ -1080,6 +1110,7 @@ function AgentesPageContent() {
                                   ...p,
                                   data_nascimento_crianca: erros.data_nascimento_crianca,
                                   data_requerimento: erros.data_requerimento,
+                                  sexo_parte_autora: erros.sexo_parte_autora,
                                 }))
                               }}
                               style={formErrors.data_nascimento_crianca ? { borderColor: '#ef4444', borderWidth: 1 } : undefined}
@@ -1088,6 +1119,8 @@ function AgentesPageContent() {
                               <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>{formErrors.data_nascimento_crianca}</p>
                             ) : null}
                           </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="block text-[10px] font-bold tracking-widest mb-1.5"
                               style={{ color: 'rgba(212,175,55,0.7)' }}>NB (NÚMERO DO BENEFÍCIO)</label>

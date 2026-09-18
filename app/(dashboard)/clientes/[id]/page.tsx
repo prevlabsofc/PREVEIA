@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Phone, Mail, MapPin, FileText, Archive, Edit2, Save, X, Bot, Clock, Sparkles, Plus, Eye, Briefcase } from 'lucide-react'
+import { ArrowLeft, Phone, Mail, MapPin, FileText, Archive, Edit2, Save, X, Bot, Clock, Sparkles, Plus, Eye, Briefcase, User } from 'lucide-react'
 import Link from 'next/link'
 import { GlassCard } from '@/components/GlassCard'
 import HistoricoAprovacoesCliente from '@/components/clientes/HistoricoAprovacoesCliente'
@@ -153,6 +153,7 @@ export default function ClienteDetalhesPage() {
       email: form.email,
       profession: form.profession,
       zone: form.zone,
+      sexo: form.sexo || null,
       cep: form.cep,
       rua: form.rua || null,
       numero: form.numero || null,
@@ -164,9 +165,15 @@ export default function ClienteDetalhesPage() {
     }
     const { error } = await supabase.from('clients').update(payload).eq('id', id)
     if (error) {
-      if (/rua|numero|bairro/i.test(error.message)) {
-        const { rua: _r, numero: _n, bairro: _b, ...semEnd } = payload
-        const retry = await supabase.from('clients').update(semEnd).eq('id', id)
+      if (/rua|numero|bairro|sexo/i.test(error.message)) {
+        const retryPayload: Record<string, unknown> = { ...payload }
+        if (/rua|numero|bairro/i.test(error.message)) {
+          delete retryPayload.rua
+          delete retryPayload.numero
+          delete retryPayload.bairro
+        }
+        if (/sexo/i.test(error.message)) delete retryPayload.sexo
+        const retry = await supabase.from('clients').update(retryPayload).eq('id', id)
         if (retry.error) {
           console.error('[clientes/id] salvar:', retry.error.message)
           mostrarFeedback('erro', `Erro ao salvar: ${retry.error.message}`)
@@ -372,6 +379,8 @@ export default function ClienteDetalhesPage() {
             {[
               { icon: Mail, label: 'Email', field: 'email', type: 'email' },
               { icon: Phone, label: 'Telefone', field: 'phone', type: 'tel' },
+              { icon: Briefcase, label: 'Profissão', field: 'profession', type: 'text' },
+              { icon: User, label: 'Sexo da parte autora', field: 'sexo', type: 'sexo' },
               { icon: MapPin, label: 'Rua', field: 'rua', type: 'text' },
               { icon: MapPin, label: 'Número', field: 'numero', type: 'text' },
               { icon: MapPin, label: 'Bairro', field: 'bairro', type: 'text' },
@@ -389,15 +398,25 @@ export default function ClienteDetalhesPage() {
                         <option value="">—</option>
                         {UFS_BRASIL.map(uf => <option key={uf} value={uf}>{uf}</option>)}
                       </select>
+                    ) : field === 'sexo' ? (
+                      <select value={form.sexo || ''} onChange={e => setForm((f: any) => ({ ...f, sexo: e.target.value }))} className="input-glass w-full px-3 text-sm" style={{ height: 36, cursor: 'pointer' }}>
+                        <option value="">Selecione</option>
+                        <option value="masculino">Masculino</option>
+                        <option value="feminino">Feminino</option>
+                      </select>
                     ) : field === 'cep' ? (
                       <input type="text" value={form.cep || ''} placeholder="00000-000" maxLength={9}
                         onChange={e => setForm((f: any) => ({ ...f, cep: mascaraCEP(e.target.value) }))}
                         className="input-glass w-full px-3 text-sm" style={{ height: 36 }} spellCheck={true} />
                     ) : (
-                      <input type={type} value={form[field] || ''} onChange={e => setForm((f: any) => ({ ...f, [field]: e.target.value }))} className="input-glass w-full px-3 text-sm" style={{ height: 36 }} spellCheck={type === 'text'}/>
+                      <input type={type === 'sexo' ? 'text' : type} value={form[field] || ''} onChange={e => setForm((f: any) => ({ ...f, [field]: e.target.value }))} className="input-glass w-full px-3 text-sm" style={{ height: 36 }} spellCheck={type === 'text'}/>
                     )
                   ) : (
-                    <div className="text-sm truncate" style={{ color: isLight ? '#1E1E1E' : '#fff' }}>{client[field] || '—'}</div>
+                    <div className="text-sm truncate" style={{ color: isLight ? '#1E1E1E' : '#ccc' }}>
+                      {field === 'sexo'
+                        ? (form.sexo === 'masculino' ? 'Masculino' : form.sexo === 'feminino' ? 'Feminino' : '—')
+                        : (client[field] || '—')}
+                    </div>
                   )}
                 </div>
               </div>

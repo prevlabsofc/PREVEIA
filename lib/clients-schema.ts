@@ -4,14 +4,14 @@
  * Colunas EXATAS:
  * id, lawyer_id, name, cpf, rg, birth_date, phone, whatsapp, email,
  * profession, zone, cep, address, rua, numero, bairro, city, state, notes,
- * status, created_at, ultimo_contato, lembrete_enviado_em
+ * sexo, status, created_at, ultimo_contato, lembrete_enviado_em
  *
  * NÃO existem: nome, telefone, tipo_beneficio, etapa_funil, stage, arquivado,
  * last_contact_at, office_id, assigned_lawyer_id…
  */
 
 export const CLIENTS_COLUMNS =
-  'id, lawyer_id, name, cpf, rg, birth_date, phone, whatsapp, email, profession, zone, cep, address, rua, numero, bairro, city, state, notes, status, created_at, ultimo_contato, lembrete_enviado_em' as const
+  'id, lawyer_id, name, cpf, rg, birth_date, phone, whatsapp, email, profession, zone, cep, address, rua, numero, bairro, city, state, notes, sexo, status, created_at, ultimo_contato, lembrete_enviado_em' as const
 
 export const CLIENTS_SELECT_SAFE = CLIENTS_COLUMNS
 
@@ -47,6 +47,8 @@ export type ClienteNormalizado = Record<string, unknown> & {
   state: string
   zone: string
   cep: string
+  /** Sexo da parte autora: 'masculino' | 'feminino' | ''. */
+  sexo: string
   last_contact_at: string | null
   ultimo_contato: string | null
   lembrete_enviado_em: string | null
@@ -117,6 +119,7 @@ export function normalizeCliente(row: Record<string, unknown> | null | undefined
     state: String(r.state ?? ''),
     zone,
     cep: String(r.cep ?? ''),
+    sexo: String(r.sexo ?? r.genero ?? '').trim().toLowerCase(),
     last_contact_at: ultimo,
     ultimo_contato: ultimo,
     lembrete_enviado_em: (r.lembrete_enviado_em as string | null) ?? null,
@@ -140,7 +143,12 @@ export async function fetchClientsByLawyer(
   lawyerId: string,
 ): Promise<ClienteNormalizado[]> {
   try {
-    const attempts = [CLIENTS_SELECT_SAFE, CLIENTS_COLUMNS.replace(/, rua, numero, bairro/, ''), '*'] as const
+    const attempts = [
+      CLIENTS_SELECT_SAFE,
+      CLIENTS_COLUMNS.replace(/, sexo/, ''),
+      CLIENTS_COLUMNS.replace(/, rua, numero, bairro/, '').replace(/, sexo/, ''),
+      '*',
+    ] as const
     for (const cols of attempts) {
       const { data, error } = await supabase
         .from('clients')
@@ -190,6 +198,7 @@ export function buildClientInsertPayload(input: {
   notes?: string
   rg?: string
   birth_date?: string | null
+  sexo?: string | null
 }): Record<string, unknown> {
   return {
     lawyer_id: input.lawyerId,
@@ -210,6 +219,7 @@ export function buildClientInsertPayload(input: {
     city: input.city || '',
     state: input.state || '',
     notes: input.notes || '',
+    sexo: input.sexo || null,
     status: STATUS_ATIVO,
   }
 }

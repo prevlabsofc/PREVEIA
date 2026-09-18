@@ -154,6 +154,16 @@ export type ErrosFormSm = {
   data_requerimento?: string
   data_indeferimento?: string
   periodo_segurado?: string
+  sexo_parte_autora?: string
+}
+
+export function validarSexoParteAutora(valor: string): string | null {
+  const v = valor.trim().toLowerCase()
+  if (!v) return 'Informe o sexo da parte autora'
+  if (v !== 'masculino' && v !== 'feminino') {
+    return 'Selecione masculino ou feminino'
+  }
+  return null
 }
 
 export function validarFormularioSm(form: Record<string, string>): ErrosFormSm {
@@ -163,6 +173,11 @@ export function validarFormularioSm(form: Record<string, string>): ErrosFormSm {
 
   const eNb = validarNb(form.nb || '')
   if (eNb) erros.nb = eNb
+
+  const eSexo = validarSexoParteAutora(
+    form.sexo_parte_autora || form.sexo_autor || form.sexo || '',
+  )
+  if (eSexo) erros.sexo_parte_autora = eSexo
 
   const eNasc = validarDataPeticao(form.data_nascimento_crianca || '', true)
   if (eNasc) erros.data_nascimento_crianca = eNasc

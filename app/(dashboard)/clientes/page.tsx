@@ -64,7 +64,7 @@ export default function ClientesPage() {
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
     name: '', cpf: '', rg: '', birth_date: '', phone: '',
-    whatsapp: '', email: '', profession: '', zone: 'rural',
+    whatsapp: '', email: '', profession: '', zone: 'rural', sexo: '',
     cep: '', rua: '', numero: '', bairro: '', city: '', state: '', notes: ''
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -162,6 +162,9 @@ export default function ClientesPage() {
     else if (!validarCPF(form.cpf)) e.cpf = 'CPF inválido'
     if (!form.phone.trim()) e.phone = 'Telefone obrigatório'
     if (!form.zone) e.zone = 'Zona obrigatória'
+    if (!form.sexo || (form.sexo !== 'masculino' && form.sexo !== 'feminino')) {
+      e.sexo = 'Informe o sexo da parte autora'
+    }
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -184,6 +187,7 @@ export default function ClientesPage() {
       email: form.email,
       profession: form.profession,
       zone: form.zone,
+      sexo: form.sexo || null,
       cep: form.cep,
       rua: form.rua || null,
       numero: form.numero || null,
@@ -201,10 +205,16 @@ export default function ClientesPage() {
       .select('id')
       .maybeSingle()
     if (error) {
-      // Fallback: base sem colunas rua/numero/bairro ainda
-      if (/rua|numero|bairro/i.test(error.message)) {
-        const { rua: _r, numero: _n, bairro: _b, ...semEndereco } = payload
-        const retry = await supabase.from('clients').insert(semEndereco).select('id').maybeSingle()
+      // Fallback: base sem colunas novas (rua/numero/bairro/sexo) ainda
+      if (/rua|numero|bairro|sexo/i.test(error.message)) {
+        const retryPayload: Record<string, unknown> = { ...payload }
+        if (/rua|numero|bairro/i.test(error.message)) {
+          delete retryPayload.rua
+          delete retryPayload.numero
+          delete retryPayload.bairro
+        }
+        if (/sexo/i.test(error.message)) delete retryPayload.sexo
+        const retry = await supabase.from('clients').insert(retryPayload).select('id').maybeSingle()
         if (retry.error) {
           console.error('[clientes] insert falhou:', retry.error.message)
           setSaving(false)
@@ -214,7 +224,7 @@ export default function ClientesPage() {
         setShowModal(false)
         setForm({
           name: '', cpf: '', rg: '', birth_date: '', phone: '',
-          whatsapp: '', email: '', profession: '', zone: 'rural',
+          whatsapp: '', email: '', profession: '', zone: 'rural', sexo: '',
           cep: '', rua: '', numero: '', bairro: '', city: '', state: '', notes: ''
         })
         setErrors({})
@@ -239,7 +249,7 @@ export default function ClientesPage() {
     setShowModal(false)
     setForm({
       name: '', cpf: '', rg: '', birth_date: '', phone: '',
-      whatsapp: '', email: '', profession: '', zone: 'rural',
+      whatsapp: '', email: '', profession: '', zone: 'rural', sexo: '',
       cep: '', rua: '', numero: '', bairro: '', city: '', state: '', notes: ''
     })
     setErrors({})
@@ -715,7 +725,7 @@ export default function ClientesPage() {
                   </div>
                 </div>
 
-                {/* Nascimento + Profissão */}
+                {/* Nascimento + Sexo */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[10px] font-bold tracking-widest mb-1.5"
@@ -726,11 +736,35 @@ export default function ClientesPage() {
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold tracking-widest mb-1.5"
-                      style={{ color: 'rgba(212,175,55,0.7)' }}>PROFISSÃO</label>
-                    <input type="text" value={form.profession} placeholder="Agricultora"
-                      style={inputStyle}
-                      onChange={e => setForm(p => ({ ...p, profession: e.target.value }))} spellCheck={true} />
+                      style={{ color: 'rgba(212,175,55,0.7)' }}>SEXO DA PARTE AUTORA*</label>
+                    <select
+                      value={form.sexo}
+                      onChange={e => setForm(p => ({ ...p, sexo: e.target.value }))}
+                      style={{
+                        ...inputStyle,
+                        cursor: 'pointer',
+                        borderColor: errors.sexo ? '#EF4444' : 'rgba(212,175,55,0.2)',
+                      }}
+                    >
+                      <option value="" style={{ background: '#111' }}>Selecione</option>
+                      <option value="masculino" style={{ background: '#111' }}>Masculino</option>
+                      <option value="feminino" style={{ background: '#111' }}>Feminino</option>
+                    </select>
+                    {errors.sexo && (
+                      <p className="text-xs mt-1 flex items-center gap-1" style={{ color: '#EF4444' }}>
+                        <AlertCircle size={11} /> {errors.sexo}
+                      </p>
+                    )}
                   </div>
+                </div>
+
+                {/* Profissão */}
+                <div>
+                  <label className="block text-[10px] font-bold tracking-widest mb-1.5"
+                    style={{ color: 'rgba(212,175,55,0.7)' }}>PROFISSÃO</label>
+                  <input type="text" value={form.profession} placeholder="Agricultor(a)"
+                    style={inputStyle}
+                    onChange={e => setForm(p => ({ ...p, profession: e.target.value }))} spellCheck={true} />
                 </div>
 
                 {/* Telefone + WhatsApp */}

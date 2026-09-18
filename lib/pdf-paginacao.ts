@@ -282,7 +282,7 @@ export function aplicarPaginacaoPorBlocos(
   const totalH = Math.max(root.scrollHeight, root.offsetHeight)
 
   // BUG4: se o último pageBreak deixa uma fatia final que caberia na página anterior
-  // (ex.: fecho empurrado indevidamente), remove o break e o espaçador imediatamente anterior.
+  // (ex.: ~2 linhas / fecho empurrado indevidamente), remove o break e o espaçador.
   while (pageBreaks.length > 0) {
     const lastBreak = pageBreaks[pageBreaks.length - 1]
     const rem = totalH - lastBreak
@@ -290,9 +290,9 @@ export function aplicarPaginacaoPorBlocos(
       pageBreaks.pop()
       continue
     }
-    // Página final quase vazia (< 22% da útil) → fundir na anterior
-    if (rem < pageUsablePx * 0.22) {
-      // Remove espaçador colado no break, se houver
+    // Quase vazio: < 28% da útil OU menos que ~3 linhas (~48px) → fundir
+    const quaseVazio = rem < pageUsablePx * 0.28 || rem < 48
+    if (quaseVazio) {
       root.querySelectorAll('[data-pdf-spacer="1"]').forEach((n) => {
         const sp = n as HTMLElement
         const top = relOffsetTop(sp, root)
@@ -301,6 +301,11 @@ export function aplicarPaginacaoPorBlocos(
         }
       })
       pageBreaks.pop()
+      // Recalcula altura após remover spacer
+      const totalRecalc = Math.max(root.scrollHeight, root.offsetHeight)
+      if (totalRecalc <= lastBreak + 1) {
+        // conteúdo agora cabe até o break removido — ok
+      }
       continue
     }
     break
@@ -347,11 +352,13 @@ export function limitesCanvasDePaginas(
     slices.push({ y: 0, h: canvasHeight })
   }
 
-  // Remove última página quase vazia (< 28% da altura média) — evita meia página em branco
+  // Remove última página quase vazia (< 35% da altura média OU < ~3 linhas @ scale)
+  // — evita meia página / ~2 linhas em branco após a planilha.
   if (slices.length > 1) {
     const last = slices[slices.length - 1]
     const avg = slices.slice(0, -1).reduce((s, x) => s + x.h, 0) / (slices.length - 1)
-    if (last.h < avg * 0.28) {
+    const tresLinhas = Math.max(36, Math.round(48 * scale))
+    if (last.h < avg * 0.35 || last.h < tresLinhas) {
       slices.pop()
       if (slices.length) slices[slices.length - 1].h += last.h
     }

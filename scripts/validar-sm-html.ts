@@ -71,6 +71,16 @@ const subDup = htmlDup.match(/sm-sub-title"[^>]*>([\s\S]*?)<\/div>/)?.[1] || ''
 const COLADO = normalizarTituloSubtitulo(
   'AÇÃO PREVIDENCIÁRIA DE CONCESSÃO DE SALÁRIO-MATERNIDADE << >> (SEGURADA ESPECIAL – AGRICULTORA)(SEGURADA ESPECIAL – AGRICULTORA)',
   '',
+  'feminino',
+)
+const COLADO_M = normalizarTituloSubtitulo(
+  'AÇÃO PREVIDENCIÁRIA DE CONCESSÃO DE SALÁRIO-MATERNIDADE (SEGURADA ESPECIAL – AGRICULTORA)',
+  '(SEGURADA ESPECIAL – AGRICULTORA)',
+  'masculino',
+)
+const COLADO_NEUTRO = normalizarTituloSubtitulo(
+  'AÇÃO PREVIDENCIÁRIA DE CONCESSÃO DE SALÁRIO-MATERNIDADE',
+  '',
 )
 
 const canon = canonicalizarMarcadoresSm('<<<ENDIIANTES>>>\n<<<V_FUNDAMENTACAO>>>')
@@ -169,6 +179,17 @@ const checks: [string, boolean][] = [
       /SALÁRIO-MATERNIDADE/i.test(COLADO.titulo),
   ],
   [
+    'subtítulo masculino força agricultor',
+    COLADO_M.subtitulo === '(SEGURADO ESPECIAL – AGRICULTOR)' &&
+      !/AGRICULTORA/.test(COLADO_M.subtitulo),
+  ],
+  [
+    'subtítulo vazio → neutro',
+    COLADO_NEUTRO.subtitulo === '(SEGURADO(A) ESPECIAL – AGRICULTOR(A))',
+  ],
+  ['pedido iii atividade rural', /atividade rural no CNIS/i.test(FIXTURE_SM_ANA_LUCIA)],
+  ['pedido iii sem carência rural', !/carência rural no CNIS/i.test(FIXTURE_SM_ANA_LUCIA)],
+  [
     'seção VI sem avoid no container',
     /sm-secao-vi"[^>]*page-break-inside:\s*auto/.test(html) &&
       !/\.sm-secao-vi\s*\{[^}]*page-break-inside:\s*avoid/.test(html),
@@ -202,10 +223,11 @@ const checks: [string, boolean][] = [
   ['timeline 6 marcos sem overlap', ov6.ok],
   ['timeline 6 y incremental 14px', yIncremental6],
   ['timeline SVG height suficiente', lay6.meta.h >= 200],
-  // BUG6
+  // BUG6 / salário mínimo
   ['SM 12/02/2000 != 1621', sm2000 !== 1621 && sm2000b !== 1621],
   ['SM 12/02/2000 = 136', sm2000 === 136 && sm2000b === 136],
-  ['nota planilha ano 1999', /1999/.test(vc2000.nota)],
+  ['nota planilha vigência 01/05/1999', /01\/05\/1999/.test(vc2000.nota)],
+  ['nota planilha sem só-ano-1999 enganoso', !/vigente em 1999/.test(vc2000.nota)],
 ]
 
 let ok = true
@@ -215,6 +237,6 @@ for (const [name, pass] of checks) {
 }
 console.log('rodape:', textoRodapeSm(adv))
 console.log('salario fixture (parto 2025):', mensalFmt, '×4 =', totalFmt)
-console.log('salario parto 12/02/2000:', sm2000, vc2000.mensalFmt)
+console.log('salario parto 12/02/2000:', sm2000, vc2000.mensalFmt, 'vigência', vc2000.dataVigenciaFmt)
 console.log(ok ? 'ALL PASSED' : 'SOME FAILED')
 process.exit(ok ? 0 : 1)

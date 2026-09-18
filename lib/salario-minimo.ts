@@ -1,6 +1,6 @@
 /**
  * Salário mínimo nacional vigente na data de referência (fato gerador / parto).
- * Valores nominais oficiais (R$), com vigência por data.
+ * Valores nominais oficiais (R$), com vigência por data de INÍCIO.
  * Fontes: Decretos/MPs/Leis federais; série histórica Senado/Ipeadata.
  */
 
@@ -44,21 +44,42 @@ const VIGENCIAS: ReadonlyArray<readonly [number, number, number, number]> = [
   [2026, 1, 1, 1621],
 ]
 
+/**
+ * Parse local por componentes (ano/mês/dia).
+ * Nunca usa `new Date("YYYY-MM-DD")` sozinho (UTC desloca o dia).
+ */
 function parseDataRef(data?: Date | string | null): Date | null {
   if (data == null || data === '') return null
   if (data instanceof Date) {
-    return Number.isFinite(data.getTime()) ? data : null
+    if (!Number.isFinite(data.getTime())) return null
+    return new Date(data.getFullYear(), data.getMonth(), data.getDate())
   }
   const s = String(data).trim()
   const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s)
   if (iso) {
-    const d = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]))
-    return Number.isFinite(d.getTime()) ? d : null
+    const y = Number(iso[1])
+    const m = Number(iso[2])
+    const d = Number(iso[3])
+    const dt = new Date(y, m - 1, d)
+    return Number.isFinite(dt.getTime()) &&
+      dt.getFullYear() === y &&
+      dt.getMonth() === m - 1 &&
+      dt.getDate() === d
+      ? dt
+      : null
   }
   const br = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s)
   if (br) {
-    const d = new Date(Number(br[3]), Number(br[2]) - 1, Number(br[1]))
-    return Number.isFinite(d.getTime()) ? d : null
+    const d = Number(br[1])
+    const m = Number(br[2])
+    const y = Number(br[3])
+    const dt = new Date(y, m - 1, d)
+    return Number.isFinite(dt.getTime()) &&
+      dt.getFullYear() === y &&
+      dt.getMonth() === m - 1 &&
+      dt.getDate() === d
+      ? dt
+      : null
   }
   const y = Number.parseInt(s, 10)
   if (Number.isFinite(y) && y >= 1900 && y <= 2100) {
@@ -75,25 +96,34 @@ function vigenciaYmd(v: readonly [number, number, number, number]): number {
   return v[0] * 10000 + v[1] * 100 + v[2]
 }
 
+function formatarDataVigenciaBr(v: readonly [number, number, number, number]): string {
+  const dd = String(v[2]).padStart(2, '0')
+  const mm = String(v[1]).padStart(2, '0')
+  return `${dd}/${mm}/${v[0]}`
+}
+
 /**
  * Salário mínimo vigente na data de referência.
  * Sem data → mínimo vigente (hoje).
- * Ex.: parto 12/02/2000 → R$ 136 (antes de 03/04/2000).
+ * Ex.: parto 12/02/2000 → R$ 136 (vigência desde 01/05/1999; antes de 03/04/2000).
  */
 export function getSalarioMinimo(dataReferencia?: Date | string | null): number {
   const info = resolverSalarioMinimo(dataReferencia)
   return info.mensal
 }
 
-/** Resolve valor + ano da vigência aplicada (para nota da planilha). */
+/** Resolve valor + data de início da vigência aplicada (para nota da planilha). */
 export function resolverSalarioMinimo(dataReferencia?: Date | string | null): {
   mensal: number
   anoVigencia: number
+  /** Data de início da vigência usada (dd/mm/aaaa). */
+  dataVigenciaFmt: string
   dataRef: Date
 } {
   const ref = parseDataRef(dataReferencia) ?? new Date()
   const key = ymd(ref)
   let escolhida = VIGENCIAS[0]
+  // Último reajuste com vigência <= data do parto (nunca < exclusivo).
   for (const v of VIGENCIAS) {
     if (vigenciaYmd(v) <= key) escolhida = v
     else break
@@ -101,6 +131,7 @@ export function resolverSalarioMinimo(dataReferencia?: Date | string | null): {
   return {
     mensal: escolhida[3],
     anoVigencia: escolhida[0],
+    dataVigenciaFmt: formatarDataVigenciaBr(escolhida),
     dataRef: ref,
   }
 }
@@ -122,9 +153,10 @@ export function valorCausaSalarioMaternidade(
   mensalFmt: string
   totalFmt: string
   anoVigencia: number
+  dataVigenciaFmt: string
   nota: string
 } {
-  const { mensal, anoVigencia } = resolverSalarioMinimo(dataReferencia)
+  const { mensal, anoVigencia, dataVigenciaFmt } = resolverSalarioMinimo(dataReferencia)
   const total = mensal * 4
   return {
     mensal,
@@ -132,6 +164,7 @@ export function valorCausaSalarioMaternidade(
     mensalFmt: formatarSalarioMinimo(mensal),
     totalFmt: formatarSalarioMinimo(total),
     anoVigencia,
-    nota: `Referência do valor: salário mínimo vigente em ${anoVigencia} (data do parto/fato gerador); quantia devida por fato gerador (cada nascimento)`,
+    dataVigenciaFmt,
+    nota: `Referência do valor: salário mínimo vigente desde ${dataVigenciaFmt} (data do parto/fato gerador); quantia devida por fato gerador (cada nascimento)`,
   }
 }

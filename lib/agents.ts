@@ -44,10 +44,21 @@ LOCAL/DATA E ENDEREÇAMENTO:
   const fd = formData && typeof formData === 'object' ? formData : {}
   const dataParto =
     String(fd.data_nascimento_crianca || fd.data_parto || '').trim() || null
-  const sexoRaw = String(fd.sexo_crianca || '').trim().toLowerCase()
+  const sexoCriancaRaw = String(fd.sexo_crianca || '').trim().toLowerCase()
+  // Preferência: form SM; fallback: cadastro do cliente (sexo / genero)
+  const sexoAutorRaw = String(
+    fd.sexo_parte_autora ||
+      fd.sexo_autor ||
+      fd.sexo ||
+      cli?.sexo ||
+      cli?.genero ||
+      '',
+  )
+    .trim()
+    .toLowerCase()
   const prompts: Record<string, string> = {
     'salario-maternidade-rural':
-      advDados + buildPromptSalMatRural(dataParto, sexoRaw),
+      advDados + buildPromptSalMatRural(dataParto, sexoCriancaRaw, sexoAutorRaw),
   }
 
   const base =
@@ -110,13 +121,21 @@ OAB/[UF] nº [número]`
 
 const _smValor = valorCausaSalarioMaternidade()
 
+function normalizarSexo(sexoRaw: string): 'masculino' | 'feminino' | '' {
+  const s = String(sexoRaw || '').trim().toLowerCase()
+  if (s === 'masculino' || s === 'm' || s === 'male' || s === 'homem') return 'masculino'
+  if (s === 'feminino' || s === 'f' || s === 'female' || s === 'mulher') return 'feminino'
+  return ''
+}
+
 function instrucaoGeneroCrianca(sexoRaw: string): string {
-  if (sexoRaw === 'masculino' || sexoRaw === 'm' || sexoRaw === 'male') {
+  const sexo = normalizarSexo(sexoRaw)
+  if (sexo === 'masculino') {
     return `GÊNERO DA CRIANÇA (obrigatório): masculino.
 - Use SEMPRE: "o filho", "seu filho", "do filho", "nascido", "o menor".
 - NUNCA use "filha", "nascida", "a menor" nem "o(a) filho(a)".`
   }
-  if (sexoRaw === 'feminino' || sexoRaw === 'f' || sexoRaw === 'female') {
+  if (sexo === 'feminino') {
     return `GÊNERO DA CRIANÇA (obrigatório): feminino.
 - Use SEMPRE: "a filha", "sua filha", "da filha", "nascida", "a menor".
 - NUNCA use "filho", "nascido", "o menor" nem "o(a) filho(a)".`
@@ -126,23 +145,62 @@ function instrucaoGeneroCrianca(sexoRaw: string): string {
 - Evite assumir masculino ou feminino.`
 }
 
+function instrucaoGeneroParteAutora(sexoRaw: string): {
+  bloco: string
+  subtitulo: string
+} {
+  const sexo = normalizarSexo(sexoRaw)
+  if (sexo === 'masculino') {
+    return {
+      subtitulo: '(SEGURADO ESPECIAL – AGRICULTOR)',
+      bloco: `SEXO DA PARTE AUTORA (obrigatório): masculino.
+CONCORDÂNCIA EM TODA A PEÇA (sem exceção):
+- Use SEMPRE: "o autor", "agricultor", "segurado especial", "portador", "domiciliado", "nascido", "seu" (quando se referir ao autor).
+- NUNCA use: "a autora", "agricultora", "segurada especial", "portadora", "domiciliada", "nascida" para a parte autora.
+- Homem pode requerer SM (adoção/guarda/falecimento da mãe) — NÃO force feminino.
+- Subtítulo FIXO em <<<SUBTITULO>>>: (SEGURADO ESPECIAL – AGRICULTOR)`,
+    }
+  }
+  if (sexo === 'feminino') {
+    return {
+      subtitulo: '(SEGURADA ESPECIAL – AGRICULTORA)',
+      bloco: `SEXO DA PARTE AUTORA (obrigatório): feminino.
+CONCORDÂNCIA EM TODA A PEÇA (sem exceção):
+- Use SEMPRE: "a autora", "agricultora", "segurada especial", "portadora", "domiciliada", "nascida".
+- NUNCA use formas masculinas para a parte autora.
+- Subtítulo FIXO em <<<SUBTITULO>>>: (SEGURADA ESPECIAL – AGRICULTORA)`,
+    }
+  }
+  return {
+    subtitulo: '(SEGURADO(A) ESPECIAL – AGRICULTOR(A))',
+    bloco: `SEXO DA PARTE AUTORA: não informado.
+- Use formas neutras: "a parte autora", "segurado(a) especial", "agricultor(a)", "portador(a)", "domiciliado(a)".
+- NÃO assuma feminino nem masculino.
+- Subtítulo em <<<SUBTITULO>>>: (SEGURADO(A) ESPECIAL – AGRICULTOR(A))`,
+  }
+}
+
 function buildPromptSalMatRural(
   dataParto: string | null,
-  sexoRaw: string,
+  sexoCriancaRaw: string,
+  sexoAutorRaw: string,
 ): string {
   const smValor = valorCausaSalarioMaternidade(dataParto)
-  const genero = instrucaoGeneroCrianca(sexoRaw)
+  const generoCrianca = instrucaoGeneroCrianca(sexoCriancaRaw)
+  const generoAutor = instrucaoGeneroParteAutora(sexoAutorRaw)
   return `
 Você é um advogado previdenciarista especializado com 20 anos de experiência.
-Gere uma PETIÇÃO INICIAL COMPLETA para Salário-Maternidade — Segurada Especial no JEF.
+Gere uma PETIÇÃO INICIAL COMPLETA para Salário-Maternidade — Segurado Especial no JEF.
 
-${genero}
+${generoAutor.bloco}
+
+${generoCrianca}
 
 SALÁRIO MÍNIMO / VALOR DA CAUSA (obrigatório):
-- Use o salário mínimo vigente na DATA DO PARTO (fato gerador): ${smValor.mensalFmt} (ano de referência ${smValor.anoVigencia}).
+- Use o salário mínimo vigente na DATA DO PARTO (fato gerador): ${smValor.mensalFmt} (vigência desde ${smValor.dataVigenciaFmt}).
 - Valor da causa = 4 × esse salário = ${smValor.totalFmt}.
 - NÃO use o salário mínimo de ${new Date().getFullYear()} se a data do parto for anterior.
-- Na PLANILHA, a nota deve indicar o ano ${smValor.anoVigencia}.
+- Na PLANILHA, a nota deve indicar a data de vigência ${smValor.dataVigenciaFmt} (não só o ano).
 
 FORMATO OBRIGATÓRIO (PRIORIDADE MÁXIMA — sobrescreve as regras genéricas de hierarquia/fechamento abaixo):
 A saída DEVE começar com <<<SM_RURAL_V2>>> e usar EXATAMENTE os marcadores abaixo, nesta ordem.
@@ -170,12 +228,12 @@ AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE [Cida
 <<<TITULO>>>
 AÇÃO PREVIDENCIÁRIA DE CONCESSÃO DE SALÁRIO-MATERNIDADE
 <<<SUBTITULO>>>
-(SEGURADA ESPECIAL – AGRICULTORA)
+${generoAutor.subtitulo}
 <<<END_TITULO>>>
 
 IMPORTANTE SOBRE TÍTULO (OBRIGATÓRIO):
 - Em <<<TITULO>>> coloque APENAS a linha da ação, SEM subtítulo e SEM artefatos << >> ou <<>>.
-- O subtítulo "(SEGURADA ESPECIAL – AGRICULTORA)" vai SOMENTE em <<<SUBTITULO>>>, UMA única vez.
+- O subtítulo "${generoAutor.subtitulo}" vai SOMENTE em <<<SUBTITULO>>>, UMA única vez.
 - NÃO repita o subtítulo dentro de <<<TITULO>>> nem cole título+subtítulo no mesmo bloco.
 - NÃO invente << >> / marcadores extras entre título e subtítulo.
 
@@ -214,12 +272,12 @@ DA PRIORIDADE DE TRAMITAÇÃO:
 [No quadro: omita linhas de campos opcionais vazios. "Não informada" só para idade.]
 
 <<<III_SINTESE_ANTES>>>
-[2–3 parágrafos narrativos sobre a autora, atividade rural e economia familiar]
+[2–3 parágrafos narrativos sobre a parte autora, atividade rural e economia familiar — respeitando o sexo informado]
 [Último parágrafo deve terminar com: A seguir, a linha do tempo de sua trajetória de vida e trabalho rural:]
 <<<END_III_ANTES>>>
 
 <<<TIMELINE>>>
-{"nome":"[NOME DA AUTORA]","atividade":"Agricultora","local":"[Cidade]/[UF]","estilo":"horizontal","eventos":[{"data":"AAAA ou dd/mm/aaaa","titulo":"Evento curto","detalhe":"detalhe opcional"},{"data":"...","titulo":"...","detalhe":"..."},{"data":"...","titulo":"...","detalhe":"..."},{"data":"...","titulo":"...","detalhe":"..."},{"data":"...","titulo":"...","detalhe":"..."}]}
+{"nome":"[NOME DA PARTE AUTORA]","atividade":"[Agricultor ou Agricultora conforme sexo]","local":"[Cidade]/[UF]","estilo":"horizontal","eventos":[{"data":"AAAA ou dd/mm/aaaa","titulo":"Evento curto","detalhe":"detalhe opcional"},{"data":"...","titulo":"...","detalhe":"..."},{"data":"...","titulo":"...","detalhe":"..."},{"data":"...","titulo":"...","detalhe":"..."},{"data":"...","titulo":"...","detalhe":"..."}]}
 <<<END_TIMELINE>>>
 
 <<<III_SINTESE_DEPOIS>>>
@@ -254,7 +312,7 @@ Inclua obrigatoriamente estes trechos (sem alterar):
 <<<VI_PEDIDOS>>>
 i. [comunicações em nome dos advogados — art. 272, §5º, CPC]
 ii. [procedência e concessão do salário-maternidade]
-iii. [averbação no CNIS]
+iii. [averbação do período de atividade rural no CNIS]
 iv. [citação da ré + juntada do PA NB]
 v. [pagamento de 120 dias, com atualização nos termos do Manual de Cálculos da Justiça Federal, com incidência da taxa SELIC a partir de dezembro/2021, conforme art. 3º da EC nº 113/2021]
 vi. [audiência UNA]
@@ -294,18 +352,19 @@ REGRAS:
 - Em <<<IV_PROVAS>>>: SOMENTE lista com ✓ no formato "Nome do documento — explicação". Nunca parágrafos. Renderizadas em caixas cinza com check verde DENTRO da seção IV.
 - Em <<<I_PRELIMINARES>>>: cada tema em subtítulo próprio "DA …:" (ex.: DA GRATUIDADE DA JUSTIÇA:, DA PRIORIDADE…).
 - Na TIMELINE: 4 a 7 eventos reais do caso (nascimento, labor rural, requerimento, indeferimento etc.). O sistema pode sobrescrever este bloco com a configuração do usuário (estilo: horizontal | vertical | none).
-- prioridade_menor: true se a autora for menor de 18 anos
+- prioridade_menor: true se a parte autora for menor de 18 anos
 - Local/data da assinatura: o sistema completa com a cidade do escritório — no FECHAMENTO NÃO escreva a linha de cidade/data
-- Valor da causa: ${smValor.totalFmt} (4 × salário mínimo ${smValor.mensalFmt} vigente em ${smValor.anoVigencia} na data do parto)
+- Valor da causa: ${smValor.totalFmt} (4 × salário mínimo ${smValor.mensalFmt} vigente desde ${smValor.dataVigenciaFmt} na data do parto)
 - Texto corrido em caixa de sentença (primeira letra maiúscula, resto minúsculo conforme o português). NUNCA escreva parágrafos inteiros em CAIXA ALTA.
 - Copie os nomes dos marcadores EXATAMENTE, com underscores: <<<END_III_ANTES>>> (nunca <<<ENDIIANTES>>>). Todo bloco aberto DEVE ser fechado.
 - Os marcadores são instruções internas do sistema: não os explique, não os repita fora do formato e não os deixe no meio do texto jurídico.
 - Na TIMELINE escreva APENAS um objeto JSON válido (sem markdown, sem texto antes ou depois do JSON).
 - NUNCA deixe seções I–VI vazias. NUNCA corte no meio da frase. Pedidos VI devem ter i. até viii. completos.
+- Pedido iii: use exatamente "averbação do período de atividade rural no CNIS" (NÃO diga "carência rural").
 `
 }
 
 // Mantém referência para compatibilidade de imports acidentais
 void _smValor
 
-const PROMPT_SAL_MAT_RURAL = buildPromptSalMatRural(null, '')
+const PROMPT_SAL_MAT_RURAL = buildPromptSalMatRural(null, '', '')

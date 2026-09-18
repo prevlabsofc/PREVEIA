@@ -224,15 +224,41 @@ export function stripMarcadoresSm(text: string): string {
 
 const TITULO_SM_PADRAO =
   'AÇÃO PREVIDENCIÁRIA DE CONCESSÃO DE SALÁRIO-MATERNIDADE'
-const SUBTITULO_SM_PADRAO = '(SEGURADA ESPECIAL – AGRICULTORA)'
+/** Fallback neutro — NÃO forçar feminino (homem pode requerer SM). */
+export const SUBTITULO_SM_NEUTRO = '(SEGURADO(A) ESPECIAL – AGRICULTOR(A))'
+export const SUBTITULO_SM_MASCULINO = '(SEGURADO ESPECIAL – AGRICULTOR)'
+export const SUBTITULO_SM_FEMININO = '(SEGURADA ESPECIAL – AGRICULTORA)'
+/** Alias histórico (feminino). Preferir subtituloSmPorSexo. */
+export const SUBTITULO_SM_PADRAO = SUBTITULO_SM_FEMININO
+
+const SUBTITULO_PAREN_RE =
+  /\(\s*SEGURAD[OA](?:\(A\))?\s+ESPECIAL\s*[–—\-]\s*AGRICULTOR(?:A|\(A\))?\s*\)/gi
+
+export function normalizarSexoParteAutora(
+  sexoRaw?: string | null,
+): 'masculino' | 'feminino' | '' {
+  const s = String(sexoRaw || '').trim().toLowerCase()
+  if (s === 'masculino' || s === 'm' || s === 'male' || s === 'homem') return 'masculino'
+  if (s === 'feminino' || s === 'f' || s === 'female' || s === 'mulher') return 'feminino'
+  return ''
+}
+
+export function subtituloSmPorSexo(sexoRaw?: string | null): string {
+  const sexo = normalizarSexoParteAutora(sexoRaw)
+  if (sexo === 'masculino') return SUBTITULO_SM_MASCULINO
+  if (sexo === 'feminino') return SUBTITULO_SM_FEMININO
+  return SUBTITULO_SM_NEUTRO
+}
 
 /**
  * Remove artefatos << >> / tags e deduplica título × subtítulo.
  * Funciona mesmo quando a IA cola o subtítulo (uma ou mais vezes) dentro de TITULO.
+ * `sexoParteAutora` define o subtítulo fixo quando o bloco vem vazio ou inconsistente.
  */
 export function normalizarTituloSubtitulo(
   tituloRaw: string,
   subtituloRaw: string,
+  sexoParteAutora?: string | null,
 ): { titulo: string; subtitulo: string } {
   const limpar = (s: string) =>
     stripMarcadoresSm(limparMarkdownResidual(s || ''))
@@ -245,9 +271,10 @@ export function normalizarTituloSubtitulo(
 
   let titulo = limpar(tituloRaw)
   let subtitulo = limpar(subtituloRaw)
+  const desejado = subtituloSmPorSexo(sexoParteAutora)
+  const sexo = normalizarSexoParteAutora(sexoParteAutora)
 
-  const parenRe =
-    /\(\s*SEGURADA\s+ESPECIAL\s*[–—\-]\s*AGRICULTORA\s*\)/gi
+  const parenRe = SUBTITULO_PAREN_RE
   const foundInTitle = titulo.match(parenRe)
   if (foundInTitle?.[0]) {
     if (!subtitulo) subtitulo = foundInTitle[0].replace(/\s+/g, ' ').trim()
@@ -261,7 +288,7 @@ export function normalizarTituloSubtitulo(
   }
 
   titulo = titulo
-    .replace(/\bSEGURADA\s+ESPECIAL\s*[–—\-]\s*AGRICULTORA\b/gi, ' ')
+    .replace(/\bSEGURAD[OA](?:\(A\))?\s+ESPECIAL\s*[–—\-]\s*AGRICULTOR(?:A|\(A\))?\b/gi, ' ')
     .replace(/\s{2,}/g, ' ')
     .trim()
 
@@ -281,17 +308,24 @@ export function normalizarTituloSubtitulo(
   }
 
   if (!titulo) titulo = TITULO_SM_PADRAO
-  if (!subtitulo) subtitulo = SUBTITULO_SM_PADRAO
+
+  // Se sexo conhecido, força o subtítulo canônico (evita misturar agricultora em autor masculino)
+  if (sexo) {
+    subtitulo = desejado
+  } else if (!subtitulo) {
+    subtitulo = SUBTITULO_SM_NEUTRO
+  }
+
   if (!/^\(/.test(subtitulo)) {
     subtitulo = `(${subtitulo.replace(/^\(+|\)+$/g, '')})`
   }
 
   subtitulo = subtitulo.replace(
-    /(\(\s*SEGURADA\s+ESPECIAL\s*[–—\-]\s*AGRICULTORA\s*\))\s*\1+/gi,
+    /(\(\s*SEGURAD[OA](?:\(A\))?\s+ESPECIAL\s*[–—\-]\s*AGRICULTOR(?:A|\(A\))?\s*\))\s*\1+/gi,
     '$1',
   )
 
-  // Garante uma única ocorrência do subtítulo padrão
+  // Garante uma única ocorrência do subtítulo
   const once = subtitulo.match(parenRe)
   if (once?.[0]) subtitulo = once[0].replace(/\s+/g, ' ').trim()
 
@@ -1198,7 +1232,7 @@ function notaDocumentoGeradoHtml(): string {
     year: 'numeric',
   })
   return `
-    <div class="sm-doc-fecho-wrap" data-pdf-block="1">
+    <div class="sm-doc-fecho-wrap" style="margin-top:6pt;padding-top:4pt;min-height:0;">
       <div class="sm-doc-gerado">Documento gerado em ${escapar(dataTxt)} pela plataforma Marple</div>
     </div>
   `
@@ -1906,6 +1940,8 @@ export function montarHtmlSmRural(opts: {
   adv: DadosAdvogadoPeticao
   comMargens?: boolean
   estilo?: EstiloPeticao
+  /** Sexo da parte autora (masculino/feminino) — define subtítulo canônico. */
+  sexoParteAutora?: string | null
 }): string | null {
   const canonical = canonicalizarMarcadoresSm(
     corrigirLocalNoTexto(opts.text, opts.adv),
@@ -1989,7 +2025,7 @@ export function montarHtmlSmRural(opts: {
 
   let tituloBruto = ''
   {
-    const norm = normalizarTituloSubtitulo(titulo, subtitulo)
+    const norm = normalizarTituloSubtitulo(titulo, subtitulo, opts.sexoParteAutora)
     tituloBruto = norm.titulo
     subtitulo = norm.subtitulo
   }
@@ -2038,8 +2074,8 @@ export function montarHtmlSmRural(opts: {
     <div class="sm-fecho-bloco keep-together" data-pdf-block="1" data-pdf-keep="1" style="margin-top:0;overflow:visible;height:auto;page-break-inside:avoid;break-inside:avoid;">
       ${assinaturas}
       ${planilhaHtml(planilha, dataParto)}
+      ${notaDocumentoGeradoHtml()}
     </div>
-    ${notaDocumentoGeradoHtml()}
   `
 
   const html = `

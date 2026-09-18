@@ -101,7 +101,7 @@ ${FUND_TEMA_533_STJ}
 <<<VI_PEDIDOS>>>
 i. Que todas as comunicações processuais sejam feitas em nome dos advogados constituídos, nos termos do art. 272, §5º, do CPC
 ii. A procedência do pedido, com a concessão do salário-maternidade
-iii. A averbação do período no CNIS
+iii. A averbação do período de atividade rural no CNIS
 iv. A citação da ré e a juntada do processo administrativo NB
 v. O pagamento de 120 dias de benefício, com atualização nos termos do Manual de Cálculos da Justiça Federal, com incidência da taxa SELIC a partir de dezembro/2021, conforme art. 3º da EC nº 113/2021
 vi. A designação de audiência UNA
