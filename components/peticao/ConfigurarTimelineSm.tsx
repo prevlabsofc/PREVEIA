@@ -6,6 +6,7 @@ import {
   type TimelineData,
   type TimelineEstilo,
   type TimelineEvento,
+  flexionarAtividadeTimeline,
   montarTimelineDataPadrao,
   renderTimelineHtml,
 } from '@/lib/peticao-sm-rural'
@@ -87,6 +88,9 @@ export function ConfigurarTimelineSm({
     setEventos((prev) => (prev.length <= 1 ? prev : prev.filter((_, idx) => idx !== i)))
   }
 
+  const sexoForm =
+    formData.sexo_parte_autora || formData.sexo_autor || formData.sexo || ''
+
   function confirmar() {
     const limpos = eventos
       .map((e) => ({
@@ -98,7 +102,7 @@ export function ConfigurarTimelineSm({
 
     onConfirm({
       nome: nome.trim() || 'AUTORA',
-      atividade: atividade.trim() || 'Agricultora',
+      atividade: flexionarAtividadeTimeline(atividade.trim(), sexoForm),
       local: local.trim(),
       estilo,
       eventos: limpos.length ? limpos : eventos,

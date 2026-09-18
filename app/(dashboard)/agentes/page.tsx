@@ -35,7 +35,7 @@ import { PeticaoEditorComPreview } from '@/components/peticao/PeticaoEditorComPr
 import { ConfigurarTimelineSm } from '@/components/peticao/ConfigurarTimelineSm'
 import type { DadosAdvogadoPeticao, EstiloPeticao } from '@/lib/peticao-export'
 import { normalizarEstiloPeticao } from '@/lib/peticao-export'
-import { canonicalizarMarcadoresSm, injetarTimelineNoTexto, slugArquivoPeticaoSm, type TimelineData } from '@/lib/peticao-sm-rural'
+import { canonicalizarMarcadoresSm, flexionarAtividadeTimeline, injetarTimelineNoTexto, slugArquivoPeticaoSm, type TimelineData } from '@/lib/peticao-sm-rural'
 import { marcarPeticaoAtiva, consumirFilaPeticao, PETICAO_INSERIR_EVENT, PETICAO_CHANNEL } from '@/lib/peticao-sessao'
 import { consumirContextoPeticao } from '@/lib/extracao-documento-pdf'
 import { formatarEnderecoQualificacao } from '@/lib/formatar-endereco'
@@ -56,7 +56,7 @@ const GRUPOS = [
   {
     id: 1, label: 'Salário-Maternidade', color: '#D4AF37', icon: Users,
     agentes: [
-      { key: 'salario-maternidade-rural', nome: 'Salário-Maternidade Segurada Especial Rural', desc: 'Agricultora / Pescadora / Extrativista — JEF', tags: ['Petição Inicial', 'Réplica'] },
+      { key: 'salario-maternidade-rural', nome: 'Salário-Maternidade Segurada Especial Rural', desc: 'Agricultor(a) / Pescador(a) / Extrativista — JEF', tags: ['Petição Inicial', 'Réplica'] },
       { key: 'salario-maternidade-ci', nome: 'Salário-Maternidade Contribuinte Individual', desc: 'Autônoma / MEI / Diarista — JEF', tags: ['Petição Inicial', 'Recurso'] },
       { key: 'salario-maternidade-facultativa', nome: 'Salário-Maternidade Segurada Facultativa', desc: 'Dona de casa contribuinte — JEF', tags: ['Petição Inicial'] },
       { key: 'salario-maternidade-clt', nome: 'Salário-Maternidade CLT', desc: 'Empregada com carteira — Recurso INSS', tags: ['Recurso'] },
@@ -356,6 +356,7 @@ function AgentesPageContent() {
     const cli = clientes.find(c => c.id === clienteId)
     if (!cli) return
     setSelectedClient(clienteId)
+    const sexoCli = cli.sexo || cli.genero || ''
     setFormData(prev => ({
       ...prev,
       nome: cli.name || prev.nome,
@@ -368,8 +369,9 @@ function AgentesPageContent() {
       // faltante; usa o `address` legado como rua se o cliente ainda não
       // tiver os campos separados).
       endereco: formatarEnderecoQualificacao(cli) || prev.endereco,
-      sexo_parte_autora:
-        cli.sexo || cli.genero || prev.sexo_parte_autora || '',
+      sexo_parte_autora: sexoCli || prev.sexo_parte_autora || '',
+      profession: flexionarAtividadeTimeline(cli.profession || prev.profession || '', sexoCli),
+      atividade: flexionarAtividadeTimeline(cli.profession || prev.atividade || '', sexoCli),
     }))
   }
 
@@ -1032,7 +1034,18 @@ function AgentesPageContent() {
                               value={formData.sexo_parte_autora || ''}
                               onChange={e => {
                                 const v = e.target.value
-                                setFormData(p => ({ ...p, sexo_parte_autora: v }))
+                                setFormData(p => ({
+                                  ...p,
+                                  sexo_parte_autora: v,
+                                  atividade: flexionarAtividadeTimeline(
+                                    p.atividade || p.profession || p.ocupacao || '',
+                                    v,
+                                  ),
+                                  profession: flexionarAtividadeTimeline(
+                                    p.profession || p.atividade || '',
+                                    v,
+                                  ),
+                                }))
                                 setFormErrors(p => ({
                                   ...p,
                                   sexo_parte_autora: v ? undefined : 'Informe o sexo da parte autora',

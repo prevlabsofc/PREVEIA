@@ -16,6 +16,8 @@ import {
   fetchClientsByLawyer,
 } from '@/lib/clients-schema'
 import { isClienteArquivado } from '@/lib/client-archive'
+import { avisoNomeSexoIncompativel } from '@/lib/aviso-nome-sexo'
+import { flexionarAtividadeTimeline } from '@/lib/peticao-sm-rural'
 
 const supabase = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
 
@@ -739,7 +741,14 @@ export default function ClientesPage() {
                       style={{ color: 'rgba(212,175,55,0.7)' }}>SEXO DA PARTE AUTORA*</label>
                     <select
                       value={form.sexo}
-                      onChange={e => setForm(p => ({ ...p, sexo: e.target.value }))}
+                      onChange={e => {
+                        const sexo = e.target.value
+                        setForm(p => ({
+                          ...p,
+                          sexo,
+                          profession: flexionarAtividadeTimeline(p.profession, sexo),
+                        }))
+                      }}
                       style={{
                         ...inputStyle,
                         cursor: 'pointer',
@@ -755,6 +764,14 @@ export default function ClientesPage() {
                         <AlertCircle size={11} /> {errors.sexo}
                       </p>
                     )}
+                    {!errors.sexo && (() => {
+                      const avisoSexo = avisoNomeSexoIncompativel(form.name, form.sexo)
+                      return avisoSexo ? (
+                        <p className="text-xs mt-1 flex items-center gap-1" style={{ color: '#D4AF37' }}>
+                          <AlertCircle size={11} /> {avisoSexo}
+                        </p>
+                      ) : null
+                    })()}
                   </div>
                 </div>
 

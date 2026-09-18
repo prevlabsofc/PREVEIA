@@ -250,6 +250,55 @@ export function subtituloSmPorSexo(sexoRaw?: string | null): string {
   return SUBTITULO_SM_NEUTRO
 }
 
+/** Default de atividade na timeline conforme sexo da parte autora. */
+export function atividadeAgricultorPorSexo(sexoRaw?: string | null): string {
+  const sexo = normalizarSexoParteAutora(sexoRaw)
+  if (sexo === 'masculino') return 'Agricultor'
+  if (sexo === 'feminino') return 'Agricultora'
+  return 'Agricultor(a)'
+}
+
+const ATIVIDADE_AGRICULTOR_RE = /^agricultor(?:a|\(a\))?$/i
+
+/**
+ * Flexiona Agricultor/Agricultora quando a atividade é genérica ou vazia.
+ * Outras profissões (ex.: Pescador) são preservadas.
+ */
+export function flexionarAtividadeTimeline(
+  atividadeRaw?: string | null,
+  sexoRaw?: string | null,
+): string {
+  const fallback = atividadeAgricultorPorSexo(sexoRaw)
+  const a = String(atividadeRaw || '').trim()
+  if (!a || ATIVIDADE_AGRICULTOR_RE.test(a)) return fallback
+  return a
+}
+
+/** Alinha atividade ao sexo conhecido ou ao subtítulo já canônico da peça. */
+export function alinharAtividadeTimeline(
+  atividadeRaw?: string | null,
+  sexoRaw?: string | null,
+  subtituloRaw?: string | null,
+): string {
+  const sexo =
+    normalizarSexoParteAutora(sexoRaw) ||
+    (() => {
+      const sub = String(subtituloRaw || '')
+      if (/\bAGRICULTORA\b/i.test(sub) || /\bSEGURADA ESPECIAL\b/i.test(sub)) {
+        return 'feminino' as const
+      }
+      if (
+        /\bSEGURADO ESPECIAL\b/i.test(sub) &&
+        /\bAGRICULTOR\b/i.test(sub) &&
+        !/\bAGRICULTORA\b/i.test(sub)
+      ) {
+        return 'masculino' as const
+      }
+      return '' as const
+    })()
+  return flexionarAtividadeTimeline(atividadeRaw, sexo || sexoRaw)
+}
+
 /**
  * Remove artefatos << >> / tags e deduplica título × subtítulo.
  * Funciona mesmo quando a IA cola o subtítulo (uma ou mais vezes) dentro de TITULO.
@@ -670,7 +719,7 @@ function parseTimeline(raw: string): TimelineData | null {
       estiloRaw === 'vertical' || estiloRaw === 'none' ? estiloRaw : 'horizontal'
     return {
       nome: String(json.nome || 'AUTORA'),
-      atividade: String(json.atividade || 'Agricultora'),
+      atividade: String(json.atividade || 'Agricultor(a)'),
       local: String(json.local || ''),
       estilo,
       eventos: json.eventos.map((e: TimelineEvento) => {
@@ -752,9 +801,13 @@ export function montarTimelineDataPadrao(
     const m = form.endereco.match(/([A-Za-zÀ-ú\s]+)\s*\/\s*([A-Z]{2})\s*$/)
     if (m) local = `${m[1].trim()}/${m[2]}`
   }
+  const sexo =
+    form.sexo_parte_autora || form.sexo_autor || form.sexo || ''
+  const atividadeRaw =
+    form.atividade || form.ocupacao || form.profession || form.profissao || ''
   return {
     nome: (form.nome || 'AUTORA').trim() || 'AUTORA',
-    atividade: (form.atividade || form.ocupacao || 'Agricultora').trim() || 'Agricultora',
+    atividade: flexionarAtividadeTimeline(atividadeRaw, sexo),
     local,
     estilo,
     eventos: sugerirEventosTimeline(form),
@@ -2020,15 +2073,25 @@ export function montarHtmlSmRural(opts: {
   const qualificacaoLimpa = limparRgNaQualificacao(qualificacao || '')
   const emFaceLimpo = normalizarCitacaoInss(emFace || '')
 
-  const timelineHtml = renderTimelineHtml(timeline)
-  const temTimeline = Boolean(timelineHtml.trim())
-
   let tituloBruto = ''
   {
     const norm = normalizarTituloSubtitulo(titulo, subtitulo, opts.sexoParteAutora)
     tituloBruto = norm.titulo
     subtitulo = norm.subtitulo
   }
+
+  if (timeline) {
+    timeline = {
+      ...timeline,
+      atividade: alinharAtividadeTimeline(
+        timeline.atividade,
+        opts.sexoParteAutora,
+        subtitulo,
+      ),
+    }
+  }
+  const timelineHtml = renderTimelineHtml(timeline)
+  const temTimeline = Boolean(timelineHtml.trim())
   // Garante quebra antes de MATERNIDADE (evita corte no hífen pelo canvas)
   tituloBruto = tituloBruto.replace(/\s*SALÁRIO-MATERNIDADE\s*/gi, ' SALÁRIO-MATERNIDADE ')
   const tituloHtml = escapar(tituloBruto.trim())

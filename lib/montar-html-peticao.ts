@@ -24,6 +24,8 @@ export function montarHtmlPeticao(opts: {
   corPeticao?: string
   comMargens?: boolean
   agentType?: string | null
+  /** Sexo da parte autora — flexiona subtítulo e atividade da timeline. */
+  sexoParteAutora?: string | null
 }): string {
   const useSmRural =
     opts.agentType === AGENT_SM_RURAL || isSmRuralStructured(opts.text)
@@ -33,6 +35,7 @@ export function montarHtmlPeticao(opts: {
       adv: opts.adv,
       comMargens: opts.comMargens,
       estilo: opts.estilo,
+      sexoParteAutora: opts.sexoParteAutora,
     })
     if (dedicated) return dedicated
   }

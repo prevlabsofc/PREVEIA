@@ -31,6 +31,8 @@ import FeedbackToast from '@/components/clientes/FeedbackToast'
 import type { ProcessoParaPasta } from '@/lib/documentos-pastas'
 import { UFS_BRASIL } from '@/lib/estados-brasil'
 import { juntarEnderecoLegado, mascaraCEP } from '@/lib/formatar-endereco'
+import { avisoNomeSexoIncompativel } from '@/lib/aviso-nome-sexo'
+import { flexionarAtividadeTimeline } from '@/lib/peticao-sm-rural'
 
 const supabase = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
 
@@ -399,11 +401,33 @@ export default function ClienteDetalhesPage() {
                         {UFS_BRASIL.map(uf => <option key={uf} value={uf}>{uf}</option>)}
                       </select>
                     ) : field === 'sexo' ? (
-                      <select value={form.sexo || ''} onChange={e => setForm((f: any) => ({ ...f, sexo: e.target.value }))} className="input-glass w-full px-3 text-sm" style={{ height: 36, cursor: 'pointer' }}>
-                        <option value="">Selecione</option>
-                        <option value="masculino">Masculino</option>
-                        <option value="feminino">Feminino</option>
-                      </select>
+                      <>
+                        <select
+                          value={form.sexo || ''}
+                          onChange={e => {
+                            const sexo = e.target.value
+                            setForm((f: any) => ({
+                              ...f,
+                              sexo,
+                              profession: flexionarAtividadeTimeline(f.profession, sexo),
+                            }))
+                          }}
+                          className="input-glass w-full px-3 text-sm"
+                          style={{ height: 36, cursor: 'pointer' }}
+                        >
+                          <option value="">Selecione</option>
+                          <option value="masculino">Masculino</option>
+                          <option value="feminino">Feminino</option>
+                        </select>
+                        {(() => {
+                          const avisoSexo = avisoNomeSexoIncompativel(form.name || '', form.sexo || '')
+                          return avisoSexo ? (
+                            <p className="text-[11px] mt-1" style={{ color: '#D4AF37' }}>
+                              {avisoSexo}
+                            </p>
+                          ) : null
+                        })()}
+                      </>
                     ) : field === 'cep' ? (
                       <input type="text" value={form.cep || ''} placeholder="00000-000" maxLength={9}
                         onChange={e => setForm((f: any) => ({ ...f, cep: mascaraCEP(e.target.value) }))}

@@ -277,7 +277,7 @@ DA PRIORIDADE DE TRAMITAÇÃO:
 <<<END_III_ANTES>>>
 
 <<<TIMELINE>>>
-{"nome":"[NOME DA PARTE AUTORA]","atividade":"[Agricultor ou Agricultora conforme sexo]","local":"[Cidade]/[UF]","estilo":"horizontal","eventos":[{"data":"AAAA ou dd/mm/aaaa","titulo":"Evento curto","detalhe":"detalhe opcional"},{"data":"...","titulo":"...","detalhe":"..."},{"data":"...","titulo":"...","detalhe":"..."},{"data":"...","titulo":"...","detalhe":"..."},{"data":"...","titulo":"...","detalhe":"..."}]}
+{"nome":"[NOME DA PARTE AUTORA]","atividade":"[OBRIGATÓRIO: 'Agricultor' se sexo masculino; 'Agricultora' se sexo feminino; NUNCA use Agricultora para autor masculino]","local":"[Cidade]/[UF]","estilo":"horizontal","eventos":[{"data":"AAAA ou dd/mm/aaaa","titulo":"Evento curto","detalhe":"detalhe opcional"},{"data":"...","titulo":"...","detalhe":"..."},{"data":"...","titulo":"...","detalhe":"..."},{"data":"...","titulo":"...","detalhe":"..."},{"data":"...","titulo":"...","detalhe":"..."}]}
 <<<END_TIMELINE>>>
 
 <<<III_SINTESE_DEPOIS>>>
