@@ -2,16 +2,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
-import {
-  AlignmentType,
-  Document,
-  Header,
-  ImageRun,
-  Packer,
-  Paragraph,
-  TextRun,
-  UnderlineType,
-} from 'docx'
 import { saveAs } from 'file-saver'
 import { createBrowserClient } from '@supabase/ssr'
 import { Eye, Loader2 } from 'lucide-react'
@@ -22,11 +12,7 @@ import {
   type EstiloPeticao,
   A4_WIDTH_PX,
   MARGEM_PETICAO_PT,
-  marcarBlocoFinal,
-  margensDocxTwips,
   normalizarEstiloPeticao,
-  prepararTextoPeticao,
-  limparMarkdownResidual,
 } from '@/lib/peticao-export'
 import {
   aplicarPaginacaoPorBlocos,
@@ -80,19 +66,6 @@ function asAdv(raw: Record<string, unknown> | DadosAdvogadoPeticao): DadosAdvoga
     signature_url: (r.signature_url as string) || null,
     cor_peticao: String(r.cor_peticao || '#1d4ed8'),
     estilo_peticao: String(r.estilo_peticao || 'moderno'),
-  }
-}
-
-async function fetchImageBytes(url: string): Promise<{ data: Uint8Array; type: 'png' | 'jpg' } | null> {
-  try {
-    const res = await fetch(url)
-    if (!res.ok) return null
-    const buf = await res.arrayBuffer()
-    const ct = (res.headers.get('content-type') || '').toLowerCase()
-    const type: 'png' | 'jpg' = ct.includes('png') ? 'png' : 'jpg'
-    return { data: new Uint8Array(buf), type }
-  } catch {
-    return null
   }
 }
 
@@ -523,6 +496,7 @@ export function DownloadButtons({
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null)
   const [previewErro, setPreviewErro] = useState<string | null>(null)
+  const [docxErro, setDocxErro] = useState<string | null>(null)
   const [advBase, setAdvBase] = useState<DadosAdvogadoPeticao>({})
   const [estiloBase, setEstiloBase] = useState<EstiloPeticao>('moderno')
   const [advPreview, setAdvPreview] = useState<DadosAdvogadoPeticao>({})
@@ -661,146 +635,48 @@ export function DownloadButtons({
 
   async function baixarDOCX(advogadoArg?: DadosAdvogadoPeticao, estiloArg?: EstiloPeticao) {
     setBaixando(true)
+    setDocxErro(null)
     try {
       const advogado = advogadoArg || (await carregarAdvogado())
       const estilo = normalizarEstiloPeticao(
         estiloArg ?? estiloOverride ?? advogado.estilo_peticao,
       )
-      const prepared = prepararTextoPeticao(text, advogado)
-      const marked = marcarBlocoFinal(prepared)
-      const [antes, resto] = marked.split('<<<CLOSING>>>')
-      const [closingRaw = '', depois = ''] = (resto || '').split('<<<END_CLOSING>>>')
 
-      const nomeEscritorio = String(advogado.office_name || advogado.name || 'Advogado')
-      const oabUf = String(advogado.oab_uf || advogado.estado || '').toUpperCase()
-      const oabNum = String(advogado.oab_number || '')
-
-      const headerChildren: Paragraph[] = []
-
-      const logoSrc = advogado.banner_url || advogado.logo_url
-      if (logoSrc) {
-        const img = await fetchImageBytes(String(logoSrc))
-        if (img) {
-          headerChildren.push(
-            new Paragraph({
-              children: [
-                new ImageRun({
-                  data: img.data,
-                  transformation: { width: advogado.banner_url ? 480 : 80, height: advogado.banner_url ? 48 : 48 },
-                  type: img.type,
-                }),
-              ],
-            }),
-          )
-        }
-      }
-
-      headerChildren.push(
-        new Paragraph({
-          alignment: AlignmentType.RIGHT,
-          children: [
-            new TextRun({
-              text: nomeEscritorio.toUpperCase(),
-              bold: true,
-              font: 'Times New Roman',
-              size: 22,
-            }),
-          ],
+      const res = await fetch('/api/gerar-documento-docx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          advogado,
+          estilo,
+          agentType,
+          fileName,
         }),
-        new Paragraph({
-          alignment: AlignmentType.RIGHT,
-          children: [
-            new TextRun({
-              text: `OAB/${oabUf} nº ${oabNum}`,
-              font: 'Times New Roman',
-              size: 18,
-            }),
-          ],
-        }),
-      )
-      if (advogado.email) {
-        headerChildren.push(
-          new Paragraph({
-            alignment: AlignmentType.RIGHT,
-            children: [
-              new TextRun({
-                text: String(advogado.email),
-                font: 'Times New Roman',
-                size: 16,
-              }),
-            ],
-          }),
-        )
-      }
-
-      const toParas = (
-        block: string,
-        align: (typeof AlignmentType)[keyof typeof AlignmentType] = AlignmentType.BOTH,
-      ) => {
-        return block.split('\n').map((line) => {
-          const trimmed = line.trim()
-          const isSection =
-            /^#{1,2}\s/.test(trimmed) ||
-            /^\d+\.\s+[A-ZÀ-Ÿ]/.test(trimmed) ||
-            /^[IVXLC]+\s*[–—\-.:)]/.test(trimmed)
-          const isSub = /^###\s/.test(trimmed) || /^\d+\.\d+/.test(trimmed)
-          const clean = limparMarkdownResidual(
-            trimmed
-              .replace(/^#{1,6}\s+/, '')
-              .replace(/^>\s?/, '')
-              .replace(/[|─]/g, ''),
-          )
-
-          const bold = isSection || isSub
-          return new Paragraph({
-            alignment: align,
-            spacing: { after: isSection ? 200 : 120 },
-            indent: isSub ? { left: 360 } : undefined,
-            children: [
-              new TextRun({
-                text: clean,
-                font: 'Times New Roman',
-                size: isSection ? 24 : 22,
-                bold: Boolean(bold || /\*\*.+\*\*/.test(line)),
-                underline:
-                  estilo === 'classico' && isSection
-                    ? { type: UnderlineType.SINGLE }
-                    : undefined,
-              }),
-            ],
-          })
-        })
-      }
-
-      const margins = margensDocxTwips()
-      const children = [
-        ...toParas(antes || ''),
-        ...toParas(closingRaw, AlignmentType.RIGHT),
-        ...toParas(depois),
-      ]
-
-      const doc = new Document({
-        sections: [
-          {
-            properties: {
-              page: {
-                margin: {
-                  top: margins.top,
-                  right: margins.right,
-                  bottom: margins.bottom,
-                  left: margins.left,
-                },
-              },
-            },
-            headers: {
-              default: new Header({ children: headerChildren }),
-            },
-            children,
-          },
-        ],
       })
-      const blob = await Packer.toBlob(doc)
+
+      if (!res.ok) {
+        let msg = 'Não foi possível gerar o Word (.docx). Tente novamente.'
+        try {
+          const json = (await res.json()) as { error?: string }
+          if (json.error) msg = json.error
+        } catch {
+          /* ignore */
+        }
+        throw new Error(msg)
+      }
+
+      const blob = await res.blob()
       saveAs(blob, `${fileName}.docx`)
+    } catch (err) {
+      console.error('Falha ao gerar DOCX:', err)
+      const msg =
+        err instanceof Error && err.message
+          ? err.message
+          : 'Não foi possível gerar o Word (.docx). Tente novamente.'
+      setDocxErro(msg)
+      if (!previewOpen) {
+        alert(msg)
+      }
     } finally {
       setBaixando(false)
     }
@@ -809,6 +685,7 @@ export function DownloadButtons({
   function fecharPreview() {
     setPreviewOpen(false)
     setPreviewErro(null)
+    setDocxErro(null)
     revokePdfUrl()
   }
 
@@ -847,10 +724,16 @@ export function DownloadButtons({
             className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:bg-white/5"
             style={{ border: '1px solid rgba(59,130,246,0.3)', color: '#3B82F6' }}
           >
-            ⬇ DOCX
+            {baixando ? <Loader2 size={12} className="animate-spin" /> : null} Baixar em Word (.docx)
           </button>
         </>
       )}
+
+      {docxErro && !previewOpen ? (
+        <p className="text-[11px] mt-1 w-full" style={{ color: '#EF4444' }} role="alert">
+          {docxErro}
+        </p>
+      ) : null}
 
       <ModalDadosExportacao
         open={modalOpen}
@@ -869,6 +752,7 @@ export function DownloadButtons({
         gerando={generating}
         baixando={baixando}
         erro={previewErro}
+        erroDocx={docxErro}
         onBaixarPdf={baixarPdfDoPreview}
         onBaixarDocx={() => baixarDOCX(advPreview, estiloPreview)}
         onClose={fecharPreview}

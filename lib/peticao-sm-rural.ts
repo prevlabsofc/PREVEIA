@@ -51,8 +51,35 @@ export type TimelineData = {
   eventos: TimelineEvento[]
 }
 
-type QuadroRow = { campo: string; valor: string }
-type Prioridades = { idoso: boolean; deficiente: boolean; menor: boolean }
+export type QuadroRow = { campo: string; valor: string }
+export type Prioridades = { idoso: boolean; deficiente: boolean; menor: boolean }
+
+/** Bloco "DA …:" da seção I (todos os subtítulos, não só o primeiro). */
+export type PreliminarBloco = { titulo: string; corpo: string }
+
+/** Conteúdo parseado da petição SM — fonte única para HTML/PDF e DOCX. */
+export type ConteudoSmRural = {
+  meta: { tipoAcao: string; juizoDigital: boolean; prioridades: Prioridades }
+  enderecoTexto: string
+  qualificacao: string
+  titulo: string
+  subtitulo: string
+  emFace: string
+  preliminares: PreliminarBloco[]
+  quadro: QuadroRow[]
+  sinteseAntes: string
+  /** Timeline parseada; DOCX pode omitir sem quebrar. */
+  timeline: TimelineData | null
+  sinteseDepois: string
+  provas: string[]
+  provasFecho: string
+  fundamentacao: string
+  pedidos: string[]
+  fechamentoExtra: string
+  localData: string
+  assinaturas: { nome: string; oab: string }[]
+  planilha: { rows: QuadroRow[]; nota: string }
+}
 
 function escapar(s: string): string {
   return String(s || '')
@@ -1423,11 +1450,12 @@ function subheadSimples(title: string): string {
 }
 
 /**
- * Renderiza TODOS os subtítulos "DA …:" da seção I (negrito, esquerda, sem faixa azul).
+ * Divide a seção I em TODOS os subtítulos "DA …:" (gratuidade, não incidência, etc.).
+ * Usado pelo HTML/PDF e pelo DOCX — negrito, esquerda, sem recuo.
  */
-function renderPreliminaresHtml(raw: string): string {
+export function parsePreliminaresBlocos(raw: string): PreliminarBloco[] {
   const text = limparMarkdownResidual(String(raw || '').trim())
-  if (!text) return ''
+  if (!text) return []
 
   const re = /(?:^|\n)\s*(DA\s+[A-ZÀ-ŸÁÉÍÓÚÂÊÔÃÕÇ][^:\n]{2,120}:)\s*/gi
   const matches: { title: string; start: number; bodyStart: number }[] = []
@@ -1440,30 +1468,200 @@ function renderPreliminaresHtml(raw: string): string {
     })
   }
 
+  const out: PreliminarBloco[] = []
+
   if (!matches.length) {
-    // Fallback: trata primeira linha como título se parecer subtítulo
     const first = text.match(/^(DA\s+[^:\n]+:)\s*/i)
     if (first) {
-      return (
-        subheadSimples(first[1].trim()) +
-        parasHtml(text.slice(first[0].length))
-      )
+      out.push({
+        titulo: first[1].trim(),
+        corpo: text.slice(first[0].length).trim(),
+      })
+      return out
     }
-    return parasHtml(text)
+    return [{ titulo: '', corpo: text }]
   }
 
-  let html = ''
-  // Prefácio antes do primeiro "DA …:" (raro)
   const before = text.slice(0, matches[0].start).trim()
-  if (before) html += parasHtml(before)
+  if (before) out.push({ titulo: '', corpo: before })
 
   for (let i = 0; i < matches.length; i++) {
     const end = i + 1 < matches.length ? matches[i + 1].start : text.length
-    const body = text.slice(matches[i].bodyStart, end).trim()
-    html += subheadSimples(matches[i].title)
-    if (body) html += parasHtml(body)
+    out.push({
+      titulo: matches[i].title,
+      corpo: text.slice(matches[i].bodyStart, end).trim(),
+    })
+  }
+  return out
+}
+
+/**
+ * Renderiza TODOS os subtítulos "DA …:" da seção I (negrito, esquerda, sem faixa azul).
+ */
+function renderPreliminaresHtml(raw: string): string {
+  const blocs = parsePreliminaresBlocos(raw)
+  if (!blocs.length) return ''
+  let html = ''
+  for (const b of blocs) {
+    if (b.titulo) html += subheadSimples(b.titulo)
+    if (b.corpo) html += parasHtml(b.corpo)
   }
   return html
+}
+
+function extrairAssinaturasSm(
+  adv: DadosAdvogadoPeticao,
+  fechamentoRaw: string,
+): { nome: string; oab: string }[] {
+  const nomeAdv = String(adv.name || '').trim()
+  const oabUf = String(adv.oab_uf || adv.estado || '').trim().toUpperCase()
+  const oabNum = String(adv.oab_number || '').trim()
+
+  if (nomeAdv || oabNum) {
+    const oabLabel = oabUf
+      ? `OAB/${oabUf}${oabNum ? ` nº ${oabNum}` : ''}`
+      : oabNum
+        ? `OAB nº ${oabNum}`
+        : 'OAB'
+    return [{ nome: nomeAdv || 'Advogado(a)', oab: oabLabel }]
+  }
+
+  const oabLines = fechamentoRaw.match(
+    /^[A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç\s.]+\nOAB\/.+$/gm,
+  )
+  if (oabLines?.length) {
+    return oabLines.slice(0, 2).map((block) => {
+      const [nome, oab] = block.split('\n')
+      return { nome: nome.trim(), oab: (oab || '').trim() }
+    })
+  }
+  return [{ nome: 'Advogado(a)', oab: 'OAB' }]
+}
+
+/**
+ * Extrai o conteúdo estruturado SM (mesma fonte do HTML/PDF).
+ * Retorna null se o texto não for petição SM com marcadores.
+ */
+export function extrairConteudoSmRural(opts: {
+  text: string
+  adv: DadosAdvogadoPeticao
+  sexoParteAutora?: string | null
+}): ConteudoSmRural | null {
+  const canonical = canonicalizarMarcadoresSm(
+    corrigirLocalNoTexto(opts.text, opts.adv),
+  )
+  if (!isSmRuralStructured(canonical)) return null
+
+  const text = canonical.replace(
+    /(<<<[A-Z0-9_]+>>>)([\s\S]*?)(<<<END_[A-Z0-9_]+>>>)/g,
+    (_m, open: string, body: string, close: string) =>
+      `${open}${limparMarkdownResidual(body)}${close}`,
+  )
+
+  const meta = parseMeta(bloco(text, '<<<META>>>', '<<<END_META>>>'))
+  const endereco = bloco(text, '<<<ENDERECO>>>', '<<<END_ENDERECO>>>')
+  const qualificacao = bloco(text, '<<<QUALIFICACAO>>>', '<<<END_QUALIFICACAO>>>')
+  let titulo = bloco(text, '<<<TITULO>>>', '<<<SUBTITULO>>>')
+  let subtitulo = bloco(text, '<<<SUBTITULO>>>', '<<<END_TITULO>>>')
+  if (!titulo) titulo = bloco(text, '<<<TITULO>>>', '<<<END_TITULO>>>')
+  const emFace = bloco(text, '<<<EM_FACE>>>', '<<<END_EM_FACE>>>')
+  const preliminaresRaw = bloco(text, '<<<I_PRELIMINARES>>>', '<<<END_I>>>')
+  const quadro = parseQuadro(bloco(text, '<<<II_QUADRO>>>', '<<<END_II>>>'))
+  let sinteseAntes = bloco(text, '<<<III_SINTESE_ANTES>>>', '<<<END_III_ANTES>>>')
+  const timelineRaw = bloco(text, '<<<TIMELINE>>>', '<<<END_TIMELINE>>>')
+  let timeline = parseTimeline(timelineRaw)
+  if (!timeline) timeline = parseTimeline(extrairJsonTimeline(text) || '')
+  let sinteseDepois = bloco(text, '<<<III_SINTESE_DEPOIS>>>', '<<<END_III_DEPOIS>>>')
+  let provas = parseProvas(bloco(text, '<<<IV_PROVAS>>>', '<<<END_IV>>>'))
+  const provasFecho = bloco(text, '<<<IV_FECHO>>>', '<<<END_IV_FECHO>>>')
+  const fund = bloco(text, '<<<V_FUNDAMENTACAO>>>', '<<<END_V>>>')
+  const pedidos = parsePedidos(bloco(text, '<<<VI_PEDIDOS>>>', '<<<END_VI>>>'))
+  const fechamento = bloco(text, '<<<FECHAMENTO>>>', '<<<END_FECHAMENTO>>>')
+  const planilhaRaw = bloco(text, '<<<PLANILHA>>>', '<<<END_PLANILHA>>>')
+
+  sinteseAntes = removerJsonTimelineDoTexto(sinteseAntes)
+  sinteseDepois = removerJsonTimelineDoTexto(sinteseDepois)
+
+  {
+    const movido = extrairProvasDoFimDaSintese(sinteseDepois)
+    if (movido.provas.length) {
+      sinteseDepois = movido.limpo
+      provas = mesclarProvas(provas, movido.provas)
+    }
+  }
+  {
+    const movido = extrairProvasDoFimDaSintese(sinteseAntes)
+    if (movido.provas.length) {
+      sinteseAntes = movido.limpo
+      provas = mesclarProvas(provas, movido.provas)
+    }
+  }
+
+  const dataParto = dataNascimentoDoQuadro(quadro)
+  const { localFormatado } = resolverLocalAdvogado(opts.adv)
+  const enderecoTexto = normalizarEnderecoJef(
+    normalizarEspacos(
+      limparMarkdownResidual(
+        endereco ||
+          `AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE ${localFormatado || '[Cidade]/[UF]'}`,
+      ),
+    ),
+    localFormatado,
+  )
+
+  const norm = normalizarTituloSubtitulo(titulo, subtitulo, opts.sexoParteAutora)
+  titulo = norm.titulo
+  subtitulo = norm.subtitulo
+
+  if (timeline) {
+    timeline = {
+      ...timeline,
+      atividade: alinharAtividadeTimeline(
+        timeline.atividade,
+        opts.sexoParteAutora,
+        subtitulo,
+      ),
+    }
+  }
+
+  const temTimeline = Boolean(
+    timeline &&
+      timeline.estilo !== 'none' &&
+      timeline.eventos?.length,
+  )
+  if (!temTimeline) {
+    sinteseAntes = sinteseAntes
+      .replace(/\s*A seguir,?\s+a linha do tempo[^\n.]*[.:]?\s*/gi, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+  }
+
+  const fechamentoExtra = fechamento
+    .replace(/^[A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç\s.]+\nOAB\/.+$/gm, '')
+    .replace(/^[A-Za-zÀ-ÿ ].*\/[A-Z]{2},?\s+\d{1,2}\s+de\s+\w+.*/gim, '')
+    .trim()
+
+  return {
+    meta,
+    enderecoTexto,
+    qualificacao: limparRgNaQualificacao(qualificacao || ''),
+    titulo: titulo.replace(/\s*SALÁRIO-MATERNIDADE\s*/gi, ' SALÁRIO-MATERNIDADE ').trim(),
+    subtitulo,
+    emFace: normalizarCitacaoInss(emFace || ''),
+    preliminares: parsePreliminaresBlocos(preliminaresRaw),
+    quadro,
+    sinteseAntes,
+    timeline: temTimeline ? timeline : null,
+    sinteseDepois,
+    provas,
+    provasFecho,
+    fundamentacao: fund,
+    pedidos,
+    fechamentoExtra,
+    localData: formatarLocalData(opts.adv),
+    assinaturas: extrairAssinaturasSm(opts.adv, fechamento),
+    planilha: normalizarPlanilhaPorParto(planilhaRaw || '', dataParto),
+  }
 }
 
 /**

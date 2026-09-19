@@ -10,7 +10,10 @@ type Props = {
   pdfUrl: string | null
   gerando: boolean
   baixando: boolean
+  /** Erro fatal do preview PDF (bloqueia iframe). */
   erro?: string | null
+  /** Erro do Word — banner sem ocultar o PDF. */
+  erroDocx?: string | null
   onBaixarPdf: () => void
   onBaixarDocx: () => void
   onClose: () => void
@@ -27,6 +30,7 @@ export function ModalVisualizarPeticao({
   gerando,
   baixando,
   erro,
+  erroDocx,
   onBaixarPdf,
   onBaixarDocx,
   onClose,
@@ -96,7 +100,7 @@ export function ModalVisualizarPeticao({
             style={{ border: '1px solid rgba(59,130,246,0.4)', color: '#3B82F6' }}
           >
             {baixando ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-            Baixar DOCX
+            Baixar em Word (.docx)
           </button>
           <button
             type="button"
@@ -111,6 +115,16 @@ export function ModalVisualizarPeticao({
           </button>
         </div>
       </header>
+
+      {erroDocx && !gerando ? (
+        <div
+          className="px-4 py-2 text-xs flex-shrink-0"
+          style={{ background: 'rgba(239,68,68,0.15)', color: '#FCA5A5', borderBottom: '1px solid rgba(239,68,68,0.35)' }}
+          role="alert"
+        >
+          {erroDocx}
+        </div>
+      ) : null}
 
       <div className="flex-1 min-h-0 relative" style={{ background: '#1a1a16' }}>
         {gerando && (
