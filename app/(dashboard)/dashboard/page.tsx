@@ -67,9 +67,11 @@ export default function Dashboard() {
   const [periodo, setPeriodo] = useState<'semana' | 'mes' | 'ano'>('semana')
   const [openSupport, setOpenSupport] = useState(false)
   const [isLight, setIsLight] = useState(false)
+  const [themeMounted, setThemeMounted] = useState(false)
   useEffect(() => {
     const check = () => setIsLight(document.documentElement.classList.contains('light'))
     check()
+    setThemeMounted(true)
     const observer = new MutationObserver(check)
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
     return () => observer.disconnect()
@@ -267,13 +269,22 @@ export default function Dashboard() {
               </GlassCard>
             </div>
 
-            <div className="lg:w-1/2 relative min-h-[240px]">
-              <img
-                src="/hero-bg.png"
-                alt="Hero"
-                className="absolute inset-0 w-full h-full object-cover"
-                style={{ opacity: isLight ? 0.9 : 0.7 }}
-              />
+            <div
+              className="lg:w-1/2 relative min-h-[240px]"
+              style={{
+                background: themeMounted
+                  ? (isLight ? '#F7F3EA' : '#0A0A0A')
+                  : 'transparent',
+              }}
+            >
+              {themeMounted && (
+                <img
+                  src={isLight ? '/hero-bg-light.png' : '/hero-bg.png'}
+                  alt="Hero"
+                  className="absolute inset-0 w-full h-full object-cover"
+                  style={{ opacity: isLight ? 0.9 : 0.7 }}
+                />
+              )}
             </div>
           </div>
 
