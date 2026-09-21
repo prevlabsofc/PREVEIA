@@ -1015,6 +1015,24 @@ function AgentesPageContent() {
                       )}
                     </div>
 
+                    {/* Nome e CPF do cliente — logo abaixo do select */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-bold tracking-widest mb-1.5"
+                          style={{ color: 'rgba(212,175,55,0.7)' }}>NOME DO CLIENTE*</label>
+                        <input type="text" placeholder="Maria da Silva" className="input-glass w-full text-sm"
+                          value={formData.nome || ''}
+                          onChange={e => setFormData(p => ({ ...p, nome: e.target.value }))} spellCheck={true} />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold tracking-widest mb-1.5"
+                          style={{ color: 'rgba(212,175,55,0.7)' }}>CPF DO CLIENTE*</label>
+                        <input type="text" placeholder="000.000.000-00" className="input-glass w-full text-sm"
+                          value={formData.cpf || ''}
+                          onChange={e => setFormData(p => ({ ...p, cpf: e.target.value }))} spellCheck={true} />
+                      </div>
+                    </div>
+
                     {/* Seletor de modelos prontos */}
                     <SeletorModelo
                       agentType={selectedAgent.key}
@@ -1025,59 +1043,60 @@ function AgentesPageContent() {
                     {/* Campos específicos do agente */}
                     {selectedAgent.key.includes('salario-maternidade') && (
                       <>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-[10px] font-bold tracking-widest mb-1.5"
-                              style={{ color: 'rgba(212,175,55,0.7)' }}>SEXO DA PARTE AUTORA*</label>
-                            <select
-                              className="input-glass w-full text-sm"
-                              value={formData.sexo_parte_autora || ''}
-                              onChange={e => {
-                                const v = e.target.value
-                                setFormData(p => ({
-                                  ...p,
-                                  sexo_parte_autora: v,
-                                  atividade: flexionarAtividadeTimeline(
-                                    p.atividade || p.profession || p.ocupacao || '',
-                                    v,
-                                  ),
-                                  profession: flexionarAtividadeTimeline(
-                                    p.profession || p.atividade || '',
-                                    v,
-                                  ),
-                                }))
-                                setFormErrors(p => ({
-                                  ...p,
-                                  sexo_parte_autora: v ? undefined : 'Informe o sexo da parte autora',
-                                }))
-                              }}
-                              style={formErrors.sexo_parte_autora ? { borderColor: '#ef4444', borderWidth: 1 } : undefined}
-                            >
-                              <option value="">Selecione</option>
-                              <option value="masculino">Masculino</option>
-                              <option value="feminino">Feminino</option>
-                            </select>
-                            {formErrors.sexo_parte_autora ? (
-                              <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>{formErrors.sexo_parte_autora}</p>
-                            ) : (
-                              <p className="text-[10px] mt-1" style={{ color: '#666' }}>
-                                Define a concordância (agricultor/agricultora). Homem também pode requerer SM.
-                              </p>
-                            )}
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-bold tracking-widest mb-1.5"
-                              style={{ color: 'rgba(212,175,55,0.7)' }}>SEXO DA CRIANÇA</label>
-                            <select
-                              className="input-glass w-full text-sm"
-                              value={formData.sexo_crianca || ''}
-                              onChange={e => setFormData(p => ({ ...p, sexo_crianca: e.target.value }))}
-                            >
-                              <option value="">Não informado</option>
-                              <option value="masculino">Masculino</option>
-                              <option value="feminino">Feminino</option>
-                            </select>
-                          </div>
+                        {/* 2. Sexo da parte autora */}
+                        <div>
+                          <label className="block text-[10px] font-bold tracking-widest mb-1.5"
+                            style={{ color: 'rgba(212,175,55,0.7)' }}>SEXO DA PARTE AUTORA*</label>
+                          <select
+                            className="input-glass w-full text-sm"
+                            value={formData.sexo_parte_autora || ''}
+                            onChange={e => {
+                              const v = e.target.value
+                              setFormData(p => ({
+                                ...p,
+                                sexo_parte_autora: v,
+                                atividade: flexionarAtividadeTimeline(
+                                  p.atividade || p.profession || p.ocupacao || '',
+                                  v,
+                                ),
+                                profession: flexionarAtividadeTimeline(
+                                  p.profession || p.atividade || '',
+                                  v,
+                                ),
+                              }))
+                              setFormErrors(p => ({
+                                ...p,
+                                sexo_parte_autora: v ? undefined : 'Informe o sexo da parte autora',
+                              }))
+                            }}
+                            style={formErrors.sexo_parte_autora ? { borderColor: '#ef4444', borderWidth: 1 } : undefined}
+                          >
+                            <option value="">Selecione</option>
+                            <option value="masculino">Masculino</option>
+                            <option value="feminino">Feminino</option>
+                          </select>
+                          {formErrors.sexo_parte_autora ? (
+                            <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>{formErrors.sexo_parte_autora}</p>
+                          ) : (
+                            <p className="text-[10px] mt-1" style={{ color: '#666' }}>
+                              Define a concordância (agricultor/agricultora). Homem também pode requerer SM.
+                            </p>
+                          )}
+                        </div>
+
+                        {/* 3. Dados da criança */}
+                        <div>
+                          <label className="block text-[10px] font-bold tracking-widest mb-1.5"
+                            style={{ color: 'rgba(212,175,55,0.7)' }}>SEXO DA CRIANÇA</label>
+                          <select
+                            className="input-glass w-full text-sm"
+                            value={formData.sexo_crianca || ''}
+                            onChange={e => setFormData(p => ({ ...p, sexo_crianca: e.target.value }))}
+                          >
+                            <option value="">Não informado</option>
+                            <option value="masculino">Masculino</option>
+                            <option value="feminino">Feminino</option>
+                          </select>
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
@@ -1133,6 +1152,67 @@ function AgentesPageContent() {
                             ) : null}
                           </div>
                         </div>
+
+                        {/* 4. Atividade rural da parte autora */}
+                        <div
+                          className="rounded-xl p-3 space-y-3"
+                          style={{
+                            border: isLight ? '1px solid #E5E7EB' : '1px solid rgba(212,175,55,0.2)',
+                            background: isLight ? '#FAFAFA' : 'rgba(212,175,55,0.04)',
+                          }}
+                        >
+                          <div className="text-[10px] font-bold tracking-widest" style={{ color: 'rgba(212,175,55,0.85)' }}>
+                            DADOS DA PARTE AUTORA — ATIVIDADE RURAL
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold tracking-widest mb-1.5"
+                              style={{ color: 'rgba(212,175,55,0.7)' }}>PERÍODO DE ATIVIDADE RURAL*</label>
+                            <input
+                              type="text"
+                              placeholder="Ex.: 01/2018 até atualmente"
+                              className="input-glass w-full text-sm"
+                              value={formData.periodo_segurado || ''}
+                              onChange={e => setFormData(p => ({ ...p, periodo_segurado: e.target.value }))}
+                              onBlur={e => {
+                                const msg = validarPeriodoSegurado(e.target.value)
+                                setFormErrors(p => ({ ...p, periodo_segurado: msg || undefined }))
+                              }}
+                              style={formErrors.periodo_segurado ? { borderColor: '#ef4444', borderWidth: 1 } : undefined}
+                              spellCheck={true}
+                            />
+                            {formErrors.periodo_segurado ? (
+                              <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>{formErrors.periodo_segurado}</p>
+                            ) : null}
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[10px] font-bold tracking-widest mb-1.5"
+                                style={{ color: 'rgba(212,175,55,0.7)' }}>TEMPO DE TRABALHO ANTES DO PARTO</label>
+                              <input
+                                type="text"
+                                placeholder="Ex.: 3 anos antes do parto"
+                                className="input-glass w-full text-sm"
+                                value={formData.tempo_trabalho_parto || ''}
+                                onChange={e => setFormData(p => ({ ...p, tempo_trabalho_parto: e.target.value }))}
+                                spellCheck={true}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold tracking-widest mb-1.5"
+                                style={{ color: 'rgba(212,175,55,0.7)' }}>PERÍODO DE SEGURADO ESPECIAL</label>
+                              <input
+                                type="text"
+                                placeholder="Ex.: 01/2018 a 12/2025"
+                                className="input-glass w-full text-sm"
+                                value={formData.periodo_segurado_especial || ''}
+                                onChange={e => setFormData(p => ({ ...p, periodo_segurado_especial: e.target.value }))}
+                                spellCheck={true}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 5. Requerimento no INSS */}
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="block text-[10px] font-bold tracking-widest mb-1.5"
@@ -1242,85 +1322,8 @@ function AgentesPageContent() {
                             {avisoPrescricaoQuinquenal(formData.data_indeferimento || '')}
                           </div>
                         ) : null}
-
-                        {/* Bloco MÃE / AUTORA */}
-                        <div
-                          className="rounded-xl p-3 space-y-3"
-                          style={{
-                            border: isLight ? '1px solid #E5E7EB' : '1px solid rgba(212,175,55,0.2)',
-                            background: isLight ? '#FAFAFA' : 'rgba(212,175,55,0.04)',
-                          }}
-                        >
-                          <div className="text-[10px] font-bold tracking-widest" style={{ color: 'rgba(212,175,55,0.85)' }}>
-                            👩 DADOS DA MÃE / AUTORA (ATIVIDADE RURAL)
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-bold tracking-widest mb-1.5"
-                              style={{ color: 'rgba(212,175,55,0.7)' }}>PERÍODO DE ATIVIDADE RURAL*</label>
-                            <input
-                              type="text"
-                              placeholder="Desde os 12 anos de idade"
-                              className="input-glass w-full text-sm"
-                              value={formData.periodo_segurado || ''}
-                              onChange={e => setFormData(p => ({ ...p, periodo_segurado: e.target.value }))}
-                              onBlur={e => {
-                                const msg = validarPeriodoSegurado(e.target.value)
-                                setFormErrors(p => ({ ...p, periodo_segurado: msg || undefined }))
-                              }}
-                              style={formErrors.periodo_segurado ? { borderColor: '#ef4444', borderWidth: 1 } : undefined}
-                              spellCheck={true}
-                            />
-                            {formErrors.periodo_segurado ? (
-                              <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>{formErrors.periodo_segurado}</p>
-                            ) : null}
-                          </div>
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <label className="block text-[10px] font-bold tracking-widest mb-1.5"
-                                style={{ color: 'rgba(212,175,55,0.7)' }}>TEMPO DE TRABALHO ANTES DO PARTO</label>
-                              <input
-                                type="text"
-                                placeholder="Ex: 10 meses contínuos antes do parto"
-                                className="input-glass w-full text-sm"
-                                value={formData.tempo_trabalho_parto || ''}
-                                onChange={e => setFormData(p => ({ ...p, tempo_trabalho_parto: e.target.value }))}
-                                spellCheck={true}
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[10px] font-bold tracking-widest mb-1.5"
-                                style={{ color: 'rgba(212,175,55,0.7)' }}>PERÍODO DE SEGURADO ESPECIAL</label>
-                              <input
-                                type="text"
-                                placeholder="Ex: 01/2018 a 12/2025 (declarado)"
-                                className="input-glass w-full text-sm"
-                                value={formData.periodo_segurado_especial || ''}
-                                onChange={e => setFormData(p => ({ ...p, periodo_segurado_especial: e.target.value }))}
-                                spellCheck={true}
-                              />
-                            </div>
-                          </div>
-                        </div>
                       </>
                     )}
-
-                    {/* Nome e CPF do cliente (todos os agentes) */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[10px] font-bold tracking-widest mb-1.5"
-                          style={{ color: 'rgba(212,175,55,0.7)' }}>NOME DO CLIENTE*</label>
-                        <input type="text" placeholder="Maria da Silva" className="input-glass w-full text-sm"
-                          value={formData.nome || ''}
-                          onChange={e => setFormData(p => ({ ...p, nome: e.target.value }))} spellCheck={true} />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold tracking-widest mb-1.5"
-                          style={{ color: 'rgba(212,175,55,0.7)' }}>CPF DO CLIENTE*</label>
-                        <input type="text" placeholder="000.000.000-00" className="input-glass w-full text-sm"
-                          value={formData.cpf || ''}
-                          onChange={e => setFormData(p => ({ ...p, cpf: e.target.value }))} spellCheck={true} />
-                      </div>
-                    </div>
 
                     {/* Provas (apenas rural) */}
                     {(selectedAgent.key.includes('rural') || selectedAgent.key.includes('pescador') || selectedAgent.key.includes('maternidade')) && (
