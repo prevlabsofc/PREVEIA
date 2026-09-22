@@ -68,7 +68,7 @@ export type ConteudoSmRural = {
   preliminares: PreliminarBloco[]
   quadro: QuadroRow[]
   sinteseAntes: string
-  /** Timeline parseada; DOCX pode omitir sem quebrar. */
+  /** Timeline parseada; no DOCX vira PNG (sharp) ou tabela fallback. */
   timeline: TimelineData | null
   sinteseDepois: string
   provas: string[]
@@ -1256,6 +1256,37 @@ export function renderTimelineHtml(data: TimelineData | null): string {
   if (!data.eventos?.length) return ''
   if (estilo === 'vertical') return renderTimelineVertical(data)
   return renderTimelineSvg(data)
+}
+
+/**
+ * SVG puro da timeline horizontal (sem wrapper HTML) para rasterizar no DOCX.
+ * Largura tipicamente ~1400px; altura proporcional ao viewBox.
+ */
+export function svgTimelineParaRaster(
+  data: TimelineData,
+  widthPx = 1400,
+): { svg: string; width: number; height: number } | null {
+  if (!data?.eventos?.length) return null
+  const html = renderTimelineSvg(data)
+  const m = html.match(/<svg[\s\S]*?<\/svg>/i)
+  if (!m) return null
+  const vb = m[0].match(/viewBox=["']0\s+0\s+([\d.]+)\s+([\d.]+)["']/)
+  const vw = vb ? Number(vb[1]) : 720
+  const vh = vb ? Number(vb[2]) : 200
+  if (!vw || !vh) return null
+  const heightPx = Math.max(1, Math.round((vh / vw) * widthPx))
+  let svg = m[0]
+  if (/width=["'][^"']*["']/.test(svg)) {
+    svg = svg.replace(/width=["'][^"']*["']/, `width="${widthPx}"`)
+  } else {
+    svg = svg.replace(/<svg\b/, `<svg width="${widthPx}"`)
+  }
+  if (/height=["'][^"']*["']/.test(svg)) {
+    svg = svg.replace(/height=["'][^"']*["']/, `height="${heightPx}"`)
+  } else {
+    svg = svg.replace(/<svg\b/, `<svg height="${heightPx}"`)
+  }
+  return { svg, width: widthPx, height: heightPx }
 }
 
 function cabecalhoSm(adv: DadosAdvogadoPeticao): string {

@@ -7,8 +7,12 @@ import {
   FUND_TEMA_533_STJ,
 } from '@/lib/peticoes/fundamentos'
 import { valorCausaSalarioMaternidade } from '@/lib/salario-minimo'
-import { formatarEnderecoAutorPeticao } from '@/lib/formatar-endereco'
-import { formatarSubsecaoUf } from '@/lib/jurisdicao/subsecoes'
+import {
+  bairroJaContidoNoLogradouro,
+  formatarEnderecoAutorPeticao,
+  formatarMunicipioUfAutor,
+} from '@/lib/formatar-endereco'
+import { buscarSubsecao, formatarSubsecaoUf } from '@/lib/jurisdicao/subsecoes'
 
 function lerCampo(fd: Record<string, unknown>, ...keys: string[]): string {
   for (const k of keys) {
@@ -33,10 +37,6 @@ export function getSystemPrompt(
       : 'use [Cidade]/[UF] apenas se os dados forem conhecidos; não invente cidade'
 
   const fd = formData && typeof formData === 'object' ? formData : {}
-  const subsecaoForm = formatarSubsecaoUf(
-    lerCampo(fd, 'subsecao_judiciaria', 'subsecao'),
-    lerCampo(fd, 'autor_uf', 'uf', 'state', 'estado') || local.uf,
-  )
   const municipioAutor = lerCampo(
     fd,
     'autor_municipio',
@@ -47,9 +47,30 @@ export function getSystemPrompt(
   const ufAutor = lerCampo(fd, 'autor_uf', 'uf', 'state', 'estado').toUpperCase()
   const bairroAutor = lerCampo(fd, 'autor_bairro', 'bairro')
   const zonaAutor = lerCampo(fd, 'autor_zona', 'zona', 'zone').toLowerCase()
+  const logradouroAutor = lerCampo(
+    fd,
+    'autor_logradouro',
+    'logradouro',
+    'rua',
+    'address',
+  )
   const enderecoAutor =
     formatarEnderecoAutorPeticao(fd as Record<string, string>) ||
     lerCampo(fd, 'endereco')
+  const municipioUfAutor =
+    formatarMunicipioUfAutor(fd as Record<string, string>) ||
+    (municipioAutor && ufAutor ? `${municipioAutor}/${ufAutor}` : '')
+  const bairroDuplicadoNoLogradouro =
+    Boolean(bairroAutor) &&
+    bairroJaContidoNoLogradouro(logradouroAutor, bairroAutor)
+  const subsecaoForm =
+    formatarSubsecaoUf(
+      lerCampo(fd, 'subsecao_judiciaria', 'subsecao'),
+      ufAutor || local.uf,
+    ) ||
+    (municipioAutor && ufAutor
+      ? buscarSubsecao(municipioAutor, ufAutor) || ''
+      : '')
 
   const juizoCompetente =
     subsecaoForm ||
@@ -80,9 +101,9 @@ SEPARAÇÃO OBRIGATÓRIA — CIDADE DO ESCRITÓRIO vs SUBSEÇÃO COMPETENTE:
   - Formato da linha de assinatura: "${local.localFormatado || '[Cidade]/[UF]'}, [data por extenso]."
 
 DOMICÍLIO DA PARTE AUTORA (qualificação e competência territorial JEF):
-  - Endereço completo: ${enderecoAutor || '(preencher com os campos do formulário)'}
-  - Município/UF: ${municipioAutor && ufAutor ? `${municipioAutor}/${ufAutor}` : '(informar)'}
-  - Bairro/comunidade/povoado: ${bairroAutor || '(se informado)'}
+  - Endereço COMPLETO (valor FIXO — reproduzir EXATAMENTE, sem reescrever, sem acrescentar bairro/povoado extra, CEP no formato 00000-000 sem ponto): ${enderecoAutor || '(preencher com os campos do formulário)'}
+  - Município/UF (menções posteriores à qualificação): ${municipioUfAutor || '(informar)'}
+  - Bairro/comunidade/povoado: ${bairroDuplicadoNoLogradouro ? '(já contido no logradouro — NÃO repetir)' : bairroAutor || '(se informado)'}
   - Zona: ${zonaAutor || '(se informada)'}
   - Subseção judiciária: ${juizoCompetente}`
 
@@ -111,6 +132,8 @@ DOMICÍLIO DA PARTE AUTORA (qualificação e competência territorial JEF):
         ufAutor,
         bairroAutor,
         zonaAutor,
+        bairroDuplicadoNoLogradouro,
+        municipioUfAutor,
       }),
   }
 
@@ -245,18 +268,22 @@ function buildPromptSalMatRural(
     ufAutor: string
     bairroAutor: string
     zonaAutor: string
+    bairroDuplicadoNoLogradouro?: boolean
+    municipioUfAutor?: string
   },
 ): string {
   const smValor = valorCausaSalarioMaternidade(dataParto)
   const generoCrianca = instrucaoGeneroCrianca(sexoCriancaRaw)
   const generoAutor = instrucaoGeneroParteAutora(sexoAutorRaw)
   const munUf =
-    ctx.municipioAutor && ctx.ufAutor
+    ctx.municipioUfAutor ||
+    (ctx.municipioAutor && ctx.ufAutor
       ? `${ctx.municipioAutor}/${ctx.ufAutor}`
-      : ctx.municipioAutor || '[Município]/[UF]'
-  const comunidade = ctx.bairroAutor
-    ? `na comunidade/povoado/bairro ${ctx.bairroAutor}`
-    : 'na comunidade/povoado informado no formulário (se houver)'
+      : ctx.municipioAutor || '[Município]/[UF]')
+  const comunidade =
+    ctx.bairroAutor && !ctx.bairroDuplicadoNoLogradouro
+      ? `na comunidade/povoado/bairro ${ctx.bairroAutor}`
+      : ''
   const zonaTxt =
     ctx.zonaAutor === 'rural' || ctx.zonaAutor === 'r'
       ? 'zona rural'
@@ -265,6 +292,9 @@ function buildPromptSalMatRural(
           ctx.zonaAutor === 'urbano'
         ? 'zona urbana'
         : ''
+  const enderecoFixo =
+    ctx.enderecoAutor ||
+    'logradouro, número, bairro/comunidade (se não redundante), zona se rural, município/UF, CEP 00000-000'
 
   return `
 Você é um advogado previdenciarista especializado com 20 anos de experiência.
@@ -299,7 +329,9 @@ AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE ${ctx
 <<<END_ENDERECO>>>
 
 <<<QUALIFICACAO>>>
-[Parágrafo corrido completo com nome, profissão, data de nascimento, idade, CPF, endereço COMPLETO da parte autora (${ctx.enderecoAutor || 'logradouro, número, bairro/comunidade, zona se rural, município/UF, CEP'}), menção aos procuradores e fundamento legal, TERMINANDO exatamente com as palavras: propor a presente]
+[Parágrafo corrido completo com nome, profissão, data de nascimento, idade, CPF, menção aos procuradores e fundamento legal, TERMINANDO exatamente com as palavras: propor a presente]
+[ENDEREÇO — valor FIXO do sistema: use EXATAMENTE a string abaixo após "residente e domiciliad[oa] na" / "domiciliad[oa] na". NÃO reescreva, NÃO acrescente povoado/bairro se já estiver no logradouro, NÃO altere o CEP (formato Correios 00000-000, sem ponto milhar):
+"${enderecoFixo}"]
 [RG: só mencione "portadora do RG …" se o RG estiver informado nos dados. Se RG vazio/ausente, OMITA qualquer menção a RG — nunca escreva "RG não informado".]
 [NÃO use o endereço do escritório na qualificação — use o domicílio da parte autora.]
 <<<END_QUALIFICACAO>>>
@@ -353,7 +385,8 @@ DA PRIORIDADE DE TRAMITAÇÃO:
 
 <<<III_SINTESE_ANTES>>>
 [2–3 parágrafos narrativos sobre a parte autora, atividade rural e economia familiar — respeitando o sexo informado]
-[OBRIGATÓRIO: cite o município ${munUf} e ${comunidade}${zonaTxt ? `, em ${zonaTxt}` : ''}, onde a atividade é exercida. NÃO use genéricos como "no interior do Estado do Maranhão" sem nomear o município.]
+[OBRIGATÓRIO: cite o município ${munUf}${comunidade ? ` e ${comunidade}` : ''}${zonaTxt ? `, em ${zonaTxt}` : ''}, onde a atividade é exercida. NÃO use genéricos como "no interior do Estado do Maranhão" sem nomear o município.]
+[ENDEREÇO nas seções III/IV: a qualificação já trouxe o endereço completo. Nas demais menções use APENAS o município (${munUf}) — NÃO repita logradouro/nº/povoado/CEP em toda frase.]
 [Último parágrafo deve terminar com: A seguir, a linha do tempo de sua trajetória de vida e trabalho rural:]
 <<<END_III_ANTES>>>
 
@@ -426,6 +459,8 @@ nota: ${smValor.nota}
 REGRAS:
 - Tom formal, humanizado e persuasivo
 - Usar EXATAMENTE os dados fornecidos pelo usuário
+- Endereço da parte autora na qualificação: reproduzir EXATAMENTE "${enderecoFixo}" (sem reescrever). CEP sempre no formato 00000-000 (sem ponto).
+- Após a qualificação (síntese fática, provas, fundamentação): citar só o município ${munUf}; não repetir o endereço completo nem o nome do povoado em toda frase.
 - Endereçamento SEM "Comarca"; juízo = "${ctx.juizoCompetente}" (NUNCA "${ctx.cidadeEscritorio || 'cidade do escritório'}" no endereçamento)
 - Citação INSS: redação neutra via Procuradoria Federal — NUNCA invente agência da Previdência Social
 - Sempre citar STF ADIs 2110 e 2111, j. 28/03/2024 (texto fixo acima)
@@ -457,5 +492,7 @@ const PROMPT_SAL_MAT_RURAL = buildPromptSalMatRural(null, '', '', {
   ufAutor: '',
   bairroAutor: '',
   zonaAutor: '',
+  bairroDuplicadoNoLogradouro: false,
+  municipioUfAutor: '',
 })
 void PROMPT_SAL_MAT_RURAL

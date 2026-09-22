@@ -18,6 +18,7 @@ import {
   TableRow,
   TextRun,
   WidthType,
+  VerticalAlignTable,
   type IBorderOptions,
 } from 'docx'
 import {
@@ -28,7 +29,9 @@ import {
 import {
   type ConteudoSmRural,
   type QuadroRow,
+  type TimelineData,
   extrairConteudoSmRural,
+  svgTimelineParaRaster,
   textoRodapeSm,
 } from '@/lib/peticao-sm-rural'
 
@@ -219,6 +222,216 @@ function captionBar(text: string, width: number): Table {
   })
 }
 
+/** ~16 cm de largura útil na página (px @ 96dpi para ImageRun). */
+const TIMELINE_DISPLAY_W_PX = Math.round((16 / 2.54) * 96) // ≈ 605
+
+function tituloTimeline(data: TimelineData): string {
+  const local = data.local ? ` • ${data.local}` : ''
+  return `LINHA DO TEMPO — ${data.nome.toUpperCase()} | ${data.atividade}${local}`
+}
+
+/** Tabela fallback: Data | Evento | Detalhe (uma linha por marco). */
+function tabelaTimelineFallback(data: TimelineData, width: number): (Paragraph | Table)[] {
+  const out: (Paragraph | Table)[] = []
+  out.push(
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 120, after: 80 },
+      shading: { type: 'clear', fill: 'EEF1F5' },
+      children: [run(tituloTimeline(data), { bold: true, size: 20, color: NAVY })],
+    }),
+  )
+
+  const colA = Math.round(width * 0.22)
+  const colB = Math.round(width * 0.28)
+  const colC = width - colA - colB
+  const headerFill = '1A3A5C'
+  const headerCell = (txt: string, w: number) =>
+    new TableCell({
+      width: { size: w, type: WidthType.DXA },
+      borders: {
+        top: thinBorder,
+        bottom: thinBorder,
+        left: thinBorder,
+        right: thinBorder,
+      },
+      shading: { type: 'clear', fill: headerFill },
+      children: [
+        new Paragraph({
+          children: [run(txt, { bold: true, size: 18, color: 'FFFFFF' })],
+        }),
+      ],
+    })
+  const bodyCell = (txt: string, w: number, fill: string, bold = false) =>
+    new TableCell({
+      width: { size: w, type: WidthType.DXA },
+      borders: {
+        top: thinBorder,
+        bottom: thinBorder,
+        left: thinBorder,
+        right: thinBorder,
+      },
+      shading: { type: 'clear', fill },
+      children: [
+        new Paragraph({
+          children: [run(limparMarkdownResidual(txt), { bold, size: 18 })],
+        }),
+      ],
+    })
+
+  const eventos = data.eventos.length
+    ? data.eventos
+    : [{ data: '—', titulo: 'Sem eventos', detalhe: '' }]
+
+  out.push(
+    new Table({
+      width: { size: width, type: WidthType.DXA },
+      columnWidths: [colA, colB, colC],
+      rows: [
+        new TableRow({
+          children: [
+            headerCell('Data', colA),
+            headerCell('Evento', colB),
+            headerCell('Detalhe', colC),
+          ],
+        }),
+        ...eventos.map((ev, i) => {
+          const fill = i % 2 === 0 ? 'F5F5F5' : 'FFFFFF'
+          return new TableRow({
+            children: [
+              bodyCell(ev.data || '—', colA, fill),
+              bodyCell(ev.titulo || '', colB, fill, true),
+              bodyCell(ev.detalhe || '', colC, fill),
+            ],
+          })
+        }),
+      ],
+    }),
+  )
+  out.push(new Paragraph({ spacing: { after: 120 }, children: [] }))
+  return out
+}
+
+async function rasterizarTimelinePng(
+  data: TimelineData,
+): Promise<{ png: Buffer; rasterW: number; rasterH: number } | null> {
+  try {
+    const prepared = svgTimelineParaRaster(data, 1400)
+    if (!prepared) return null
+    // sharp pode falhar no runtime (Vercel sem binário etc.) — caller usa fallback
+    const sharpMod = await import('sharp')
+    const sharp = sharpMod.default || sharpMod
+    const png = await sharp(Buffer.from(prepared.svg)).png().toBuffer()
+    return { png, rasterW: prepared.width, rasterH: prepared.height }
+  } catch (err) {
+    console.error('[peticao-sm-rural-docx] falha ao rasterizar timeline SVG→PNG:', err)
+    return null
+  }
+}
+
+async function blocosTimeline(
+  data: TimelineData | null,
+  width: number,
+): Promise<(Paragraph | Table)[]> {
+  if (!data || data.estilo === 'none' || !data.eventos?.length) return []
+
+  // Estilo vertical: tabela editável (sem SVG)
+  if (data.estilo === 'vertical') {
+    return tabelaTimelineFallback(data, width)
+  }
+
+  const raster = await rasterizarTimelinePng(data)
+  if (!raster) {
+    return tabelaTimelineFallback(data, width)
+  }
+
+  // twips → px @96dpi ≈ /15; ~16cm de largura útil
+  const pageWPx = Math.round(width / 15)
+  const imgW = Math.min(pageWPx, TIMELINE_DISPLAY_W_PX)
+  const imgH = Math.max(
+    40,
+    Math.round((raster.rasterH / raster.rasterW) * imgW),
+  )
+
+  return [
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 120, after: 160 },
+      children: [
+        new ImageRun({
+          type: 'png',
+          data: raster.png,
+          transformation: { width: imgW, height: imgH },
+          altText: {
+            title: 'Linha do tempo',
+            description: tituloTimeline(data),
+            name: 'timeline-sm-rural',
+          },
+        }),
+      ],
+    }),
+  ]
+}
+
+/** Lista de provas: tabela 2 colunas (✓ | texto), fundo alternado. */
+function tabelaProvas(items: string[], width: number): Table | null {
+  if (!items.length) return null
+  const colCheck = Math.round(width * 0.06)
+  const colTxt = width - colCheck
+  const softBorder: IBorderOptions = {
+    style: BorderStyle.SINGLE,
+    size: 2,
+    color: 'E5E7EB',
+  }
+
+  return new Table({
+    width: { size: width, type: WidthType.DXA },
+    columnWidths: [colCheck, colTxt],
+    rows: items.map((item, i) => {
+      const fill = i % 2 === 0 ? 'F5F5F5' : 'FFFFFF'
+      const txt = limparMarkdownResidual(item)
+      return new TableRow({
+        children: [
+          new TableCell({
+            width: { size: colCheck, type: WidthType.DXA },
+            borders: {
+              top: softBorder,
+              bottom: softBorder,
+              left: softBorder,
+              right: softBorder,
+            },
+            shading: { type: 'clear', fill },
+            verticalAlign: VerticalAlignTable.CENTER,
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                spacing: { before: 60, after: 60 },
+                children: [run('✓', { bold: true, size: 22, color: '15803D' })],
+              }),
+            ],
+          }),
+          new TableCell({
+            width: { size: colTxt, type: WidthType.DXA },
+            borders: {
+              top: softBorder,
+              bottom: softBorder,
+              left: softBorder,
+              right: softBorder,
+            },
+            shading: { type: 'clear', fill },
+            children: [
+              new Paragraph({
+                spacing: { before: 60, after: 60 },
+                children: [run(txt, { size: 22 })],
+              }),
+            ],
+          }),
+        ],
+      })
+    }),
+  })
+}
+
 function metaBox(c: ConteudoSmRural, width: number): Table {
   const chk = (on: boolean) => (on ? '(X)' : '( )')
   const p = c.meta.prioridades
@@ -301,10 +514,10 @@ async function fetchImageBytes(
   }
 }
 
-function buildBody(
+async function buildBody(
   c: ConteudoSmRural,
   width: number,
-): (Paragraph | Table)[] {
+): Promise<(Paragraph | Table)[]> {
   const out: (Paragraph | Table)[] = []
 
   out.push(
@@ -349,19 +562,14 @@ function buildBody(
 
   out.push(sectionBar('III – SÍNTESE DO CONTEXTO FÁTICO'))
   out.push(...parasDeTexto(c.sinteseAntes))
-  // Timeline SVG→PNG omitida de propósito (não quebra o documento)
+  out.push(...(await blocosTimeline(c.timeline, width)))
   out.push(...parasDeTexto(c.sinteseDepois))
 
   out.push(sectionBar('IV – DAS PROVAS JUNTADAS AOS AUTOS'))
-  for (const p of c.provas) {
-    out.push(
-      new Paragraph({
-        alignment: AlignmentType.BOTH,
-        spacing: { after: 80, line: 276 },
-        indent: { left: 180 },
-        children: [run(`✓  ${limparMarkdownResidual(p)}`)],
-      }),
-    )
+  const provasTable = tabelaProvas(c.provas, width)
+  if (provasTable) {
+    out.push(provasTable)
+    out.push(new Paragraph({ spacing: { after: 120 }, children: [] }))
   }
   out.push(...parasDeTexto(c.provasFecho))
 
@@ -468,7 +676,7 @@ export async function montarDocxSmRural(opts: {
 
   const margins = margensDocxTwips()
   const width = usableWidthTwips(margins)
-  const children = buildBody(conteudo, width)
+  const children = await buildBody(conteudo, width)
 
   const headerChildren: Paragraph[] = []
   const logoSrc = opts.adv.banner_url || opts.adv.logo_url

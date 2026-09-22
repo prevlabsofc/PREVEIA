@@ -7,11 +7,52 @@
 
 const PLACEHOLDER = '[a preencher]'
 
-/** Formata dígitos de CEP como "00000-000". Deixa como está se não tiver 8 dígitos. */
+/** Prefixos de comunidade/bairro ignorados na comparação de duplicidade. */
+const PREFIXOS_COMUNIDADE =
+  /\b(povoado|comunidade|vila|distrito|localidade|bairro)\b/gi
+
+function stripAccents(s: string): string {
+  return s.normalize('NFD').replace(/\p{M}/gu, '')
+}
+
+/** Chave comparável: sem acento, caixa, pontuação e prefixos povoado/comunidade/vila. */
+export function chaveEnderecoComparavel(texto: string): string {
+  return stripAccents(String(texto || ''))
+    .toLowerCase()
+    .replace(PREFIXOS_COMUNIDADE, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * True se o bairro/comunidade já está contido no logradouro
+ * (ex.: logradouro "Estrada … do Povoado Santa Luzia" + bairro "Povoado Santa Luzia").
+ */
+export function bairroJaContidoNoLogradouro(
+  logradouro: string,
+  bairro: string,
+): boolean {
+  const b = chaveEnderecoComparavel(bairro)
+  const l = chaveEnderecoComparavel(logradouro)
+  if (!b || !l) return false
+  if (b.length < 3) return false
+  return l.includes(b)
+}
+
+/** Formata dígitos de CEP como "00000-000" (padrão Correios, sem ponto milhar). */
 export function formatarCEP(cep?: string | null): string {
   const digitos = (cep ?? '').replace(/\D/g, '').slice(0, 8)
   if (digitos.length !== 8) return (cep ?? '').trim()
   return digitos.replace(/(\d{5})(\d{3})/, '$1-$2')
+}
+
+/** Corrige "CEP 65.715-000" / "CEP 65715000" → "CEP 65715-000" em texto livre. */
+export function normalizarCepEmTexto(texto: string): string {
+  return String(texto || '').replace(
+    /\bCEP\s*[:.]?\s*(\d{2})\.?(\d{3})-?(\d{3})\b/gi,
+    (_m, a: string, b: string, c: string) => `CEP ${a}${b}-${c}`,
+  )
 }
 
 /** Máscara aplicada durante a digitação em inputs de CEP (00000-000). */
@@ -119,6 +160,10 @@ export type EnderecoAutorForm = {
 /**
  * Endereço completo da parte autora para a qualificação da petição
  * (logradouro, número, bairro/comunidade, zona rural se marcada, município/UF, CEP).
+ *
+ * Se o bairro/comunidade já estiver contido no logradouro (comparação sem
+ * acentos/caixa e sem "povoado"/"comunidade"/"vila"), o bairro é omitido
+ * para evitar "… Povoado X, Povoado X, Município/UF".
  */
 export function formatarEnderecoAutorPeticao(c: EnderecoAutorForm): string {
   const logradouro =
@@ -147,7 +192,9 @@ export function formatarEnderecoAutorPeticao(c: EnderecoAutorForm): string {
     partes.push(n)
   }
 
-  if (bairro) partes.push(bairro)
+  const omitirBairro =
+    Boolean(bairro) && bairroJaContidoNoLogradouro(logradouro, bairro)
+  if (bairro && !omitirBairro) partes.push(bairro)
 
   if (zonaRural) partes.push('zona rural')
 
@@ -158,4 +205,13 @@ export function formatarEnderecoAutorPeticao(c: EnderecoAutorForm): string {
   if (cep) partes.push(`CEP ${formatarCEP(cep)}`)
 
   return partes.join(', ')
+}
+
+/** Só município/UF — para menções após a primeira (qualificação completa). */
+export function formatarMunicipioUfAutor(c: EnderecoAutorForm): string {
+  const municipio =
+    (c.autor_municipio ?? c.municipio ?? c.cidade ?? c.city ?? '').trim()
+  const uf = (c.autor_uf ?? c.uf ?? c.state ?? '').trim().toUpperCase()
+  if (municipio && uf) return `${municipio}/${uf}`
+  return municipio || uf || ''
 }
