@@ -16,6 +16,10 @@ import {
   resolverLocalAdvogado,
 } from '@/lib/peticao-export'
 import { valorCausaSalarioMaternidade } from '@/lib/salario-minimo'
+import {
+  chaveEnderecoComparavel,
+  normalizarCepEmTexto,
+} from '@/lib/formatar-endereco'
 
 export type TimelineLabelLayout = {
   i: number
@@ -611,18 +615,107 @@ export function garantirCitacaoInssNeutra(text: string): string {
 }
 
 /**
- * Pós-processamento SM rural: força subseção do formulário no endereçamento
- * e citação neutra do INSS. Chamar após a geração da IA, antes de PDF/DOCX.
+ * Pós-processamento SM rural: força subseção do formulário no endereçamento,
+ * citação neutra do INSS e endereço canônico na qualificação.
+ * Chamar após a geração da IA, antes de PDF/DOCX.
  */
 export function posProcessarPeticaoSmRural(
   text: string,
-  opts?: { subsecaoUf?: string | null },
+  opts?: {
+    subsecaoUf?: string | null
+    enderecoAutor?: string | null
+    municipioUf?: string | null
+    bairroAutor?: string | null
+  },
 ): string {
   let out = canonicalizarMarcadoresSm(text)
   const sub = String(opts?.subsecaoUf || '').trim()
   if (sub) out = garantirEnderecamentoSubsecao(out, sub)
   out = garantirCitacaoInssNeutra(out)
+  const end = String(opts?.enderecoAutor || '').trim()
+  const munUf = String(opts?.municipioUf || '').trim()
+  const bairro = String(opts?.bairroAutor || '').trim()
+  if (end) out = garantirEnderecoNaQualificacao(out, end)
+  if (end && munUf) {
+    out = simplificarMencoesEnderecoAposQualificacao(out, end, munUf, bairro)
+  }
+  out = normalizarCepEmTexto(out)
   return out
+}
+
+/**
+ * Injeta o endereço canônico (montado no código) na qualificação,
+ * substituindo o que a IA tenha reescrito.
+ */
+export function garantirEnderecoNaQualificacao(
+  text: string,
+  enderecoAutor: string,
+): string {
+  const end = String(enderecoAutor || '').trim()
+  if (!end) return text
+  const base = canonicalizarMarcadoresSm(text)
+  const re = /<<<QUALIFICACAO>>>([\s\S]*?)<<<END_QUALIFICACAO>>>/i
+  const m = base.match(re)
+  if (!m) return base
+  let corpo = String(m[1] || '').trim()
+  const reDom =
+    /((?:residente\s+e\s+)?domiciliad[oa]\s+na\s+)([^,]+(?:,\s*[^,]+){0,8}?)(?=\s*,\s*(?:por\s+interm[eé]dio|representad|vem,|\s*e\s+por|\s*vem\s))/i
+  if (reDom.test(corpo)) {
+    corpo = corpo.replace(reDom, `$1${end}`)
+  } else if (!corpo.toLocaleLowerCase('pt-BR').includes(end.toLocaleLowerCase('pt-BR'))) {
+    // Fallback: se não achar o padrão, anexa antes do "propor a presente"
+    corpo = corpo.replace(
+      /(propor\s+a\s+presente)\s*$/i,
+      `residente e domiciliada na ${end}, vem, respeitosamente, à presença de Vossa Excelência, propor a presente`,
+    )
+  }
+  corpo = normalizarCepEmTexto(corpo)
+  return base.replace(re, `<<<QUALIFICACAO>>>\n${corpo}\n<<<END_QUALIFICACAO>>>`)
+}
+
+/**
+ * Após a qualificação, troca endereços completos repetidos pelo município/UF.
+ * Mantém a primeira ocorrência (na qualificação).
+ */
+export function simplificarMencoesEnderecoAposQualificacao(
+  text: string,
+  enderecoAutor: string,
+  municipioUf: string,
+  bairroOpcional?: string | null,
+): string {
+  const end = String(enderecoAutor || '').trim()
+  const mun = String(municipioUf || '').trim()
+  if (!end || !mun) return text
+  const base = canonicalizarMarcadoresSm(text)
+  const reQual = /<<<QUALIFICACAO>>>[\s\S]*?<<<END_QUALIFICACAO>>>/i
+  const mQual = base.match(reQual)
+  if (!mQual) return base
+  const before = base.slice(0, (mQual.index || 0) + mQual[0].length)
+  let after = base.slice((mQual.index || 0) + mQual[0].length)
+
+  // Escapa o endereço completo para regex literal
+  const esc = end.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  after = after.replace(new RegExp(esc, 'gi'), mun)
+
+  const munEsc = mun.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const partes = end.split(',').map((p) => p.trim()).filter(Boolean)
+  const extras = [bairroOpcional, ...partes]
+    .map((p) => String(p || '').trim())
+    .filter(Boolean)
+
+  for (const p of extras) {
+    if (/^n[º°o.]?\s*/i.test(p) || /^CEP\b/i.test(p) || /^zona\s+rural$/i.test(p)) continue
+    if (chaveEnderecoComparavel(p) === chaveEnderecoComparavel(mun)) continue
+    // Só compacta comunidade/povoado curtos (não o logradouro longo)
+    if (p.length > 48) continue
+    const escP = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    after = after.replace(
+      new RegExp(`(?:(?:no|na|em|do|da)\\s+)?${escP}\\s*,\\s*${munEsc}`, 'gi'),
+      mun,
+    )
+  }
+
+  return before + after
 }
 
 /**

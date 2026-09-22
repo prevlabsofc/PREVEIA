@@ -17,7 +17,11 @@ import {
   gerarDocumentoComContinuacao,
   gerarPeticaoSmRuralEmBlocos,
 } from '@/lib/gerar-documento-claude'
-import { formatarSubsecaoUf } from '@/lib/jurisdicao/subsecoes'
+import { formatarSubsecaoUf, buscarSubsecao } from '@/lib/jurisdicao/subsecoes'
+import {
+  formatarEnderecoAutorPeticao,
+  formatarMunicipioUfAutor,
+} from '@/lib/formatar-endereco'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -325,21 +329,43 @@ export async function POST(request: Request) {
               formJson,
               onDelta,
             )
-            const subsecao = formatarSubsecaoUf(
-              String(
-                formComSexo.subsecao_judiciaria ||
-                  formComSexo.subsecao ||
-                  '',
-              ),
-              String(
-                formComSexo.autor_uf ||
-                  formComSexo.uf ||
-                  formComSexo.state ||
-                  '',
-              ),
+            const ufAutor = String(
+              formComSexo.autor_uf ||
+                formComSexo.uf ||
+                formComSexo.state ||
+                '',
+            )
+            const munAutor = String(
+              formComSexo.autor_municipio ||
+                formComSexo.municipio ||
+                formComSexo.cidade ||
+                formComSexo.city ||
+                '',
+            )
+            const subsecao =
+              formatarSubsecaoUf(
+                String(
+                  formComSexo.subsecao_judiciaria ||
+                    formComSexo.subsecao ||
+                    '',
+                ),
+                ufAutor,
+              ) ||
+              buscarSubsecao(munAutor, ufAutor) ||
+              ''
+            const enderecoAutor = formatarEnderecoAutorPeticao(
+              formComSexo as Record<string, string>,
+            )
+            const municipioUf = formatarMunicipioUfAutor(
+              formComSexo as Record<string, string>,
             )
             fullText = posProcessarPeticaoSmRural(fullText, {
               subsecaoUf: subsecao,
+              enderecoAutor,
+              municipioUf,
+              bairroAutor: String(
+                formComSexo.autor_bairro || formComSexo.bairro || '',
+              ),
             })
           } else {
             fullText = await gerarDocumentoComContinuacao(
@@ -353,21 +379,43 @@ export async function POST(request: Request) {
               fullText.includes('<<<VI_PEDIDOS>>>')
             ) {
               fullText = canonicalizarMarcadoresSm(fullText)
-              const subsecao = formatarSubsecaoUf(
-                String(
-                  formComSexo.subsecao_judiciaria ||
-                    formComSexo.subsecao ||
-                    '',
-                ),
-                String(
-                  formComSexo.autor_uf ||
-                    formComSexo.uf ||
-                    formComSexo.state ||
-                    '',
-                ),
+              const ufAutor = String(
+                formComSexo.autor_uf ||
+                  formComSexo.uf ||
+                  formComSexo.state ||
+                  '',
+              )
+              const munAutor = String(
+                formComSexo.autor_municipio ||
+                  formComSexo.municipio ||
+                  formComSexo.cidade ||
+                  formComSexo.city ||
+                  '',
+              )
+              const subsecao =
+                formatarSubsecaoUf(
+                  String(
+                    formComSexo.subsecao_judiciaria ||
+                      formComSexo.subsecao ||
+                      '',
+                  ),
+                  ufAutor,
+                ) ||
+                buscarSubsecao(munAutor, ufAutor) ||
+                ''
+              const enderecoAutor = formatarEnderecoAutorPeticao(
+                formComSexo as Record<string, string>,
+              )
+              const municipioUf = formatarMunicipioUfAutor(
+                formComSexo as Record<string, string>,
               )
               fullText = posProcessarPeticaoSmRural(fullText, {
                 subsecaoUf: subsecao,
+                enderecoAutor,
+                municipioUf,
+                bairroAutor: String(
+                  formComSexo.autor_bairro || formComSexo.bairro || '',
+                ),
               })
               const v = validarCompletudeSmRural(fullText)
               if (!v.ok) throw new Error(v.motivo)

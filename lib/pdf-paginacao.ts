@@ -10,7 +10,12 @@
 
 import { A4_HEIGHT_PX, A4_WIDTH_PX, MARGEM_PETICAO_CM } from '@/lib/peticao-export'
 
-/** Reserva CSS px para a faixa do rodapé desenhado no jsPDF. */
+/**
+ * Reserva CSS px para a faixa do rodapé desenhado no jsPDF.
+ * Com HTML já margeado (comMargensNoHtml), o rodapé do PDF ocupa a
+ * margem inferior — NÃO descontar de novo as margens top/bottom aqui
+ * (evita altura útil ~25% menor e páginas com grande vazio).
+ */
 export const PDF_FOOTER_RESERVE_PX = 44
 
 /** Altura útil de conteúdo por página (A4 @ 794px, menos margens + rodapé). */
@@ -20,12 +25,18 @@ export function alturaUtilPaginaPdfPx(
 ): number {
   const pageH = (297 / 210) * containerWidthPx
   const pxPerCm = containerWidthPx / 21
-  // Se o HTML já traz padding de margem, não desconta de novo aqui —
+  // Se o HTML já traz padding de margem, não desconta margens de novo —
   // a paginação mede o fluxo completo do .pdf-page (incl. padding).
-  const margens = comMargensNoHtml
-    ? 0
-    : (MARGEM_PETICAO_CM.top + MARGEM_PETICAO_CM.bottom) * pxPerCm
-  return Math.max(200, pageH - margens - PDF_FOOTER_RESERVE_PX)
+  // Reserva só a faixa do rodapé jsPDF (≈ margem inferior), uma única vez.
+  if (comMargensNoHtml) {
+    const rodapePx = MARGEM_PETICAO_CM.bottom * pxPerCm
+    return Math.max(200, pageH - rodapePx)
+  }
+  const margens =
+    (MARGEM_PETICAO_CM.top + MARGEM_PETICAO_CM.bottom) * pxPerCm
+  // Sem padding no HTML: margens + reserva de tipografia do rodapé
+  // (rodapé cabe na margem inferior; PDF_FOOTER_RESERVE cobre a linha de texto).
+  return Math.max(200, pageH - margens)
 }
 
 export function relOffsetTop(el: HTMLElement, root: HTMLElement): number {
@@ -173,12 +184,14 @@ export function aplicarPaginacaoPorBlocos(
       continue
     }
 
-    // Título + próximo bloco devem caber juntos
+    // Título + 2 primeiras linhas do próximo bloco (não o bloco inteiro)
     if (isTituloOuSubhead(el) && i + 1 < blocks.length) {
       const next = blocks[i + 1]
-      const nextH = next.offsetHeight
-      const groupH = h + Math.max(0, relOffsetTop(next, root) + nextH - bottom)
-      const groupBottom = top + Math.min(groupH, h + nextH + 8)
+      const lhNext = Math.max(10, lineHeightPx(next))
+      // keep-with-next: título + ~2 linhas — evita empurrar cedo demais
+      // (ex.: "IV – DAS PROVAS" + lista longa deixava ⅓ de página vazia).
+      const keepH = h + lhNext * 2 + 8
+      const groupBottom = top + keepH
 
       if (groupBottom > pageEnd + 0.5 && top > pageStart + 2) {
         const falta = pageEnd - top

@@ -38,7 +38,7 @@ import { normalizarEstiloPeticao } from '@/lib/peticao-export'
 import { canonicalizarMarcadoresSm, flexionarAtividadeTimeline, injetarTimelineNoTexto, posProcessarPeticaoSmRural, slugArquivoPeticaoSm, type TimelineData } from '@/lib/peticao-sm-rural'
 import { marcarPeticaoAtiva, consumirFilaPeticao, PETICAO_INSERIR_EVENT, PETICAO_CHANNEL } from '@/lib/peticao-sessao'
 import { consumirContextoPeticao } from '@/lib/extracao-documento-pdf'
-import { formatarEnderecoAutorPeticao, formatarEnderecoQualificacao, mascaraCEP } from '@/lib/formatar-endereco'
+import { formatarEnderecoAutorPeticao, formatarEnderecoQualificacao, formatarMunicipioUfAutor, mascaraCEP } from '@/lib/formatar-endereco'
 import { ESTADOS_BRASIL } from '@/lib/estados-brasil'
 import {
   buscarSubsecao,
@@ -634,13 +634,23 @@ function AgentesPageContent() {
 
       // Canonicaliza marcadores SM, força subseção do formulário e citação neutra
       if (selectedAgent.key === 'salario-maternidade-rural') {
-        const subsecao = formatarSubsecaoUf(
-          formData.subsecao_judiciaria || '',
-          formData.autor_uf || '',
-        )
+        const subsecao =
+          formatarSubsecaoUf(
+            formData.subsecao_judiciaria || '',
+            formData.autor_uf || '',
+          ) ||
+          buscarSubsecao(formData.autor_municipio || '', formData.autor_uf || '') ||
+          ''
+        const enderecoAutor = formatarEnderecoAutorPeticao(formData)
+        const municipioUf = formatarMunicipioUfAutor(formData)
         acumulado = posProcessarPeticaoSmRural(
           canonicalizarMarcadoresSm(acumulado),
-          { subsecaoUf: subsecao },
+          {
+            subsecaoUf: subsecao,
+            enderecoAutor,
+            municipioUf,
+            bairroAutor: formData.autor_bairro || formData.bairro || '',
+          },
         )
       }
       if (timeline) {
