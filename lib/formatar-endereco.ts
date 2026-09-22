@@ -90,3 +90,72 @@ export function formatarEnderecoQualificacao(c: EnderecoClienteParaFormatacao): 
     `CEP ${cep ? formatarCEP(cep) : PLACEHOLDER}`,
   ].join(', ')
 }
+
+export type EnderecoAutorForm = {
+  autor_logradouro?: string | null
+  autor_numero?: string | null
+  autor_bairro?: string | null
+  autor_municipio?: string | null
+  autor_uf?: string | null
+  autor_cep?: string | null
+  /** 'rural' | 'urbana' (ou legado 'urban'/'urbano'). */
+  autor_zona?: string | null
+  /** Aliases aceitos do formulário/cadastro. */
+  logradouro?: string | null
+  numero?: string | null
+  bairro?: string | null
+  municipio?: string | null
+  cidade?: string | null
+  city?: string | null
+  uf?: string | null
+  state?: string | null
+  cep?: string | null
+  zona?: string | null
+  zone?: string | null
+  rua?: string | null
+  address?: string | null
+}
+
+/**
+ * Endereço completo da parte autora para a qualificação da petição
+ * (logradouro, número, bairro/comunidade, zona rural se marcada, município/UF, CEP).
+ */
+export function formatarEnderecoAutorPeticao(c: EnderecoAutorForm): string {
+  const logradouro =
+    (c.autor_logradouro ?? c.logradouro ?? c.rua ?? c.address ?? '').trim()
+  const numero = (c.autor_numero ?? c.numero ?? '').trim()
+  const bairro = (c.autor_bairro ?? c.bairro ?? '').trim()
+  const municipio =
+    (c.autor_municipio ?? c.municipio ?? c.cidade ?? c.city ?? '').trim()
+  const uf = (c.autor_uf ?? c.uf ?? c.state ?? '').trim().toUpperCase()
+  const cep = (c.autor_cep ?? c.cep ?? '').trim()
+  const zonaRaw = (c.autor_zona ?? c.zona ?? c.zone ?? '').trim().toLowerCase()
+  const zonaRural =
+    zonaRaw === 'rural' || zonaRaw === 'r'
+
+  const temAlgumDado = Boolean(
+    logradouro || numero || bairro || municipio || uf || cep,
+  )
+  if (!temAlgumDado) return ''
+
+  const partes: string[] = []
+  if (logradouro) partes.push(logradouro)
+  else partes.push(PLACEHOLDER)
+
+  if (numero) {
+    const n = /^s\/?n$/i.test(numero) ? 's/n' : `nº ${numero}`
+    partes.push(n)
+  }
+
+  if (bairro) partes.push(bairro)
+
+  if (zonaRural) partes.push('zona rural')
+
+  if (municipio || uf) {
+    partes.push([municipio || PLACEHOLDER, uf || PLACEHOLDER].join('/'))
+  }
+
+  if (cep) partes.push(`CEP ${formatarCEP(cep)}`)
+
+  return partes.join(', ')
+}

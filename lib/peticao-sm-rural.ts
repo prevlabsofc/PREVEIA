@@ -508,10 +508,13 @@ export function limparRgNaQualificacao(texto: string): string {
   return s.trim()
 }
 
-/** Normaliza endereçamento JEF e citação do INSS (sem "Comarca"). */
-export function normalizarEnderecoJef(texto: string, cidadeUf?: string): string {
+const CITACAO_INSS_NEUTRA =
+  'a ser citado na pessoa de seu representante legal, por meio da Procuradoria Federal'
+
+/** Normaliza endereçamento JEF (sem "Comarca"). `subsecaoUf` = juízo competente (domicílio da autora), NÃO a cidade do escritório. */
+export function normalizarEnderecoJef(texto: string, subsecaoUf?: string): string {
   let s = String(texto || '').trim()
-  const local = (cidadeUf || '').trim()
+  const local = (subsecaoUf || '').trim()
   s = s.replace(
     /AO\s+JU[IÍ]ZO\s+FEDERAL\s+(?:DA\s+VARA\s+DO\s+)?JUIZADO\s+ESPECIAL\s+FEDERAL\s+DA\s+SUBSE[CÇ][AÃ]O\s+JUDICI[AÁ]RIA\s+(?:DA\s+)?COMARCA\s+DE\s+/gi,
     'AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE ',
@@ -520,22 +523,106 @@ export function normalizarEnderecoJef(texto: string, cidadeUf?: string): string 
     /AO\s+JU[IÍ]ZO\s+FEDERAL\s+DA\s+VARA\s+DO\s+JUIZADO\s+ESPECIAL\s+FEDERAL\s+DA\s+SUBSE[CÇ][AÃ]O\s+JUDICI[AÁ]RIA\s+(?:DE\s+)?/gi,
     'AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE ',
   )
-  if (local && /\[CIDADE\]|\[UF\]/i.test(s)) {
-    s = s.replace(/\[CIDADE\]\s*\/\s*\[UF\]/gi, local)
+  if (local) {
+    if (/\[CIDADE\]|\[UF\]|\[Subse[cç][aã]o\]/i.test(s)) {
+      s = s
+        .replace(/\[CIDADE\]\s*\/\s*\[UF\]/gi, local)
+        .replace(/\[Subse[cç][aã]o\]\s*\/\s*\[UF\]/gi, local)
+    }
+    // Força a subseção informada no formulário (nunca cidade do escritório).
+    s = s.replace(
+      /(AO\s+JU[IÍ]ZO\s+FEDERAL\s+DO\s+JUIZADO\s+ESPECIAL\s+FEDERAL\s+DA\s+SUBSE[CÇ][AÃ]O\s+JUDICI[AÁ]RIA\s+DE)\s+[^\n<]+/gi,
+      `$1 ${local}`,
+    )
   }
   return s
 }
 
+/** Redação neutra de citação do INSS — sem inventar agência municipal. */
 export function normalizarCitacaoInss(texto: string): string {
-  return String(texto || '')
-    .replace(
-      /Ag[eê]ncia\s+do\s+INSS\s+na\s+Comarca\s+de/gi,
-      'Agência da Previdência Social em',
+  let s = String(texto || '')
+  s = s.replace(
+    /a\s+ser\s+citad[oa]\s+na\s+Ag[eê]ncia\s+da\s+Previd[eê]ncia\s+Social\s+em\s+[^.,;\n]+/gi,
+    CITACAO_INSS_NEUTRA,
+  )
+  s = s.replace(
+    /a\s+ser\s+citad[oa]\s+na\s+Ag[eê]ncia\s+do\s+INSS\s+(?:na\s+Comarca\s+de|em|de|na)\s+[^.,;\n]+/gi,
+    CITACAO_INSS_NEUTRA,
+  )
+  s = s.replace(
+    /Ag[eê]ncia\s+do\s+INSS\s+na\s+Comarca\s+de\s+[^.,;\n]+/gi,
+    'Procuradoria Federal',
+  )
+  s = s.replace(
+    /Ag[eê]ncia\s+da\s+Previd[eê]ncia\s+Social\s+em\s+[^.,;\n]+/gi,
+    'Procuradoria Federal',
+  )
+  s = s.replace(
+    /Ag[eê]ncia\s+do\s+INSS\s+(?:em|de|na)\s+[^.,;\n]+/gi,
+    'Procuradoria Federal',
+  )
+  return s
+}
+
+/**
+ * Garante que <<<ENDERECO>>> contenha a subseção do formulário.
+ * Se o bloco não mencionar a subseção, substitui o conteúdo.
+ */
+export function garantirEnderecamentoSubsecao(
+  text: string,
+  subsecaoUf: string,
+): string {
+  const sub = String(subsecaoUf || '').trim()
+  if (!sub) return text
+  const linha = `AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE ${sub}`
+  const base = canonicalizarMarcadoresSm(text)
+  const re = /<<<ENDERECO>>>([\s\S]*?)<<<END_ENDERECO>>>/i
+  const m = base.match(re)
+  if (m) {
+    const corpo = m[1] || ''
+    const nomeSub = sub.split('/')[0]?.trim() || sub
+    const ok =
+      corpo.toLocaleLowerCase('pt-BR').includes(nomeSub.toLocaleLowerCase('pt-BR')) &&
+      /SUBSE[CÇ][AÃ]O\s+JUDICI[AÁ]RIA/i.test(corpo)
+    if (ok) {
+      return base.replace(re, `<<<ENDERECO>>>\n${normalizarEnderecoJef(corpo.trim(), sub)}\n<<<END_ENDERECO>>>`)
+    }
+    return base.replace(re, `<<<ENDERECO>>>\n${linha}\n<<<END_ENDERECO>>>`)
+  }
+  if (base.includes('<<<SM_RURAL_V2>>>')) {
+    return base.replace(
+      '<<<SM_RURAL_V2>>>',
+      `<<<SM_RURAL_V2>>>\n<<<ENDERECO>>>\n${linha}\n<<<END_ENDERECO>>>`,
     )
-    .replace(
-      /Ag[eê]ncia\s+do\s+INSS\s+(?:em|de|na)\s+/gi,
-      'Agência da Previdência Social em ',
-    )
+  }
+  return `${base.trim()}\n\n<<<ENDERECO>>>\n${linha}\n<<<END_ENDERECO>>>\n`
+}
+
+/** Aplica citação neutra do INSS no bloco <<<EM_FACE>>> (e no texto geral). */
+export function garantirCitacaoInssNeutra(text: string): string {
+  const base = canonicalizarMarcadoresSm(text)
+  const re = /<<<EM_FACE>>>([\s\S]*?)<<<END_EM_FACE>>>/i
+  if (re.test(base)) {
+    return base.replace(re, (_m, corpo: string) => {
+      return `<<<EM_FACE>>>\n${normalizarCitacaoInss(String(corpo).trim())}\n<<<END_EM_FACE>>>`
+    })
+  }
+  return normalizarCitacaoInss(base)
+}
+
+/**
+ * Pós-processamento SM rural: força subseção do formulário no endereçamento
+ * e citação neutra do INSS. Chamar após a geração da IA, antes de PDF/DOCX.
+ */
+export function posProcessarPeticaoSmRural(
+  text: string,
+  opts?: { subsecaoUf?: string | null },
+): string {
+  let out = canonicalizarMarcadoresSm(text)
+  const sub = String(opts?.subsecaoUf || '').trim()
+  if (sub) out = garantirEnderecamentoSubsecao(out, sub)
+  out = garantirCitacaoInssNeutra(out)
+  return out
 }
 
 /**
@@ -820,8 +907,22 @@ export function montarTimelineDataPadrao(
   form: Record<string, string>,
   estilo: TimelineEstilo = 'horizontal',
 ): TimelineData {
-  const cidade = (form.cidade || '').trim()
-  const uf = (form.estado || form.uf || '').trim()
+  const cidade = (
+    form.autor_municipio ||
+    form.municipio ||
+    form.cidade ||
+    form.city ||
+    ''
+  ).trim()
+  const uf = (
+    form.autor_uf ||
+    form.estado ||
+    form.uf ||
+    form.state ||
+    ''
+  )
+    .trim()
+    .toUpperCase()
   let local = [cidade, uf].filter(Boolean).join('/')
   if (!local && (form.endereco || '').trim()) {
     // Extrai "Cidade/UF" do final do endereço formatado, se houver
@@ -1598,15 +1699,15 @@ export function extrairConteudoSmRural(opts: {
   }
 
   const dataParto = dataNascimentoDoQuadro(quadro)
-  const { localFormatado } = resolverLocalAdvogado(opts.adv)
+  // Endereçamento = subseção do texto gerado (domicílio da autora).
+  // NUNCA usar cidade do escritório como fallback do juízo competente.
   const enderecoTexto = normalizarEnderecoJef(
     normalizarEspacos(
       limparMarkdownResidual(
         endereco ||
-          `AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE ${localFormatado || '[Cidade]/[UF]'}`,
+          'AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE [Subseção]/[UF]',
       ),
     ),
-    localFormatado,
   )
 
   const norm = normalizarTituloSubtitulo(titulo, subtitulo, opts.sexoParteAutora)
@@ -2257,15 +2358,14 @@ export function montarHtmlSmRural(opts: {
 
   const assinaturas = assinaturasHtml(opts.adv, fechamento)
 
-  const { localFormatado } = resolverLocalAdvogado(opts.adv)
+  // Endereçamento = subseção do texto (domicílio da autora), nunca cidade do escritório.
   const enderecoTexto = normalizarEnderecoJef(
     normalizarEspacos(
       limparMarkdownResidual(
         endereco ||
-          `AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE ${localFormatado || '[Cidade]/[UF]'}`,
+          'AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE [Subseção]/[UF]',
       ),
     ),
-    localFormatado,
   )
 
   const qualificacaoLimpa = limparRgNaQualificacao(qualificacao || '')

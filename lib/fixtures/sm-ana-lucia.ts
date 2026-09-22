@@ -24,7 +24,7 @@ AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE SÃO 
 <<<END_ENDERECO>>>
 
 <<<QUALIFICACAO>>>
-ANA LÚCIA FERREIRA, brasileira, agricultora, nascida em 15/03/1995, RG 1234567 SSP/MA, CPF 000.000.000-00, residente e domiciliada na Zona Rural, Município de São Luís/MA, por intermédio de seus procuradores, vem, respeitosamente, à presença de Vossa Excelência, propor a presente
+ANA LÚCIA FERREIRA, brasileira, agricultora, nascida em 15/03/1995, RG 1234567 SSP/MA, CPF 000.000.000-00, residente e domiciliada na Estrada Vicinal km 3, s/n, Povoado Boa Esperança, zona rural, São Luís/MA, CEP 65000-000, por intermédio de seus procuradores, vem, respeitosamente, à presença de Vossa Excelência, propor a presente
 <<<END_QUALIFICACAO>>>
 
 <<<TITULO>>>
@@ -34,7 +34,7 @@ AÇÃO PREVIDENCIÁRIA DE CONCESSÃO DE SALÁRIO-MATERNIDADE
 <<<END_TITULO>>>
 
 <<<EM_FACE>>>
-Em face do INSTITUTO NACIONAL DO SEGURO SOCIAL – INSS, autarquia federal, a ser citado na Agência da Previdência Social em São Luís/MA.
+Em face do INSTITUTO NACIONAL DO SEGURO SOCIAL – INSS, autarquia federal, a ser citado na pessoa de seu representante legal, por meio da Procuradoria Federal.
 <<<END_EM_FACE>>>
 
 <<<I_PRELIMINARES>>>
@@ -46,6 +46,7 @@ A autora declara hipossuficiência nos termos do art. 5º, LXXIV, da CF/88 e da 
 | Campo | Valor |
 | --- | --- |
 | Nome | ANA LÚCIA FERREIRA |
+| Município/UF | São Luís/MA |
 | Idade no Req. Adm. | 29 |
 | Pedido | Salário-Maternidade – Segurado Especial |
 | Criança | João Ferreira |
@@ -64,7 +65,7 @@ A autora declara hipossuficiência nos termos do art. 5º, LXXIV, da CF/88 e da 
 <<<END_II>>>
 
 <<<III_SINTESE_ANTES>>>
-A autora labora em regime de economia familiar na zona rural do município, dedicando-se ao cultivo de mandioca e milho, sem empregados permanentes.
+A autora labora em regime de economia familiar na zona rural do município de São Luís/MA, no povoado Boa Esperança, dedicando-se ao cultivo de mandioca e milho, sem empregados permanentes.
 
 Sustenta a família com o produto da lavoura, em condição típica de segurada especial.
 <<<END_III_ANTES>>>

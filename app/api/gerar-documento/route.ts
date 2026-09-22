@@ -10,12 +10,14 @@ import {
   AGENT_SM_RURAL,
   ERRO_GERACAO_INTERROMPIDA,
   canonicalizarMarcadoresSm,
+  posProcessarPeticaoSmRural,
   validarCompletudeSmRural,
 } from '@/lib/peticao-sm-rural'
 import {
   gerarDocumentoComContinuacao,
   gerarPeticaoSmRuralEmBlocos,
 } from '@/lib/gerar-documento-claude'
+import { formatarSubsecaoUf } from '@/lib/jurisdicao/subsecoes'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -114,6 +116,34 @@ export async function POST(request: Request) {
     }
 
     if (!user) return Response.json({ error: 'unauthorized' }, { status: 401 })
+
+    // SM rural: exige subseção judiciária (competência pelo domicílio da autora)
+    if (agentType === AGENT_SM_RURAL) {
+      const sub = String(
+        normalizedFormData.subsecao_judiciaria ||
+          normalizedFormData.subsecao ||
+          '',
+      ).trim()
+      const mun = String(
+        normalizedFormData.autor_municipio ||
+          normalizedFormData.municipio ||
+          '',
+      ).trim()
+      const log = String(
+        normalizedFormData.autor_logradouro ||
+          normalizedFormData.logradouro ||
+          '',
+      ).trim()
+      if (!log || !mun || !sub) {
+        return Response.json(
+          {
+            error:
+              'Informe o endereço completo da parte autora e a subseção judiciária competente antes de gerar.',
+          },
+          { status: 400 },
+        )
+      }
+    }
 
     const { data: lawyerRow, error: lawyerError } = await supabaseAdmin
       .from('lawyers')
@@ -295,6 +325,22 @@ export async function POST(request: Request) {
               formJson,
               onDelta,
             )
+            const subsecao = formatarSubsecaoUf(
+              String(
+                formComSexo.subsecao_judiciaria ||
+                  formComSexo.subsecao ||
+                  '',
+              ),
+              String(
+                formComSexo.autor_uf ||
+                  formComSexo.uf ||
+                  formComSexo.state ||
+                  '',
+              ),
+            )
+            fullText = posProcessarPeticaoSmRural(fullText, {
+              subsecaoUf: subsecao,
+            })
           } else {
             fullText = await gerarDocumentoComContinuacao(
               anthropic,
@@ -307,6 +353,22 @@ export async function POST(request: Request) {
               fullText.includes('<<<VI_PEDIDOS>>>')
             ) {
               fullText = canonicalizarMarcadoresSm(fullText)
+              const subsecao = formatarSubsecaoUf(
+                String(
+                  formComSexo.subsecao_judiciaria ||
+                    formComSexo.subsecao ||
+                    '',
+                ),
+                String(
+                  formComSexo.autor_uf ||
+                    formComSexo.uf ||
+                    formComSexo.state ||
+                    '',
+                ),
+              )
+              fullText = posProcessarPeticaoSmRural(fullText, {
+                subsecaoUf: subsecao,
+              })
               const v = validarCompletudeSmRural(fullText)
               if (!v.ok) throw new Error(v.motivo)
             }

@@ -7,6 +7,16 @@ import {
   FUND_TEMA_533_STJ,
 } from '@/lib/peticoes/fundamentos'
 import { valorCausaSalarioMaternidade } from '@/lib/salario-minimo'
+import { formatarEnderecoAutorPeticao } from '@/lib/formatar-endereco'
+import { formatarSubsecaoUf } from '@/lib/jurisdicao/subsecoes'
+
+function lerCampo(fd: Record<string, unknown>, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = fd[k]
+    if (v != null && String(v).trim()) return String(v).trim()
+  }
+  return ''
+}
 
 export function getSystemPrompt(
   agentType: string,
@@ -22,26 +32,60 @@ export function getSystemPrompt(
       ? `a cidade do escritório não está cadastrada — use apenas "${local.uf}" (ex.: "${local.uf}, 16 de julho de 2025"), NUNCA escreva "/${local.uf}" nem "undefined/${local.uf}"`
       : 'use [Cidade]/[UF] apenas se os dados forem conhecidos; não invente cidade'
 
+  const fd = formData && typeof formData === 'object' ? formData : {}
+  const subsecaoForm = formatarSubsecaoUf(
+    lerCampo(fd, 'subsecao_judiciaria', 'subsecao'),
+    lerCampo(fd, 'autor_uf', 'uf', 'state', 'estado') || local.uf,
+  )
+  const municipioAutor = lerCampo(
+    fd,
+    'autor_municipio',
+    'municipio',
+    'cidade',
+    'city',
+  )
+  const ufAutor = lerCampo(fd, 'autor_uf', 'uf', 'state', 'estado').toUpperCase()
+  const bairroAutor = lerCampo(fd, 'autor_bairro', 'bairro')
+  const zonaAutor = lerCampo(fd, 'autor_zona', 'zona', 'zone').toLowerCase()
+  const enderecoAutor =
+    formatarEnderecoAutorPeticao(fd as Record<string, string>) ||
+    lerCampo(fd, 'endereco')
+
+  const juizoCompetente =
+    subsecaoForm ||
+    (municipioAutor && ufAutor
+      ? `${municipioAutor}/${ufAutor}`
+      : '[Subseção]/[UF]')
+
   const advDados = `
 DADOS DO ADVOGADO (use obrigatoriamente no cabeçalho e pedidos):
   Nome: ${adv?.name || ''}
   OAB: ${adv?.oab_number || ''}/${adv?.oab_uf || ''}
   Email: ${adv?.email || ''}
   WhatsApp: ${adv?.whatsapp || ''}
-  Cidade: ${local.cidade || '(não cadastrada)'}
-  UF: ${local.uf || ''}
-  Local formatado: ${local.localFormatado || '(incompleto)'}
+  Cidade do escritório: ${local.cidade || '(não cadastrada)'}
+  UF do escritório: ${local.uf || ''}
+  Local formatado (escritório): ${local.localFormatado || '(incompleto)'}
   Exemplo de linha de local/data: ${exemploLocalData}
   Vara: ${adv?.vara_padrao || ''}
   Honorários: ${adv?.honorarios_pct ?? ''}%
 
-LOCAL/DATA E ENDEREÇAMENTO:
-  - ${cidadeUfInstrucao}
+SEPARAÇÃO OBRIGATÓRIA — CIDADE DO ESCRITÓRIO vs SUBSEÇÃO COMPETENTE:
+  - Cidade do escritório (${local.localFormatado || '[Cidade]/[UF]'}): SOMENTE assinatura (local/data), endereço profissional do advogado para intimações e rodapé.
+  - Subseção judiciária COMPETENTE (domicílio da parte autora): "${juizoCompetente}"
+  - Endereçamento JEF (obrigatório, SEM a palavra Comarca) — use EXATAMENTE a subseção do formulário, NUNCA a cidade do escritório:
+    "AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE ${juizoCompetente}"
+  - PROIBIDO substituir a subseção competente pela cidade do escritório (${local.localFormatado || 'escritório'}).
+  - Assinatura (local/data): ${cidadeUfInstrucao}
   - Formato da linha de assinatura: "${local.localFormatado || '[Cidade]/[UF]'}, [data por extenso]."
-  - Endereçamento JEF (obrigatório, SEM a palavra Comarca):
-    "AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE ${local.localFormatado || '[Cidade]/[UF]'}"`
 
-  const fd = formData && typeof formData === 'object' ? formData : {}
+DOMICÍLIO DA PARTE AUTORA (qualificação e competência territorial JEF):
+  - Endereço completo: ${enderecoAutor || '(preencher com os campos do formulário)'}
+  - Município/UF: ${municipioAutor && ufAutor ? `${municipioAutor}/${ufAutor}` : '(informar)'}
+  - Bairro/comunidade/povoado: ${bairroAutor || '(se informado)'}
+  - Zona: ${zonaAutor || '(se informada)'}
+  - Subseção judiciária: ${juizoCompetente}`
+
   const dataParto =
     String(fd.data_nascimento_crianca || fd.data_parto || '').trim() || null
   const sexoCriancaRaw = String(fd.sexo_crianca || '').trim().toLowerCase()
@@ -58,7 +102,16 @@ LOCAL/DATA E ENDEREÇAMENTO:
     .toLowerCase()
   const prompts: Record<string, string> = {
     'salario-maternidade-rural':
-      advDados + buildPromptSalMatRural(dataParto, sexoCriancaRaw, sexoAutorRaw),
+      advDados +
+      buildPromptSalMatRural(dataParto, sexoCriancaRaw, sexoAutorRaw, {
+        juizoCompetente,
+        cidadeEscritorio: local.localFormatado,
+        enderecoAutor,
+        municipioAutor,
+        ufAutor,
+        bairroAutor,
+        zonaAutor,
+      }),
   }
 
   const base =
@@ -184,10 +237,35 @@ function buildPromptSalMatRural(
   dataParto: string | null,
   sexoCriancaRaw: string,
   sexoAutorRaw: string,
+  ctx: {
+    juizoCompetente: string
+    cidadeEscritorio: string
+    enderecoAutor: string
+    municipioAutor: string
+    ufAutor: string
+    bairroAutor: string
+    zonaAutor: string
+  },
 ): string {
   const smValor = valorCausaSalarioMaternidade(dataParto)
   const generoCrianca = instrucaoGeneroCrianca(sexoCriancaRaw)
   const generoAutor = instrucaoGeneroParteAutora(sexoAutorRaw)
+  const munUf =
+    ctx.municipioAutor && ctx.ufAutor
+      ? `${ctx.municipioAutor}/${ctx.ufAutor}`
+      : ctx.municipioAutor || '[Município]/[UF]'
+  const comunidade = ctx.bairroAutor
+    ? `na comunidade/povoado/bairro ${ctx.bairroAutor}`
+    : 'na comunidade/povoado informado no formulário (se houver)'
+  const zonaTxt =
+    ctx.zonaAutor === 'rural' || ctx.zonaAutor === 'r'
+      ? 'zona rural'
+      : ctx.zonaAutor === 'urbana' ||
+          ctx.zonaAutor === 'urban' ||
+          ctx.zonaAutor === 'urbano'
+        ? 'zona urbana'
+        : ''
+
   return `
 Você é um advogado previdenciarista especializado com 20 anos de experiência.
 Gere uma PETIÇÃO INICIAL COMPLETA para Salário-Maternidade — Segurado Especial no JEF.
@@ -217,12 +295,13 @@ prioridade_menor: false
 <<<END_META>>>
 
 <<<ENDERECO>>>
-AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE [Cidade]/[UF]
+AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE ${ctx.juizoCompetente}
 <<<END_ENDERECO>>>
 
 <<<QUALIFICACAO>>>
-[Parágrafo corrido completo com nome, profissão, data de nascimento, idade, CPF, endereço, menção aos procuradores e fundamento legal, TERMINANDO exatamente com as palavras: propor a presente]
+[Parágrafo corrido completo com nome, profissão, data de nascimento, idade, CPF, endereço COMPLETO da parte autora (${ctx.enderecoAutor || 'logradouro, número, bairro/comunidade, zona se rural, município/UF, CEP'}), menção aos procuradores e fundamento legal, TERMINANDO exatamente com as palavras: propor a presente]
 [RG: só mencione "portadora do RG …" se o RG estiver informado nos dados. Se RG vazio/ausente, OMITA qualquer menção a RG — nunca escreva "RG não informado".]
+[NÃO use o endereço do escritório na qualificação — use o domicílio da parte autora.]
 <<<END_QUALIFICACAO>>>
 
 <<<TITULO>>>
@@ -238,7 +317,7 @@ IMPORTANTE SOBRE TÍTULO (OBRIGATÓRIO):
 - NÃO invente << >> / marcadores extras entre título e subtítulo.
 
 <<<EM_FACE>>>
-[Parágrafo "Em face do INSTITUTO NACIONAL DO SEGURO SOCIAL – INSS..." — para citação use "Agência da Previdência Social em [Cidade]/[UF]" (NUNCA "Agência do INSS na Comarca de")]
+[Parágrafo "Em face do INSTITUTO NACIONAL DO SEGURO SOCIAL – INSS, autarquia federal, a ser citado na pessoa de seu representante legal, por meio da Procuradoria Federal..." — redação NEUTRA. NUNCA invente "Agência da Previdência Social em …" nem "Agência do INSS na Comarca de …".]
 <<<END_EM_FACE>>>
 
 <<<I_PRELIMINARES>>>
@@ -252,6 +331,7 @@ DA PRIORIDADE DE TRAMITAÇÃO:
 | Campo | Valor |
 | --- | --- |
 | Nome | [nome] |
+| Município/UF | ${munUf} |
 | Idade no Req. Adm. | [idade — se desconhecida, use "Não informada"] |
 | Pedido | Salário-Maternidade – Segurado Especial |
 | Criança | [nome da criança] |
@@ -269,15 +349,16 @@ DA PRIORIDADE DE TRAMITAÇÃO:
 | Período averbado no CNIS | [texto ou omita a linha se vazio] |
 | Vínculo urbano | [texto] |
 <<<END_II>>>
-[No quadro: omita linhas de campos opcionais vazios. "Não informada" só para idade.]
+[No quadro: omita linhas de campos opcionais vazios. "Não informada" só para idade. Inclua sempre a linha Município/UF.]
 
 <<<III_SINTESE_ANTES>>>
 [2–3 parágrafos narrativos sobre a parte autora, atividade rural e economia familiar — respeitando o sexo informado]
+[OBRIGATÓRIO: cite o município ${munUf} e ${comunidade}${zonaTxt ? `, em ${zonaTxt}` : ''}, onde a atividade é exercida. NÃO use genéricos como "no interior do Estado do Maranhão" sem nomear o município.]
 [Último parágrafo deve terminar com: A seguir, a linha do tempo de sua trajetória de vida e trabalho rural:]
 <<<END_III_ANTES>>>
 
 <<<TIMELINE>>>
-{"nome":"[NOME DA PARTE AUTORA]","atividade":"[OBRIGATÓRIO: 'Agricultor' se sexo masculino; 'Agricultora' se sexo feminino; NUNCA use Agricultora para autor masculino]","local":"[Cidade]/[UF]","estilo":"horizontal","eventos":[{"data":"AAAA ou dd/mm/aaaa","titulo":"Evento curto","detalhe":"detalhe opcional"},{"data":"...","titulo":"...","detalhe":"..."},{"data":"...","titulo":"...","detalhe":"..."},{"data":"...","titulo":"...","detalhe":"..."},{"data":"...","titulo":"...","detalhe":"..."}]}
+{"nome":"[NOME DA PARTE AUTORA]","atividade":"[OBRIGATÓRIO: 'Agricultor' se sexo masculino; 'Agricultora' se sexo feminino; NUNCA use Agricultora para autor masculino]","local":"${munUf}","estilo":"horizontal","eventos":[{"data":"AAAA ou dd/mm/aaaa","titulo":"Evento curto","detalhe":"detalhe opcional"},{"data":"...","titulo":"...","detalhe":"..."},{"data":"...","titulo":"...","detalhe":"..."},{"data":"...","titulo":"...","detalhe":"..."},{"data":"...","titulo":"...","detalhe":"..."}]}
 <<<END_TIMELINE>>>
 
 <<<III_SINTESE_DEPOIS>>>
@@ -345,15 +426,16 @@ nota: ${smValor.nota}
 REGRAS:
 - Tom formal, humanizado e persuasivo
 - Usar EXATAMENTE os dados fornecidos pelo usuário
-- Endereçamento SEM "Comarca"; citação INSS como "Agência da Previdência Social em"
+- Endereçamento SEM "Comarca"; juízo = "${ctx.juizoCompetente}" (NUNCA "${ctx.cidadeEscritorio || 'cidade do escritório'}" no endereçamento)
+- Citação INSS: redação neutra via Procuradoria Federal — NUNCA invente agência da Previdência Social
 - Sempre citar STF ADIs 2110 e 2111, j. 28/03/2024 (texto fixo acima)
 - Declaração de sindicato: prova complementar — NÃO mencionar art. 106, III, Lei 8.213
 - Incluir checklist "Autodeclaração de segurado especial (art. 38-B, §2º, Lei 8.213/91)" nas provas
 - Em <<<IV_PROVAS>>>: SOMENTE lista com ✓ no formato "Nome do documento — explicação". Nunca parágrafos. Renderizadas em caixas cinza com check verde DENTRO da seção IV.
 - Em <<<I_PRELIMINARES>>>: cada tema em subtítulo próprio "DA …:" (ex.: DA GRATUIDADE DA JUSTIÇA:, DA PRIORIDADE…).
-- Na TIMELINE: 4 a 7 eventos reais do caso (nascimento, labor rural, requerimento, indeferimento etc.). O sistema pode sobrescrever este bloco com a configuração do usuário (estilo: horizontal | vertical | none).
+- Na TIMELINE: 4 a 7 eventos reais do caso (nascimento, labor rural, requerimento, indeferimento etc.). O sistema pode sobrescrever este bloco com a configuração do usuário (estilo: horizontal | vertical | none). Local da timeline = município da parte autora (${munUf}), NÃO a cidade do escritório.
 - prioridade_menor: true se a parte autora for menor de 18 anos
-- Local/data da assinatura: o sistema completa com a cidade do escritório — no FECHAMENTO NÃO escreva a linha de cidade/data
+- Local/data da assinatura: o sistema completa com a cidade do escritório (${ctx.cidadeEscritorio || '[Cidade]/[UF]'}) — no FECHAMENTO NÃO escreva a linha de cidade/data
 - Valor da causa: ${smValor.totalFmt} (4 × salário mínimo ${smValor.mensalFmt} vigente desde ${smValor.dataVigenciaFmt} na data do parto)
 - Texto corrido em caixa de sentença (primeira letra maiúscula, resto minúsculo conforme o português). NUNCA escreva parágrafos inteiros em CAIXA ALTA.
 - Copie os nomes dos marcadores EXATAMENTE, com underscores: <<<END_III_ANTES>>> (nunca <<<ENDIIANTES>>>). Todo bloco aberto DEVE ser fechado.
@@ -367,4 +449,13 @@ REGRAS:
 // Mantém referência para compatibilidade de imports acidentais
 void _smValor
 
-const PROMPT_SAL_MAT_RURAL = buildPromptSalMatRural(null, '', '')
+const PROMPT_SAL_MAT_RURAL = buildPromptSalMatRural(null, '', '', {
+  juizoCompetente: '[Subseção]/[UF]',
+  cidadeEscritorio: 'São Luís/MA',
+  enderecoAutor: '',
+  municipioAutor: '',
+  ufAutor: '',
+  bairroAutor: '',
+  zonaAutor: '',
+})
+void PROMPT_SAL_MAT_RURAL

@@ -155,6 +155,11 @@ export type ErrosFormSm = {
   data_indeferimento?: string
   periodo_segurado?: string
   sexo_parte_autora?: string
+  /** Endereço da parte autora (SM rural / competência JEF). */
+  autor_logradouro?: string
+  autor_municipio?: string
+  autor_uf?: string
+  subsecao_judiciaria?: string
 }
 
 export function validarSexoParteAutora(valor: string): string | null {
@@ -166,7 +171,41 @@ export function validarSexoParteAutora(valor: string): string | null {
   return null
 }
 
-export function validarFormularioSm(form: Record<string, string>): ErrosFormSm {
+/** Endereço + subseção obrigatórios para SM rural (competência pelo domicílio). */
+export function validarEnderecoAutorSmRural(
+  form: Record<string, string>,
+): Pick<
+  ErrosFormSm,
+  'autor_logradouro' | 'autor_municipio' | 'autor_uf' | 'subsecao_judiciaria'
+> {
+  const erros: Pick<
+    ErrosFormSm,
+    'autor_logradouro' | 'autor_municipio' | 'autor_uf' | 'subsecao_judiciaria'
+  > = {}
+
+  if (!(form.autor_logradouro || form.logradouro || form.rua || '').trim()) {
+    erros.autor_logradouro = 'Informe o logradouro / endereço'
+  }
+  if (!(form.autor_municipio || form.municipio || form.cidade || form.city || '').trim()) {
+    erros.autor_municipio = 'Informe o município'
+  }
+  const uf = (form.autor_uf || form.uf || form.state || form.estado || '').trim()
+  if (!uf) {
+    erros.autor_uf = 'Informe a UF'
+  } else if (!/^[A-Za-z]{2}$/.test(uf)) {
+    erros.autor_uf = 'UF inválida'
+  }
+  if (!(form.subsecao_judiciaria || form.subsecao || '').trim()) {
+    erros.subsecao_judiciaria =
+      'Informe a subseção judiciária competente para este município.'
+  }
+  return erros
+}
+
+export function validarFormularioSm(
+  form: Record<string, string>,
+  opts?: { rural?: boolean },
+): ErrosFormSm {
   const erros: ErrosFormSm = {}
   const eNome = validarNomeCrianca(form.nome_crianca || '')
   if (eNome) erros.nome_crianca = eNome
@@ -209,6 +248,10 @@ export function validarFormularioSm(form: Record<string, string>): ErrosFormSm {
       erros.data_indeferimento =
         'Indeferimento não pode ser anterior ao requerimento'
     }
+  }
+
+  if (opts?.rural) {
+    Object.assign(erros, validarEnderecoAutorSmRural(form))
   }
 
   return erros

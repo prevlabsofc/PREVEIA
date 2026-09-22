@@ -35,10 +35,16 @@ import { PeticaoEditorComPreview } from '@/components/peticao/PeticaoEditorComPr
 import { ConfigurarTimelineSm } from '@/components/peticao/ConfigurarTimelineSm'
 import type { DadosAdvogadoPeticao, EstiloPeticao } from '@/lib/peticao-export'
 import { normalizarEstiloPeticao } from '@/lib/peticao-export'
-import { canonicalizarMarcadoresSm, flexionarAtividadeTimeline, injetarTimelineNoTexto, slugArquivoPeticaoSm, type TimelineData } from '@/lib/peticao-sm-rural'
+import { canonicalizarMarcadoresSm, flexionarAtividadeTimeline, injetarTimelineNoTexto, posProcessarPeticaoSmRural, slugArquivoPeticaoSm, type TimelineData } from '@/lib/peticao-sm-rural'
 import { marcarPeticaoAtiva, consumirFilaPeticao, PETICAO_INSERIR_EVENT, PETICAO_CHANNEL } from '@/lib/peticao-sessao'
 import { consumirContextoPeticao } from '@/lib/extracao-documento-pdf'
-import { formatarEnderecoQualificacao } from '@/lib/formatar-endereco'
+import { formatarEnderecoAutorPeticao, formatarEnderecoQualificacao, mascaraCEP } from '@/lib/formatar-endereco'
+import { ESTADOS_BRASIL } from '@/lib/estados-brasil'
+import {
+  buscarSubsecao,
+  formatarSubsecaoUf,
+  listarSubsecoesUf,
+} from '@/lib/jurisdicao/subsecoes'
 import {
   formSmTemErros,
   validarDataPeticao,
@@ -201,6 +207,8 @@ function AgentesPageContent() {
   const [estiloPeticao, setEstiloPeticao] = useState<EstiloPeticao>('moderno')
   const [advPeticao, setAdvPeticao] = useState<DadosAdvogadoPeticao>({})
   const [showTimelineConfig, setShowTimelineConfig] = useState(false)
+  const [cepLoading, setCepLoading] = useState(false)
+  const [subsecaoManual, setSubsecaoManual] = useState(false)
 
   const searchParams = useSearchParams()
 
@@ -357,22 +365,110 @@ function AgentesPageContent() {
     if (!cli) return
     setSelectedClient(clienteId)
     const sexoCli = cli.sexo || cli.genero || ''
-    setFormData(prev => ({
-      ...prev,
-      nome: cli.name || prev.nome,
-      cpf: cli.cpf || prev.cpf,
-      telefone: cli.phone || prev.telefone,
-      email: cli.email || prev.email,
-      // Linha de endereço já formatada para a qualificação da parte na
-      // petição (ver `formatarEnderecoQualificacao` — usa rua/número/bairro
-      // separados quando existem, com fallback "[a preencher]" por sub-campo
-      // faltante; usa o `address` legado como rua se o cliente ainda não
-      // tiver os campos separados).
-      endereco: formatarEnderecoQualificacao(cli) || prev.endereco,
-      sexo_parte_autora: sexoCli || prev.sexo_parte_autora || '',
-      profession: flexionarAtividadeTimeline(cli.profession || prev.profession || '', sexoCli),
-      atividade: flexionarAtividadeTimeline(cli.profession || prev.atividade || '', sexoCli),
-    }))
+    const zonaCli =
+      cli.zone === 'urban' || cli.zone === 'urbano' || cli.zone === 'Urbano'
+        ? 'urbana'
+        : 'rural'
+    const mun = String(cli.city || '').trim()
+    const uf = String(cli.state || '').trim().toUpperCase()
+    const subMap = buscarSubsecao(mun, uf)
+    setSubsecaoManual(!subMap)
+    setFormData(prev => {
+      const next = {
+        ...prev,
+        nome: cli.name || prev.nome,
+        cpf: cli.cpf || prev.cpf,
+        telefone: cli.phone || prev.telefone,
+        email: cli.email || prev.email,
+        autor_cep: cli.cep || prev.autor_cep || '',
+        autor_logradouro: cli.rua || cli.address || prev.autor_logradouro || '',
+        autor_numero: cli.numero || prev.autor_numero || '',
+        autor_bairro: cli.bairro || prev.autor_bairro || '',
+        autor_municipio: mun || prev.autor_municipio || '',
+        autor_uf: uf || prev.autor_uf || '',
+        autor_zona: zonaCli || prev.autor_zona || 'rural',
+        subsecao_judiciaria: subMap || prev.subsecao_judiciaria || '',
+        // Linha de endereço formatada para a qualificação
+        endereco:
+          formatarEnderecoAutorPeticao({
+            autor_logradouro: cli.rua || cli.address || '',
+            autor_numero: cli.numero || '',
+            autor_bairro: cli.bairro || '',
+            autor_municipio: mun,
+            autor_uf: uf,
+            autor_cep: cli.cep || '',
+            autor_zona: zonaCli,
+          }) ||
+          formatarEnderecoQualificacao(cli) ||
+          prev.endereco,
+        sexo_parte_autora: sexoCli || prev.sexo_parte_autora || '',
+        profession: flexionarAtividadeTimeline(cli.profession || prev.profession || '', sexoCli),
+        atividade: flexionarAtividadeTimeline(cli.profession || prev.atividade || '', sexoCli),
+      }
+      return next
+    })
+  }
+
+  async function buscarCepAutor(cepRaw: string) {
+    const n = cepRaw.replace(/\D/g, '')
+    if (n.length !== 8) return
+    setCepLoading(true)
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${n}/json/`)
+      const data = await res.json()
+      if (!data.erro) {
+        const mun = String(data.localidade || '').trim()
+        const uf = String(data.uf || '').trim().toUpperCase()
+        const subMap = buscarSubsecao(mun, uf)
+        setSubsecaoManual(!subMap)
+        setFormData(p => {
+          const next: Record<string, string> = {
+            ...p,
+            autor_logradouro: data.logradouro || p.autor_logradouro,
+            autor_bairro: data.bairro || p.autor_bairro,
+            autor_municipio: mun || p.autor_municipio,
+            autor_uf: uf || p.autor_uf,
+            subsecao_judiciaria: subMap || '',
+          }
+          next.endereco = formatarEnderecoAutorPeticao(next)
+          return next
+        })
+        setFormErrors(p => ({
+          ...p,
+          autor_municipio: undefined,
+          autor_uf: undefined,
+          autor_logradouro: undefined,
+          subsecao_judiciaria: subMap
+            ? undefined
+            : 'Informe a subseção judiciária competente para este município.',
+        }))
+      }
+    } catch {
+      // ViaCEP falhou — deixa preencher à mão
+    }
+    setCepLoading(false)
+  }
+
+  function atualizarEnderecoAutor(patch: Record<string, string>) {
+    setFormData(p => {
+      const next: Record<string, string> = { ...p, ...patch }
+      const mun = (next.autor_municipio || '').trim()
+      const uf = (next.autor_uf || '').trim().toUpperCase()
+      if ('autor_municipio' in patch || 'autor_uf' in patch) {
+        const subMap = buscarSubsecao(mun, uf)
+        if (subMap) {
+          next.subsecao_judiciaria = subMap
+          setSubsecaoManual(false)
+          setFormErrors(errs => ({ ...errs, subsecao_judiciaria: undefined }))
+        } else if (mun && uf) {
+          // Município fora da tabela: limpa e exige preenchimento manual
+          next.subsecao_judiciaria = ''
+          setSubsecaoManual(true)
+        }
+      }
+      next.endereco = formatarEnderecoAutorPeticao(next)
+      return next
+    })
   }
 
   const provasOpcoes = [
@@ -420,7 +516,9 @@ function AgentesPageContent() {
     }
     // Valida campos SM antes de gerar (bloqueia lixo de teclado)
     if (selectedAgent.key.includes('salario-maternidade')) {
-      const erros = validarFormularioSm(formData)
+      const erros = validarFormularioSm(formData, {
+        rural: selectedAgent.key === 'salario-maternidade-rural',
+      })
       setFormErrors(erros)
       if (formSmTemErros(erros)) {
         alert('Corrija os campos destacados em vermelho antes de gerar o documento.')
@@ -444,7 +542,9 @@ function AgentesPageContent() {
       return
     }
     if (selectedAgent.key.includes('salario-maternidade')) {
-      const erros = validarFormularioSm(formData)
+      const erros = validarFormularioSm(formData, {
+        rural: selectedAgent.key === 'salario-maternidade-rural',
+      })
       setFormErrors(erros)
       if (formSmTemErros(erros)) {
         setShowTimelineConfig(false)
@@ -532,9 +632,16 @@ function AgentesPageContent() {
         return
       }
 
-      // Canonicaliza marcadores SM (corrige <<<ENDIIANTES>>> etc.) e injeta timeline
+      // Canonicaliza marcadores SM, força subseção do formulário e citação neutra
       if (selectedAgent.key === 'salario-maternidade-rural') {
-        acumulado = canonicalizarMarcadoresSm(acumulado)
+        const subsecao = formatarSubsecaoUf(
+          formData.subsecao_judiciaria || '',
+          formData.autor_uf || '',
+        )
+        acumulado = posProcessarPeticaoSmRural(
+          canonicalizarMarcadoresSm(acumulado),
+          { subsecaoUf: subsecao },
+        )
       }
       if (timeline) {
         const comTimeline = injetarTimelineNoTexto(acumulado, timeline)
@@ -1032,6 +1139,242 @@ function AgentesPageContent() {
                           onChange={e => setFormData(p => ({ ...p, cpf: e.target.value }))} spellCheck={true} />
                       </div>
                     </div>
+
+                    {/* Endereço da parte autora — competência JEF pelo domicílio */}
+                    {selectedAgent.key === 'salario-maternidade-rural' && (
+                      <div className="space-y-3 pt-1">
+                        <label className="block text-[10px] font-bold tracking-widest"
+                          style={{ color: 'rgba(212,175,55,0.7)' }}>
+                          ENDEREÇO DA PARTE AUTORA
+                        </label>
+                        <p className="text-[10px]" style={{ color: '#888' }}>
+                          Competência territorial do JEF pelo domicílio da autora — não use a cidade do escritório.
+                        </p>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[10px] font-bold tracking-widest mb-1.5"
+                              style={{ color: 'rgba(212,175,55,0.7)' }}>CEP</label>
+                            <input
+                              type="text"
+                              placeholder="00000-000"
+                              className="input-glass w-full text-sm"
+                              value={formData.autor_cep || ''}
+                              onChange={e => {
+                                const v = mascaraCEP(e.target.value)
+                                setFormData(p => ({ ...p, autor_cep: v }))
+                                if (v.replace(/\D/g, '').length === 8) void buscarCepAutor(v)
+                              }}
+                            />
+                            {cepLoading && (
+                              <p className="text-[10px] mt-1" style={{ color: '#D4AF37' }}>Buscando CEP…</p>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold tracking-widest mb-1.5"
+                              style={{ color: 'rgba(212,175,55,0.7)' }}>NÚMERO</label>
+                            <input
+                              type="text"
+                              placeholder='123 ou s/n'
+                              className="input-glass w-full text-sm"
+                              value={formData.autor_numero || ''}
+                              onChange={e => atualizarEnderecoAutor({ autor_numero: e.target.value })}
+                              spellCheck={true}
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold tracking-widest mb-1.5"
+                            style={{ color: 'rgba(212,175,55,0.7)' }}>LOGRADOURO / ENDEREÇO*</label>
+                          <input
+                            type="text"
+                            placeholder="Rua, estrada, povoado…"
+                            className="input-glass w-full text-sm"
+                            value={formData.autor_logradouro || ''}
+                            onChange={e => {
+                              atualizarEnderecoAutor({ autor_logradouro: e.target.value })
+                              setFormErrors(p => ({
+                                ...p,
+                                autor_logradouro: e.target.value.trim()
+                                  ? undefined
+                                  : 'Informe o logradouro / endereço',
+                              }))
+                            }}
+                            style={formErrors.autor_logradouro ? { borderColor: '#ef4444', borderWidth: 1 } : undefined}
+                            spellCheck={true}
+                          />
+                          {formErrors.autor_logradouro ? (
+                            <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>{formErrors.autor_logradouro}</p>
+                          ) : null}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[10px] font-bold tracking-widest mb-1.5"
+                              style={{ color: 'rgba(212,175,55,0.7)' }}>BAIRRO / COMUNIDADE / POVOADO</label>
+                            <input
+                              type="text"
+                              placeholder="Comunidade, povoado ou bairro"
+                              className="input-glass w-full text-sm"
+                              value={formData.autor_bairro || ''}
+                              onChange={e => atualizarEnderecoAutor({ autor_bairro: e.target.value })}
+                              spellCheck={true}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold tracking-widest mb-1.5"
+                              style={{ color: 'rgba(212,175,55,0.7)' }}>ZONA</label>
+                            <select
+                              className="input-glass w-full text-sm"
+                              value={formData.autor_zona || 'rural'}
+                              onChange={e => atualizarEnderecoAutor({ autor_zona: e.target.value })}
+                            >
+                              <option value="rural">Rural</option>
+                              <option value="urbana">Urbana</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[10px] font-bold tracking-widest mb-1.5"
+                              style={{ color: 'rgba(212,175,55,0.7)' }}>MUNICÍPIO*</label>
+                            <input
+                              type="text"
+                              placeholder="Lago da Pedra"
+                              className="input-glass w-full text-sm"
+                              value={formData.autor_municipio || ''}
+                              onChange={e => {
+                                atualizarEnderecoAutor({ autor_municipio: e.target.value })
+                                setFormErrors(p => ({
+                                  ...p,
+                                  autor_municipio: e.target.value.trim()
+                                    ? undefined
+                                    : 'Informe o município',
+                                }))
+                              }}
+                              style={formErrors.autor_municipio ? { borderColor: '#ef4444', borderWidth: 1 } : undefined}
+                              spellCheck={true}
+                            />
+                            {formErrors.autor_municipio ? (
+                              <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>{formErrors.autor_municipio}</p>
+                            ) : null}
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold tracking-widest mb-1.5"
+                              style={{ color: 'rgba(212,175,55,0.7)' }}>UF*</label>
+                            <select
+                              className="input-glass w-full text-sm"
+                              value={formData.autor_uf || ''}
+                              onChange={e => {
+                                atualizarEnderecoAutor({ autor_uf: e.target.value })
+                                setFormErrors(p => ({
+                                  ...p,
+                                  autor_uf: e.target.value ? undefined : 'Informe a UF',
+                                }))
+                              }}
+                              style={formErrors.autor_uf ? { borderColor: '#ef4444', borderWidth: 1 } : undefined}
+                            >
+                              <option value="">Selecione</option>
+                              {ESTADOS_BRASIL.map(e => (
+                                <option key={e.sigla} value={e.sigla}>{e.sigla} — {e.nome}</option>
+                              ))}
+                            </select>
+                            {formErrors.autor_uf ? (
+                              <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>{formErrors.autor_uf}</p>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold tracking-widest mb-1.5"
+                            style={{ color: 'rgba(212,175,55,0.7)' }}>SUBSEÇÃO JUDICIÁRIA COMPETENTE*</label>
+                          <select
+                            className="input-glass w-full text-sm mb-2"
+                            value={
+                              subsecaoManual
+                                ? '__manual__'
+                                : formData.subsecao_judiciaria &&
+                                    listarSubsecoesUf(formData.autor_uf || 'MA').includes(
+                                      formatarSubsecaoUf(
+                                        formData.subsecao_judiciaria,
+                                        formData.autor_uf || 'MA',
+                                      ),
+                                    )
+                                  ? formatarSubsecaoUf(
+                                      formData.subsecao_judiciaria,
+                                      formData.autor_uf || 'MA',
+                                    )
+                                  : formData.subsecao_judiciaria
+                                    ? '__manual__'
+                                    : ''
+                            }
+                            onChange={e => {
+                              const v = e.target.value
+                              if (v === '__manual__') {
+                                setSubsecaoManual(true)
+                                return
+                              }
+                              setSubsecaoManual(false)
+                              setFormData(p => {
+                                const next: Record<string, string> = {
+                                  ...p,
+                                  subsecao_judiciaria: v,
+                                }
+                                next.endereco = formatarEnderecoAutorPeticao(next)
+                                return next
+                              })
+                              setFormErrors(p => ({
+                                ...p,
+                                subsecao_judiciaria: v
+                                  ? undefined
+                                  : 'Informe a subseção judiciária competente para este município.',
+                              }))
+                            }}
+                            style={formErrors.subsecao_judiciaria ? { borderColor: '#ef4444', borderWidth: 1 } : undefined}
+                          >
+                            <option value="">Selecione</option>
+                            {listarSubsecoesUf(formData.autor_uf || 'MA').map(s => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                            <option value="__manual__">Outra (digitar)</option>
+                          </select>
+                          {(subsecaoManual ||
+                            !buscarSubsecao(
+                              formData.autor_municipio || '',
+                              formData.autor_uf || '',
+                            )) && (
+                            <input
+                              type="text"
+                              placeholder="Ex.: Bacabal/MA"
+                              className="input-glass w-full text-sm"
+                              value={formData.subsecao_judiciaria || ''}
+                              onChange={e => {
+                                const v = e.target.value
+                                setSubsecaoManual(true)
+                                setFormData(p => ({ ...p, subsecao_judiciaria: v }))
+                                setFormErrors(p => ({
+                                  ...p,
+                                  subsecao_judiciaria: v.trim()
+                                    ? undefined
+                                    : 'Informe a subseção judiciária competente para este município.',
+                                }))
+                              }}
+                              style={formErrors.subsecao_judiciaria ? { borderColor: '#ef4444', borderWidth: 1 } : undefined}
+                              spellCheck={true}
+                            />
+                          )}
+                          {formErrors.subsecao_judiciaria ? (
+                            <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>{formErrors.subsecao_judiciaria}</p>
+                          ) : (
+                            <p className="text-[10px] mt-1" style={{ color: '#666' }}>
+                              Definida pelo domicílio da parte autora. Confira antes de gerar.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Seletor de modelos prontos */}
                     <SeletorModelo
