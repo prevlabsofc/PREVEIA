@@ -40,6 +40,59 @@ export function bairroJaContidoNoLogradouro(
   return l.includes(b)
 }
 
+const CONECTIVOS_MINUSCULOS = new Set(['de', 'da', 'do', 'das', 'dos', 'e'])
+
+function temMaiuscula(s: string): boolean {
+  return s !== s.toLocaleLowerCase('pt-BR')
+}
+
+function temMinuscula(s: string): boolean {
+  return s !== s.toLocaleUpperCase('pt-BR')
+}
+
+/** True se o texto tem letras e todas estão em minúsculas. */
+export function inteiramenteMinusculo(texto: string): boolean {
+  const s = String(texto || '')
+  return temMinuscula(s) && !temMaiuscula(s)
+}
+
+/**
+ * Caixa de título pt-BR ("rua sao vicente" → "Rua Sao Vicente"): só muda a caixa,
+ * nunca acentos/grafia. Palavras que já têm maiúscula (siglas, "XV", "MA") ficam
+ * como estão; de/da/do/das/dos/e em minúsculas (exceto no início); "nº" e "s/n"
+ * preservados; UF após "/" em maiúsculas.
+ */
+export function caixaTitulo(texto: string): string {
+  const s = String(texto || '')
+  let primeira = true
+  return s.replace(/[\p{L}\p{N}ºª°'’.]+(?:\/[\p{L}\p{N}]+)*/gu, (tok) => {
+    const eraPrimeira = primeira
+    primeira = false
+    if (/^s\/n\.?$/i.test(tok)) return tok.toLocaleLowerCase('pt-BR')
+    if (/^n[º°ª]\.?$/i.test(tok)) return tok.toLocaleLowerCase('pt-BR')
+    if (temMaiuscula(tok)) return tok
+    return tok
+      .split('/')
+      .map((parte, idx) => {
+        if (idx > 0 && /^\p{L}{2}$/u.test(parte)) return parte.toLocaleUpperCase('pt-BR')
+        if (idx === 0 && !eraPrimeira && CONECTIVOS_MINUSCULOS.has(parte)) return parte
+        return parte.charAt(0).toLocaleUpperCase('pt-BR') + parte.slice(1)
+      })
+      .join('/')
+  })
+}
+
+/**
+ * Aplica caixa de título só se o texto veio inteiramente em minúsculas
+ * (ignorando um "/UF" final já em maiúsculas: "lago da pedra/MA").
+ */
+export function caixaTituloSeMinusculo(texto: string): string {
+  const s = String(texto || '')
+  const comUf = s.match(/^(.*?)(\s*\/\s*[A-Z]{2})$/)
+  if (comUf && inteiramenteMinusculo(comUf[1])) return caixaTitulo(comUf[1]) + comUf[2]
+  return inteiramenteMinusculo(s) ? caixaTitulo(s) : s
+}
+
 /** Formata dígitos de CEP como "00000-000" (padrão Correios, sem ponto milhar). */
 export function formatarCEP(cep?: string | null): string {
   const digitos = (cep ?? '').replace(/\D/g, '').slice(0, 8)
@@ -113,10 +166,10 @@ export function juntarEnderecoLegado(c: {
  * livre em rua/número/bairro sem risco de errar o corte.
  */
 export function formatarEnderecoQualificacao(c: EnderecoClienteParaFormatacao): string {
-  const rua = (c.rua ?? '').trim() || (c.address ?? '').trim()
+  const rua = caixaTitulo((c.rua ?? '').trim() || (c.address ?? '').trim())
   const numero = (c.numero ?? '').trim()
-  const bairro = (c.bairro ?? '').trim()
-  const cidade = (c.city ?? '').trim()
+  const bairro = caixaTitulo((c.bairro ?? '').trim())
+  const cidade = caixaTitulo((c.city ?? '').trim())
   const estado = (c.state ?? '').trim()
   const cep = (c.cep ?? '').trim()
 
@@ -166,12 +219,14 @@ export type EnderecoAutorForm = {
  * para evitar "… Povoado X, Povoado X, Município/UF".
  */
 export function formatarEnderecoAutorPeticao(c: EnderecoAutorForm): string {
-  const logradouro =
-    (c.autor_logradouro ?? c.logradouro ?? c.rua ?? c.address ?? '').trim()
+  const logradouro = caixaTitulo(
+    (c.autor_logradouro ?? c.logradouro ?? c.rua ?? c.address ?? '').trim(),
+  )
   const numero = (c.autor_numero ?? c.numero ?? '').trim()
-  const bairro = (c.autor_bairro ?? c.bairro ?? '').trim()
-  const municipio =
-    (c.autor_municipio ?? c.municipio ?? c.cidade ?? c.city ?? '').trim()
+  const bairro = caixaTitulo((c.autor_bairro ?? c.bairro ?? '').trim())
+  const municipio = caixaTitulo(
+    (c.autor_municipio ?? c.municipio ?? c.cidade ?? c.city ?? '').trim(),
+  )
   const uf = (c.autor_uf ?? c.uf ?? c.state ?? '').trim().toUpperCase()
   const cep = (c.autor_cep ?? c.cep ?? '').trim()
   const zonaRaw = (c.autor_zona ?? c.zona ?? c.zone ?? '').trim().toLowerCase()
@@ -209,8 +264,9 @@ export function formatarEnderecoAutorPeticao(c: EnderecoAutorForm): string {
 
 /** Só município/UF — para menções após a primeira (qualificação completa). */
 export function formatarMunicipioUfAutor(c: EnderecoAutorForm): string {
-  const municipio =
-    (c.autor_municipio ?? c.municipio ?? c.cidade ?? c.city ?? '').trim()
+  const municipio = caixaTitulo(
+    (c.autor_municipio ?? c.municipio ?? c.cidade ?? c.city ?? '').trim(),
+  )
   const uf = (c.autor_uf ?? c.uf ?? c.state ?? '').trim().toUpperCase()
   if (municipio && uf) return `${municipio}/${uf}`
   return municipio || uf || ''

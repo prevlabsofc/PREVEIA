@@ -366,6 +366,9 @@ export async function POST(request: Request) {
               bairroAutor: String(
                 formComSexo.autor_bairro || formComSexo.bairro || '',
               ),
+              nomeAutora: String(formComSexo.nome || ''),
+              nomeCrianca: String(formComSexo.nome_crianca || ''),
+              municipioAutor: munAutor,
             })
           } else {
             fullText = await gerarDocumentoComContinuacao(
@@ -416,6 +419,9 @@ export async function POST(request: Request) {
                 bairroAutor: String(
                   formComSexo.autor_bairro || formComSexo.bairro || '',
                 ),
+                nomeAutora: String(formComSexo.nome || ''),
+                nomeCrianca: String(formComSexo.nome_crianca || ''),
+                municipioAutor: munAutor,
               })
               const v = validarCompletudeSmRural(fullText)
               if (!v.ok) throw new Error(v.motivo)

@@ -650,6 +650,9 @@ function AgentesPageContent() {
             enderecoAutor,
             municipioUf,
             bairroAutor: formData.autor_bairro || formData.bairro || '',
+            nomeAutora: formData.nome || '',
+            nomeCrianca: formData.nome_crianca || '',
+            municipioAutor: formData.autor_municipio || formData.municipio || '',
           },
         )
       }

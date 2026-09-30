@@ -16,6 +16,7 @@ import {
 } from '@/lib/peticao-export'
 import {
   aplicarPaginacaoPorBlocos,
+  fimConteudoPaginacaoPx,
   alturaUtilPaginaPdfPx,
   limitesCanvasDePaginas,
 } from '@/lib/pdf-paginacao'
@@ -396,6 +397,7 @@ async function gerarPdfBlob(
     const usablePx = alturaUtilPaginaPdfPx(W, true)
     const pageBreaksCss = aplicarPaginacaoPorBlocos(pageEl, usablePx)
     await new Promise<void>((r) => requestAnimationFrame(() => r()))
+    const fimConteudoCss = fimConteudoPaginacaoPx(pageEl)
 
     const canvas = await html2canvas(pageEl, {
       scale: CAPTURE_SCALE,
@@ -463,6 +465,8 @@ async function gerarPdfBlob(
       pageBreaksCss,
       finalCanvas.height,
       CAPTURE_SCALE,
+      Math.ceil(usablePx * CAPTURE_SCALE),
+      fimConteudoCss,
     )
 
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' })

@@ -106,6 +106,7 @@ export function ConfigurarTimelineSm({
       local: local.trim(),
       estilo,
       eventos: limpos.length ? limpos : eventos,
+      ...(inicial.sexoCrianca ? { sexoCrianca: inicial.sexoCrianca } : {}),
     })
   }
 

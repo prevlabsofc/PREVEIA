@@ -17,7 +17,10 @@ import {
 } from '@/lib/peticao-export'
 import { valorCausaSalarioMaternidade } from '@/lib/salario-minimo'
 import {
+  caixaTitulo,
+  caixaTituloSeMinusculo,
   chaveEnderecoComparavel,
+  inteiramenteMinusculo,
   normalizarCepEmTexto,
 } from '@/lib/formatar-endereco'
 
@@ -53,6 +56,8 @@ export type TimelineData = {
   local: string
   estilo?: TimelineEstilo
   eventos: TimelineEvento[]
+  /** Sexo da criança (masculino/feminino) — flexiona "Nascimento do filho/da filha". */
+  sexoCrianca?: string
 }
 
 export type QuadroRow = { campo: string; valor: string }
@@ -468,6 +473,40 @@ function quadroValorOmitivel(campo: string, valor: string): boolean {
   return false
 }
 
+/** Campos do quadro com nome/local digitado no formulário (caixa de título se vier minúsculo). */
+const CAMPO_QUADRO_NOME_LOCAL_RE =
+  /^(nome|criança|crianca|município|municipio|cidade|bairro|comunidade|povoado|endereço|endereco)\b/i
+
+/**
+ * Endereço/nome da qualificação digitados em minúsculas → caixa de título.
+ * Só altera trechos inteiramente minúsculos (nome antes da 1ª vírgula e cada
+ * parte do endereço após "domiciliado(a) na/no/em"); "nº", "s/n", CEP e
+ * "zona rural" ficam como estão.
+ */
+export function normalizarCaixaQualificacao(texto: string): string {
+  let s = String(texto || '')
+  s = s.replace(/^(\s*)([^,]+)(?=,)/, (_m, sp: string, nome: string) =>
+    `${sp}${caixaTituloSeMinusculo(nome)}`,
+  )
+  s = s.replace(
+    /(domiciliad[oa]\s+(?:na|no|em)\s+)([^,]+(?:,\s*[^,]+){0,8}?)(?=\s*,\s*(?:por\s+interm[eé]dio|por\s+meio|representad|vem\b|neste\s+ato|por\s+seus?))/i,
+    (_m, pre: string, end: string) => {
+      const partes = end.split(/(,\s*)/)
+      const out = partes.map((p) => {
+        if (/^,\s*$/.test(p)) return p
+        const t = p.trim()
+        if (!t) return p
+        if (/^CEP\b/i.test(t) || /^n[º°ª.]/i.test(t) || /^s\/n\.?$/i.test(t)) return p
+        if (/^zona\s+(rural|urbana)$/i.test(t)) return p
+        const novo = caixaTituloSeMinusculo(t)
+        return novo !== t ? p.replace(t, novo) : p
+      })
+      return pre + out.join('')
+    },
+  )
+  return s
+}
+
 function parseQuadro(md: string): QuadroRow[] {
   const rows: QuadroRow[] = []
   for (const line of md.split('\n')) {
@@ -486,6 +525,7 @@ function parseQuadro(md: string): QuadroRow[] {
         /^\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}$/.test(valor) ||
         /^\d{4}-\d{2}-\d{2}/.test(valor)
       if (pareceData) valor = sanitizarDataPeticao(valor)
+      if (CAMPO_QUADRO_NOME_LOCAL_RE.test(campo)) valor = caixaTituloSeMinusculo(valor)
       rows.push({ campo, valor })
       continue
     }
@@ -626,9 +666,19 @@ export function posProcessarPeticaoSmRural(
     enderecoAutor?: string | null
     municipioUf?: string | null
     bairroAutor?: string | null
+    /** Nomes/município como digitados no formulário; se vierem todo em minúsculas, vão para caixa de título. */
+    nomeAutora?: string | null
+    nomeCrianca?: string | null
+    municipioAutor?: string | null
   },
 ): string {
   let out = canonicalizarMarcadoresSm(text)
+  for (const raw of [opts?.nomeAutora, opts?.nomeCrianca, opts?.municipioAutor]) {
+    const v = String(raw || '').trim()
+    if (v.length < 3 || !inteiramenteMinusculo(v)) continue
+    const esc = v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    out = out.replace(new RegExp(`(?<![\\p{L}])${esc}(?![\\p{L}])`, 'gu'), caixaTitulo(v))
+  }
   const sub = String(opts?.subsecaoUf || '').trim()
   if (sub) out = garantirEnderecamentoSubsecao(out, sub)
   out = garantirCitacaoInssNeutra(out)
@@ -943,9 +993,95 @@ function parseTimeline(raw: string): TimelineData | null {
           detalhe: String(e?.detalhe || ''),
         }
       }),
+      ...(json.sexoCrianca ? { sexoCrianca: String(json.sexoCrianca) } : {}),
     }
   } catch {
     return null
+  }
+}
+
+/** Rótulo do evento de nascimento conforme o sexo da criança (nunca "do(a) filho(a)"). */
+export function tituloNascimentoCrianca(sexoCriancaRaw?: string | null): string {
+  const sexo = normalizarSexoParteAutora(sexoCriancaRaw)
+  if (sexo === 'masculino') return 'Nascimento do filho'
+  if (sexo === 'feminino') return 'Nascimento da filha'
+  return 'Nascimento da criança'
+}
+
+function manterCaixaInicial(orig: string, novo: string): string {
+  const c = orig.charAt(0)
+  return c && c === c.toLocaleUpperCase('pt-BR') && c !== c.toLocaleLowerCase('pt-BR')
+    ? novo.charAt(0).toLocaleUpperCase('pt-BR') + novo.slice(1)
+    : novo
+}
+
+/** Troca formas "(a)" referentes à criança pela forma flexionada. */
+export function flexionarGeneroCriancaTexto(
+  texto: string,
+  sexoCriancaRaw?: string | null,
+): string {
+  const sexo = normalizarSexoParteAutora(sexoCriancaRaw)
+  const M = sexo === 'masculino'
+  const F = sexo === 'feminino'
+  return String(texto || '')
+    .replace(/\b(d|n)o\(a\)\s+filho\(a\)/gi, (m, p: string) =>
+      manterCaixaInicial(m, `${p.toLowerCase()}${M ? 'o filho' : F ? 'a filha' : 'a criança'}`),
+    )
+    .replace(/\bo\(a\)\s+filho\(a\)/gi, (m) =>
+      manterCaixaInicial(m, M ? 'o filho' : F ? 'a filha' : 'a criança'),
+    )
+    .replace(/\bfilho\(a\)/gi, (m) => manterCaixaInicial(m, M ? 'filho' : F ? 'filha' : 'criança'))
+    .replace(/\bnascido\(a\)/gi, (m) =>
+      M || F ? manterCaixaInicial(m, M ? 'nascido' : 'nascida') : m,
+    )
+}
+
+/**
+ * Infere o sexo da criança pelo texto já flexionado pela IA (síntese, provas, quadro):
+ * só "filho/nascido" → masculino; só "filha/nascida" → feminino; senão indefinido.
+ */
+export function inferirSexoCriancaDoTexto(texto: string): 'masculino' | 'feminino' | '' {
+  const s = String(texto || '')
+  const masc = (s.match(/\b(?:filho|nascido)\b(?!\s*\()/gi) || []).length
+  const fem = (s.match(/\b(?:filha|nascida)\b(?!\s*\()/gi) || []).length
+  if (masc > 0 && fem === 0) return 'masculino'
+  if (fem > 0 && masc === 0) return 'feminino'
+  return ''
+}
+
+function textoInferenciaSexoCrianca(
+  sinteseAntes: string,
+  sinteseDepois: string,
+  provas: string[],
+  quadro: QuadroRow[],
+): string {
+  return [
+    sinteseAntes,
+    sinteseDepois,
+    ...provas,
+    ...quadro.map((r) => `${r.campo} ${r.valor}`),
+  ].join('\n')
+}
+
+/** Normaliza a timeline para render (PDF, PNG do DOCX e tabela de reserva). */
+function prepararTimelineRender(
+  timeline: TimelineData,
+  textoInferencia: string,
+): TimelineData {
+  const sexo =
+    normalizarSexoParteAutora(timeline.sexoCrianca) || inferirSexoCriancaDoTexto(textoInferencia)
+  return {
+    ...timeline,
+    nome: caixaTituloSeMinusculo(timeline.nome),
+    local: caixaTituloSeMinusculo(timeline.local),
+    eventos: timeline.eventos.map((ev) => ({
+      ...ev,
+      titulo: flexionarGeneroCriancaTexto(ev.titulo, sexo),
+      detalhe: flexionarGeneroCriancaTexto(ev.detalhe || '', sexo).replace(
+        /^(Criança:\s*)(.+)$/i,
+        (_m, pre: string, nome: string) => `${pre}${caixaTituloSeMinusculo(nome)}`,
+      ),
+    })),
   }
 }
 
@@ -965,8 +1101,10 @@ export function sugerirEventosTimeline(
   if ((form.data_nascimento_crianca || '').trim()) {
     evs.push({
       data: sanitizarDataPeticao(form.data_nascimento_crianca.trim()),
-      titulo: 'Nascimento do(a) filho(a)',
-      detalhe: form.nome_crianca ? `Criança: ${form.nome_crianca}` : '',
+      titulo: tituloNascimentoCrianca(form.sexo_crianca),
+      detalhe: form.nome_crianca
+        ? `Criança: ${caixaTituloSeMinusculo(form.nome_crianca.trim())}`
+        : '',
     })
   }
   if ((form.data_requerimento || '').trim()) {
@@ -1000,13 +1138,9 @@ export function montarTimelineDataPadrao(
   form: Record<string, string>,
   estilo: TimelineEstilo = 'horizontal',
 ): TimelineData {
-  const cidade = (
-    form.autor_municipio ||
-    form.municipio ||
-    form.cidade ||
-    form.city ||
-    ''
-  ).trim()
+  const cidade = caixaTitulo(
+    (form.autor_municipio || form.municipio || form.cidade || form.city || '').trim(),
+  )
   const uf = (
     form.autor_uf ||
     form.estado ||
@@ -1026,12 +1160,14 @@ export function montarTimelineDataPadrao(
     form.sexo_parte_autora || form.sexo_autor || form.sexo || ''
   const atividadeRaw =
     form.atividade || form.ocupacao || form.profession || form.profissao || ''
+  const sexoCrianca = normalizarSexoParteAutora(form.sexo_crianca)
   return {
-    nome: (form.nome || 'AUTORA').trim() || 'AUTORA',
+    nome: caixaTituloSeMinusculo((form.nome || 'AUTORA').trim()) || 'AUTORA',
     atividade: flexionarAtividadeTimeline(atividadeRaw, sexo),
     local,
     estilo,
     eventos: sugerirEventosTimeline(form),
+    ...(sexoCrianca ? { sexoCrianca } : {}),
   }
 }
 
@@ -1045,6 +1181,7 @@ export function injetarTimelineNoTexto(text: string, data: TimelineData): string
       local: data.local,
       estilo: data.estilo || 'horizontal',
       eventos: data.eventos,
+      ...(data.sexoCrianca ? { sexoCrianca: data.sexoCrianca } : {}),
     },
     null,
     2,
@@ -1303,7 +1440,7 @@ export function renderTimelineSvg(data: TimelineData): string {
   })
 
   return `
-    <div class="sm-timeline keep-together" data-pdf-block="1" data-pdf-keep="1" style="page-break-inside:avoid;break-inside:avoid;overflow:visible;overflow-x:visible;width:100%;box-sizing:border-box;">
+    <div class="sm-timeline keep-together" data-pdf-block="atomic" data-pdf-nome="linha do tempo" style="page-break-inside:avoid;break-inside:avoid;overflow:visible;overflow-x:visible;width:100%;box-sizing:border-box;">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="100%" height="${h}" overflow="visible" style="overflow:visible;" role="img" aria-label="${escapar(title)}">
         <rect x="0" y="0" width="${w}" height="${h}" rx="12" ry="12" fill="#EEF1F5" stroke="#D0D7E2"/>
         <text x="16" y="24" fill="#0A2540" font-size="${titleSize + 2}" font-family="Arial,sans-serif" font-weight="700">${escapar(truncarLabelTimeline(title, 90))}</text>
@@ -1332,7 +1469,7 @@ export function renderTimelineVertical(data: TimelineData): string {
     .join('')
 
   return `
-    <div class="sm-timeline sm-timeline-vertical keep-together" data-pdf-block="1" data-pdf-keep="1" style="page-break-inside:avoid;break-inside:avoid;">
+    <div class="sm-timeline sm-timeline-vertical keep-together" data-pdf-block="atomic" data-pdf-nome="linha do tempo" style="page-break-inside:avoid;break-inside:avoid;">
       <div class="sm-tl-title">${escapar(title)}</div>
       <table class="sm-tl-table" cellpadding="0" cellspacing="0">
         <tbody>${items}</tbody>
@@ -1461,34 +1598,38 @@ function metaBoxHtml(
   `
 }
 
-function quadroHtml(rows: QuadroRow[]): string {
+/** Faixa da seção II + cabeçalho + linhas: um único bloco atômico no PDF. */
+function quadroHtml(tituloSecao: string, rows: QuadroRow[]): string {
   const body = rows
     .map(
       (r, i) => `
-      <tr class="${i % 2 === 0 ? 'even' : 'odd'}" data-pdf-block="1">
+      <tr class="${i % 2 === 0 ? 'even' : 'odd'}">
         <td class="campo">${escapar(r.campo)}</td>
         <td class="valor">${escapar(r.valor)}</td>
       </tr>`,
     )
     .join('')
   return `
-    <div class="sm-table-wrap keep-together">
-      <div class="sm-table-caption" data-pdf-block="1" data-pdf-keep-with-next="1">RESUMO DAS PRINCIPAIS INFORMAÇÕES DO PROCESSO</div>
-      <table class="sm-quadro" cellpadding="0" cellspacing="0" width="100%" border="1">
-        <tbody>${body}</tbody>
-      </table>
+    <div class="sm-quadro-bloco keep-together" data-pdf-block="atomic" data-pdf-nome="quadro sinóptico">
+      ${sectionBar(tituloSecao)}
+      <div class="sm-table-wrap">
+        <div class="sm-table-caption" data-pdf-table-header="1">RESUMO DAS PRINCIPAIS INFORMAÇÕES DO PROCESSO</div>
+        <table class="sm-quadro" cellpadding="0" cellspacing="0" width="100%" border="1">
+          <tbody>${body}</tbody>
+        </table>
+      </div>
     </div>
   `
 }
 
 function provasHtml(items: string[]): string {
   return `
-    <div class="sm-provas keep-together">
+    <div class="sm-provas keep-together" data-pdf-block="atomic" data-pdf-nome="lista de provas">
       <table class="sm-provas-table" cellpadding="0" cellspacing="0" width="100%">
         ${items
           .map(
             (it, i) => `
-          <tr class="${i % 2 === 0 ? 'even' : 'odd'}" data-pdf-block="1">
+          <tr class="${i % 2 === 0 ? 'even' : 'odd'}">
             <td class="sm-check">✓</td>
             <td class="sm-prova-txt">${escapar(it)}</td>
           </tr>`,
@@ -1645,13 +1786,16 @@ function assinaturasHtml(adv: DadosAdvogadoPeticao, fechamentoRaw: string): stri
     .replace(/^[A-Za-zÀ-ÿ ].*\/[A-Z]{2},?\s+\d{1,2}\s+de\s+\w+.*/gim, '')
     .trim()
 
+  // Parágrafos de encerramento = blocos independentes; só local/data + assinatura é indivisível.
   return `
     <div class="sm-fechamento">
       ${parasHtml(body)}
-      <p class="sm-local-data">${escapar(localData)}.</p>
-      <table class="sm-sign-row" cellpadding="0" cellspacing="0" width="100%">
-        <tr>${cards.replace(/class="sm-sign-card"/g, `class="sm-sign-card"${nCards === 1 ? ' style="width:100%;"' : ''}`)}</tr>
-      </table>
+      <div class="sm-assinatura-bloco keep-together" data-pdf-block="1" data-pdf-keep="1" style="page-break-inside:avoid;break-inside:avoid;">
+        <p class="sm-local-data">${escapar(localData)}.</p>
+        <table class="sm-sign-row" cellpadding="0" cellspacing="0" width="100%">
+          <tr>${cards.replace(/class="sm-sign-card"/g, `class="sm-sign-card"${nCards === 1 ? ' style="width:100%;"' : ''}`)}</tr>
+        </table>
+      </div>
     </div>
   `
 }
@@ -1840,7 +1984,10 @@ export function extrairConteudoSmRural(opts: {
 
   if (timeline) {
     timeline = {
-      ...timeline,
+      ...prepararTimelineRender(
+        timeline,
+        textoInferenciaSexoCrianca(sinteseAntes, sinteseDepois, provas, quadro),
+      ),
       atividade: alinharAtividadeTimeline(
         timeline.atividade,
         opts.sexoParteAutora,
@@ -1869,7 +2016,7 @@ export function extrairConteudoSmRural(opts: {
   return {
     meta,
     enderecoTexto,
-    qualificacao: limparRgNaQualificacao(qualificacao || ''),
+    qualificacao: normalizarCaixaQualificacao(limparRgNaQualificacao(qualificacao || '')),
     titulo: titulo.replace(/\s*SALÁRIO-MATERNIDADE\s*/gi, ' SALÁRIO-MATERNIDADE ').trim(),
     subtitulo,
     emFace: normalizarCitacaoInss(emFace || ''),
@@ -2492,7 +2639,9 @@ export function montarHtmlSmRural(opts: {
     ),
   )
 
-  const qualificacaoLimpa = limparRgNaQualificacao(qualificacao || '')
+  const qualificacaoLimpa = normalizarCaixaQualificacao(
+    limparRgNaQualificacao(qualificacao || ''),
+  )
   const emFaceLimpo = normalizarCitacaoInss(emFace || '')
 
   let tituloBruto = ''
@@ -2504,7 +2653,10 @@ export function montarHtmlSmRural(opts: {
 
   if (timeline) {
     timeline = {
-      ...timeline,
+      ...prepararTimelineRender(
+        timeline,
+        textoInferenciaSexoCrianca(sinteseAntes, sinteseDepois, provas, quadro),
+      ),
       atividade: alinharAtividadeTimeline(
         timeline.atividade,
         opts.sexoParteAutora,
@@ -2533,15 +2685,14 @@ export function montarHtmlSmRural(opts: {
   const corpo = `
     <div data-pdf-block="1">${cabecalhoSm(opts.adv)}</div>
     <div class="sm-endereco" data-pdf-block="1">${escapar(enderecoTexto)}</div>
-    <div data-pdf-block="1">${metaBoxHtml(meta.tipoAcao, meta.juizoDigital, meta.prioridades)}</div>
+    <div data-pdf-block="atomic" data-pdf-nome="prioridade legal">${metaBoxHtml(meta.tipoAcao, meta.juizoDigital, meta.prioridades)}</div>
     ${parasHtml(qualificacaoLimpa, 'sm-para-qualif')}
     <div class="sm-main-title" data-pdf-block="1" data-pdf-keep-with-next="1">${tituloHtml}</div>
     <div class="sm-sub-title" data-pdf-block="1">${escapar(subtitulo)}</div>
     ${parasHtml(emFaceLimpo)}
     ${sectionBar('I – PRELIMINARMENTE')}
     ${preliminaresHtml}
-    ${sectionBar('II – QUADRO SINÓPTICO')}
-    ${quadroHtml(quadro)}
+    ${quadroHtml('II – QUADRO SINÓPTICO', quadro)}
     ${sectionBar('III – SÍNTESE DO CONTEXTO FÁTICO')}
     ${parasHtml(sinteseAntesLimpa)}
     ${temTimeline ? timelineHtml : ''}
@@ -2556,10 +2707,12 @@ export function montarHtmlSmRural(opts: {
       ${pedidosHtml(pedidosP4.length ? pedidosP4 : pedidosAll, true)}
       ${pedidosP5.length ? pedidosHtml(pedidosP5, false) : ''}
     </div>
-    <div class="sm-fecho-bloco keep-together" data-pdf-block="1" data-pdf-keep="1" style="margin-top:0;overflow:visible;height:auto;page-break-inside:avoid;break-inside:avoid;">
+    <div class="sm-fecho-bloco" style="margin-top:0;overflow:visible;height:auto;">
       ${assinaturas}
-      ${planilhaHtml(planilha, dataParto)}
-      ${notaDocumentoGeradoHtml()}
+      <div class="sm-anexo-bloco keep-together" data-pdf-block="atomic" data-pdf-nome="planilha de cálculo" style="page-break-inside:avoid;break-inside:avoid;">
+        ${planilhaHtml(planilha, dataParto)}
+        ${notaDocumentoGeradoHtml()}
+      </div>
     </div>
   `
 

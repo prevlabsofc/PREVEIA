@@ -116,8 +116,9 @@ function run(
 /* ajustar espaçamento em volta de tabelas sem parágrafos vazios.     */
 /* ------------------------------------------------------------------ */
 
+/** Nunca há duas tabelas seguidas: faixas de seção são parágrafos (o Word fundiria tabelas adjacentes). */
 type BodyItem =
-  | { t: 'p'; o: IParagraphOptions; sep?: boolean }
+  | { t: 'p'; o: IParagraphOptions }
   | { t: 'tbl'; el: Table; gapBefore: number; gapAfter: number }
 
 class BodyBuilder {
@@ -143,20 +144,10 @@ class BodyBuilder {
   }
 
   build(): (Paragraph | Table)[] {
-    const items: BodyItem[] = []
-    for (const it of this.items) {
-      const prev = items[items.length - 1]
-      if (it.t === 'tbl' && prev?.t === 'tbl') {
-        // Duas <w:tbl> seguidas são fundidas pelo Word; precisa de um <w:p> entre elas.
-        const sepAfter = Math.max(0, it.gapBefore - SEP_LINE)
-        items.push({ t: 'p', o: separadorTabelas(sepAfter), sep: true })
-      }
-      items.push(it)
-    }
-
+    const items = this.items
     for (let i = 0; i < items.length; i++) {
       const it = items[i]
-      if (it.t !== 'p' || it.sep) continue
+      if (it.t !== 'p') continue
       const prev = items[i - 1]
       const next = items[i + 1]
       const sp = { ...(it.o.spacing || {}) }
@@ -169,16 +160,6 @@ class BodyBuilder {
   }
 }
 
-const SEP_LINE = 120
-
-function separadorTabelas(after: number): IParagraphOptions {
-  return {
-    keepNext: true,
-    spacing: { before: 0, after, line: SEP_LINE, lineRule: LineRuleType.EXACT },
-    children: [new TextRun({ text: '', size: 2 })],
-  }
-}
-
 function optsCorpo(
   text: string,
   opts: { indent?: boolean; spacingAfter?: number; bold?: boolean } = {},
@@ -186,6 +167,7 @@ function optsCorpo(
   return {
     alignment: AlignmentType.BOTH,
     keepLines: true,
+    widowControl: true,
     spacing: {
       after: opts.spacingAfter ?? 160,
       line: LINE_15,
@@ -206,46 +188,44 @@ function parasDeTexto(b: BodyBuilder, raw: string) {
     .forEach((l) => b.p(optsCorpo(l)))
 }
 
-/** Faixa de seção: tabela 1×1 azul, sem bordas; keepNext no parágrafo da célula. */
-function sectionBar(title: string): Table {
-  return new Table({
-    width: { size: CONTENT_W, type: WidthType.DXA },
-    columnWidths: [CONTENT_W],
-    layout: TableLayoutType.FIXED,
-    borders: {
-      ...noBorders,
-      insideHorizontal: noBorder,
-      insideVertical: noBorder,
+/** Folga interna da faixa (pt): bordas na cor do fundo funcionam como padding. */
+const BAR_PAD_X_PT = 6
+const BAR_PAD_Y_PT = 3
+
+/**
+ * Faixa de seção: parágrafo com fundo azul e bordas da mesma cor (padding),
+ * ocupando a largura útil. Parágrafo (não tabela) para nunca ficar colado a
+ * outra tabela — o Word funde tabelas adjacentes.
+ */
+function sectionBar(title: string): IParagraphOptions {
+  const bd = (space: number): IBorderOptions => ({
+    style: BorderStyle.SINGLE,
+    size: 6,
+    color: BLUE,
+    space,
+  })
+  const padX = BAR_PAD_X_PT * 20
+  return {
+    alignment: AlignmentType.LEFT,
+    keepNext: true,
+    keepLines: true,
+    spacing: { before: 280, after: 160 },
+    indent: { left: padX, right: padX, firstLine: 0 },
+    shading: { type: 'clear', fill: BLUE, color: 'auto' },
+    border: {
+      top: bd(BAR_PAD_Y_PT),
+      bottom: bd(BAR_PAD_Y_PT),
+      left: bd(BAR_PAD_X_PT),
+      right: bd(BAR_PAD_X_PT),
     },
-    rows: [
-      new TableRow({
-        cantSplit: true,
-        children: [
-          new TableCell({
-            width: { size: CONTENT_W, type: WidthType.DXA },
-            borders: noBorders,
-            shading: { type: 'clear', fill: BLUE, color: 'auto' },
-            margins: { left: 120, right: 120, top: 60, bottom: 60 },
-            children: [
-              new Paragraph({
-                alignment: AlignmentType.LEFT,
-                keepNext: true,
-                keepLines: true,
-                spacing: { before: 0, after: 0 },
-                children: [
-                  run(title.trim().toUpperCase(), {
-                    bold: true,
-                    size: SIZE,
-                    color: 'FFFFFF',
-                  }),
-                ],
-              }),
-            ],
-          }),
-        ],
+    children: [
+      run(title.trim().toUpperCase(), {
+        bold: true,
+        size: SIZE,
+        color: 'FFFFFF',
       }),
     ],
-  })
+  }
 }
 
 /** Subtítulo preliminar: negrito, esquerda, sem recuo (todos os "DA …:"). */
@@ -646,7 +626,6 @@ function metaBox(c: ConteudoSmRural): Table {
   const chk = (on: boolean) => (on ? '(X)' : '( )')
   const p = c.meta.prioridades
   const innerW = Math.round(width * 0.54)
-  const spacerW = width - innerW
   const lines = [
     c.meta.tipoAcao || 'SALÁRIO MATERNIDADE - SEGURADO ESPECIAL',
     c.meta.juizoDigital !== false ? 'JUÍZO 100% DIGITAL' : '',
@@ -656,19 +635,16 @@ function metaBox(c: ConteudoSmRural): Table {
     `${chk(p.menor)} Menor nos termos do ECA – Lei 8.069/1990;`,
   ].filter(Boolean)
 
+  // Box alinhado à direita (sem célula espaçadora vazia à esquerda).
   return new Table({
-    width: { size: width, type: WidthType.DXA },
-    columnWidths: [spacerW, innerW],
+    width: { size: innerW, type: WidthType.DXA },
+    columnWidths: [innerW],
     layout: TableLayoutType.FIXED,
+    alignment: AlignmentType.RIGHT,
     rows: [
       new TableRow({
         cantSplit: true,
         children: [
-          new TableCell({
-            width: { size: spacerW, type: WidthType.DXA },
-            borders: noBorders,
-            children: [new Paragraph({ children: [] })],
-          }),
           new TableCell({
             width: { size: innerW, type: WidthType.DXA },
             borders: {
@@ -727,7 +703,6 @@ async function buildBody(
   pngCliente?: TimelinePngCliente | null,
 ): Promise<(Paragraph | Table)[]> {
   const b = new BodyBuilder()
-  const barGap = { before: 280, after: 160 }
 
   b.p({
     alignment: AlignmentType.BOTH,
@@ -757,34 +732,35 @@ async function buildBody(
 
   parasDeTexto(b, c.emFace)
 
-  b.table(sectionBar('I – PRELIMINARMENTE'), barGap)
+  b.p(sectionBar('I – PRELIMINARMENTE'))
   for (const pre of c.preliminares) {
     if (pre.titulo) b.p(subheadPreliminar(pre.titulo))
     parasDeTexto(b, pre.corpo)
   }
 
-  b.table(sectionBar('II – QUADRO SINÓPTICO'), barGap)
+  b.p(sectionBar('II – QUADRO SINÓPTICO'))
   b.table(tabelaDuasColunas('RESUMO DAS PRINCIPAIS INFORMAÇÕES DO PROCESSO', c.quadro))
 
-  b.table(sectionBar('III – SÍNTESE DO CONTEXTO FÁTICO'), barGap)
+  b.p(sectionBar('III – SÍNTESE DO CONTEXTO FÁTICO'))
   parasDeTexto(b, c.sinteseAntes)
   await blocosTimeline(b, c.timeline, pngCliente)
   parasDeTexto(b, c.sinteseDepois)
 
-  b.table(sectionBar('IV – DAS PROVAS JUNTADAS AOS AUTOS'), barGap)
+  b.p(sectionBar('IV – DAS PROVAS JUNTADAS AOS AUTOS'))
   const provasTable = tabelaProvas(c.provas)
   if (provasTable) b.table(provasTable)
   parasDeTexto(b, c.provasFecho)
 
-  b.table(sectionBar('V – FUNDAMENTAÇÃO JURÍDICA'), barGap)
+  b.p(sectionBar('V – FUNDAMENTAÇÃO JURÍDICA'))
   parasDeTexto(b, c.fundamentacao)
 
-  b.table(sectionBar('VI – PEDIDO / REQUERIMENTOS'), barGap)
+  b.p(sectionBar('VI – PEDIDO / REQUERIMENTOS'))
   b.p(optsCorpo('Diante do exposto, requer:', { indent: false }))
   for (const ped of c.pedidos) {
     b.p({
       alignment: AlignmentType.BOTH,
       keepLines: true,
+      widowControl: true,
       spacing: { after: 120, line: LINE_15, lineRule: LineRuleType.AUTO },
       children: [run(limparMarkdownResidual(ped))],
     })
@@ -1010,6 +986,12 @@ export async function montarDocxSmRural(opts: {
 
   const doc = new Document({
     styles: {
+      default: {
+        document: {
+          run: { font: FONT, size: SIZE },
+          paragraph: { widowControl: true } as IParagraphStylePropertiesOptions,
+        },
+      },
       paragraphStyles: [
         {
           id: 'Normal',
