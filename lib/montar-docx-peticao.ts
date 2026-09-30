@@ -27,7 +27,10 @@ import {
   isSmRuralStructured,
   textoRodapeSm,
 } from '@/lib/peticao-sm-rural'
-import { montarDocxSmRural } from '@/lib/peticao-sm-rural-docx'
+import {
+  type TimelinePngCliente,
+  montarDocxSmRural,
+} from '@/lib/peticao-sm-rural-docx'
 
 const FONT = 'Times New Roman'
 
@@ -168,6 +171,7 @@ export async function montarDocxPeticao(opts: {
   estilo?: EstiloPeticao
   agentType?: string | null
   sexoParteAutora?: string | null
+  timelinePng?: TimelinePngCliente | null
 }): Promise<Buffer> {
   const useSm =
     opts.agentType === AGENT_SM_RURAL || isSmRuralStructured(opts.text)
@@ -177,6 +181,7 @@ export async function montarDocxPeticao(opts: {
       text: opts.text,
       adv: opts.adv,
       sexoParteAutora: opts.sexoParteAutora,
+      timelinePng: opts.timelinePng,
     })
     if (dedicated) return dedicated
   }

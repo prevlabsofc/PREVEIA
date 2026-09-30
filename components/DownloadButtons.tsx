@@ -21,7 +21,11 @@ import {
 } from '@/lib/pdf-paginacao'
 import { montarHtmlPeticao } from '@/lib/montar-html-peticao'
 import {
+  AGENT_SM_RURAL,
   ERRO_GERACAO_INTERROMPIDA,
+  extrairConteudoSmRural,
+  isSmRuralStructured,
+  svgTimelineParaRaster,
   textoRodapeSm,
   validarCompletudeSmRural,
 } from '@/lib/peticao-sm-rural'
@@ -211,63 +215,37 @@ async function waitForImages(root: HTMLElement, timeoutMs = 4000): Promise<void>
   )
 }
 
-function desenharRodapesPdf(
-  pdf: InstanceType<typeof jsPDF>,
-  advogado: DadosAdvogadoPeticao,
-) {
-  const pageW = pdf.internal.pageSize.getWidth()
-  const total = pdf.getNumberOfPages()
-  const leftTxt = textoRodapeSm(advogado)
-
-  for (let i = 1; i <= total; i++) {
-    pdf.setPage(i)
-    const pageH = pdf.internal.pageSize.getHeight()
-    const mb = MARGEM_PETICAO_PT.bottom
-    // Apaga qualquer conteúdo que tenha vazado na faixa do rodapé
-    pdf.setFillColor(255, 255, 255)
-    pdf.rect(0, pageH - mb, pageW, mb, 'F')
-
-    const lineY = pageH - mb + 10
-    const textY = lineY + 11
-    pdf.setDrawColor(153, 153, 153)
-    pdf.setLineWidth(0.4)
-    pdf.line(MARGEM_PETICAO_PT.left, lineY, pageW - MARGEM_PETICAO_PT.right, lineY)
-    pdf.setFont('helvetica', 'normal')
-    pdf.setFontSize(8)
-    pdf.setTextColor(85, 85, 85)
-    pdf.text(leftTxt, MARGEM_PETICAO_PT.left, textY)
-    pdf.text(`Pág. ${i}`, pageW - MARGEM_PETICAO_PT.right, textY, { align: 'right' })
-  }
-}
-
 /**
- * Fatia o canvas nos limites de página pré-calculados (paginação por blocos).
- * Margens laterais/superior estão no HTML; jsPDF desenha só o rodapé.
+ * Fatia o canvas nos limites de página e monta páginas A4 completas
+ * (conteúdo + rodapé embutidos na imagem).
  */
 function adicionarCanvasAoPdf(
   pdf: InstanceType<typeof jsPDF>,
   canvas: HTMLCanvasElement,
   slices: { y: number; h: number }[],
-) {
+  advogado: DadosAdvogadoPeticao,
+): void {
   const pageW = pdf.internal.pageSize.getWidth()
   const pageHFull = pdf.internal.pageSize.getHeight()
   const mb = MARGEM_PETICAO_PT.bottom
   const usableH = pageHFull - mb
   const pxPerPt = canvas.width / pageW
+  const fullPagePxH = Math.round(pageHFull * pxPerPt)
+  const leftTxt = textoRodapeSm(advogado)
 
   const list =
     slices.length > 0
       ? slices
       : [{ y: 0, h: canvas.height }]
 
-  list.forEach((slice, pageIdx) => {
-    if (slice.h < 4) return
+  const contentSlices = list.filter((slice) => slice.h >= 4)
+  contentSlices.forEach((slice, pageIdx) => {
     const slicePtH = Math.min(usableH, slice.h / pxPerPt)
     if (pageIdx > 0) pdf.addPage()
 
     const pageCanvas = document.createElement('canvas')
     pageCanvas.width = canvas.width
-    pageCanvas.height = slice.h
+    pageCanvas.height = fullPagePxH
     const ctx = pageCanvas.getContext('2d')
     if (!ctx) return
     ctx.fillStyle = '#ffffff'
@@ -281,11 +259,30 @@ function adicionarCanvasAoPdf(
       0,
       0,
       canvas.width,
-      slice.h,
+      Math.round(slicePtH * pxPerPt),
     )
 
+    // Rodapé na imagem da página
+    const lineY = Math.round((pageHFull - mb + 10) * pxPerPt)
+    const textY = lineY + Math.round(11 * pxPerPt)
+    const leftPx = Math.round(MARGEM_PETICAO_PT.left * pxPerPt)
+    const rightPx = Math.round((pageW - MARGEM_PETICAO_PT.right) * pxPerPt)
+    ctx.strokeStyle = '#999999'
+    ctx.lineWidth = Math.max(1, Math.round(0.4 * pxPerPt))
+    ctx.beginPath()
+    ctx.moveTo(leftPx, lineY)
+    ctx.lineTo(rightPx, lineY)
+    ctx.stroke()
+    ctx.fillStyle = '#555555'
+    ctx.font = `${Math.round(8 * pxPerPt)}px Helvetica, Arial, sans-serif`
+    ctx.textBaseline = 'alphabetic'
+    ctx.textAlign = 'left'
+    ctx.fillText(leftTxt, leftPx, textY)
+    ctx.textAlign = 'right'
+    ctx.fillText(`Pág. ${pageIdx + 1}`, rightPx, textY)
+
     const imgData = pageCanvas.toDataURL('image/jpeg', 0.92)
-    pdf.addImage(imgData, 'JPEG', 0, 0, pageW, slicePtH)
+    pdf.addImage(imgData, 'JPEG', 0, 0, pageW, pageHFull)
   })
 }
 
@@ -469,8 +466,7 @@ async function gerarPdfBlob(
     )
 
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' })
-    adicionarCanvasAoPdf(pdf, finalCanvas, slices)
-    desenharRodapesPdf(pdf, advComLogo)
+    adicionarCanvasAoPdf(pdf, finalCanvas, slices, advComLogo)
 
     return pdf.output('blob')
   } finally {
@@ -479,6 +475,59 @@ async function gerarPdfBlob(
   }
 }
 
+/**
+ * Rasteriza a timeline horizontal SM (mesmo SVG do PDF) em PNG 2x no navegador,
+ * para o DOCX receber imagem sem depender de rasterização no servidor.
+ */
+async function rasterizarTimelineSmPng(
+  text: string,
+  advogado: DadosAdvogadoPeticao,
+  agentType: string | null,
+): Promise<{ timelinePngBase64: string; timelineWidthPx: number; timelineHeightPx: number } | null> {
+  if (agentType !== AGENT_SM_RURAL && !isSmRuralStructured(text)) return null
+  const timeline = extrairConteudoSmRural({ text, adv: advogado })?.timeline
+  if (!timeline || timeline.estilo === 'none' || timeline.estilo === 'vertical') return null
+  if (!timeline.eventos?.length) return null
+
+  const prepared = svgTimelineParaRaster(timeline, 1200)
+  if (!prepared) return null
+  const { width, height } = prepared
+
+  const doc = new DOMParser().parseFromString(prepared.svg, 'image/svg+xml')
+  const svgEl = doc.documentElement
+  if (!svgEl || svgEl.nodeName.toLowerCase() !== 'svg') return null
+  svgEl.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+  svgEl.setAttribute('width', String(width))
+  svgEl.setAttribute('height', String(height))
+  const svgStr = new XMLSerializer().serializeToString(svgEl)
+
+  const url = URL.createObjectURL(new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' }))
+  try {
+    const img = new Image()
+    img.decoding = 'async'
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve()
+      img.onerror = () => reject(new Error('Falha ao carregar SVG da timeline'))
+      img.src = url
+    })
+    const scale = 2
+    const canvas = document.createElement('canvas')
+    canvas.width = width * scale
+    canvas.height = height * scale
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+    return {
+      timelinePngBase64: canvas.toDataURL('image/png'),
+      timelineWidthPx: canvas.width,
+      timelineHeightPx: canvas.height,
+    }
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
 
 export function DownloadButtons({
   text,
@@ -642,6 +691,13 @@ export function DownloadButtons({
         estiloArg ?? estiloOverride ?? advogado.estilo_peticao,
       )
 
+      let timelinePng: Awaited<ReturnType<typeof rasterizarTimelineSmPng>> = null
+      try {
+        timelinePng = await rasterizarTimelineSmPng(text, advogado, agentType)
+      } catch (err) {
+        console.error('Falha ao rasterizar timeline para o DOCX:', err)
+      }
+
       const res = await fetch('/api/gerar-documento-docx', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -651,6 +707,7 @@ export function DownloadButtons({
           estilo,
           agentType,
           fileName,
+          ...(timelinePng || {}),
         }),
       })
 

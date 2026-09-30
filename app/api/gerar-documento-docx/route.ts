@@ -11,6 +11,37 @@ import {
 
 export const runtime = 'nodejs'
 
+const MAX_TIMELINE_PNG_BYTES = 8 * 1024 * 1024
+
+/** PNG da timeline rasterizado no cliente (opcional). */
+function lerTimelinePng(body: Record<string, unknown>) {
+  const raw =
+    typeof body.timelinePngBase64 === 'string' ? body.timelinePngBase64.trim() : ''
+  if (!raw) return null
+  const b64 = raw.replace(/^data:image\/png;base64,/i, '')
+  const png = new Uint8Array(Buffer.from(b64, 'base64'))
+  const isPng =
+    png.length > 24 &&
+    png[0] === 0x89 &&
+    png[1] === 0x50 &&
+    png[2] === 0x4e &&
+    png[3] === 0x47
+  if (!isPng || png.length > MAX_TIMELINE_PNG_BYTES) {
+    console.error(
+      '[gerar-documento-docx] timelinePngBase64 inválido ou grande demais; ignorado.',
+      { bytes: png.length, isPng },
+    )
+    return null
+  }
+  const num = (v: unknown) =>
+    typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined
+  return {
+    png,
+    widthPx: num(body.timelineWidthPx),
+    heightPx: num(body.timelineHeightPx),
+  }
+}
+
 export async function POST(request: Request) {
   try {
     let body: Record<string, unknown>
@@ -58,6 +89,7 @@ export async function POST(request: Request) {
       estilo,
       agentType,
       sexoParteAutora,
+      timelinePng: lerTimelinePng(body),
     })
 
     const safeName = fileName.replace(/[^\w\-À-ÿ]+/gi, '_').slice(0, 80)

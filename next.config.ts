@@ -10,6 +10,8 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname),
   },
+  // sharp: rasterização opcional da timeline no DOCX SM Rural
+  serverExternalPackages: ['sharp', '@resvg/resvg-js'],
 };
 
 export default nextConfig;
