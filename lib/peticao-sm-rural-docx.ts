@@ -280,11 +280,19 @@ function linhaCaption(text: string, span: number): TableRow {
   })
 }
 
+/**
+ * O Word só mantém uma tabela inteira na página se os parágrafos de todas as
+ * linhas (menos a última) tiverem keepNext; cantSplit sozinho só protege a linha.
+ */
+function keepNextDaLinha(i: number, total: number, ultimaComNext = false): boolean {
+  return i < total - 1 || ultimaComNext
+}
+
 /** Tabela 2 colunas com a legenda (caption) como linha de cabeçalho repetível. */
 function tabelaDuasColunas(
   caption: string,
   rows: QuadroRow[],
-  opts: { highlightTotal?: boolean } = {},
+  opts: { highlightTotal?: boolean; ultimaComNext?: boolean } = {},
 ): Table {
   const width = CONTENT_W
   const colA = Math.round(width * 0.42)
@@ -298,6 +306,7 @@ function tabelaDuasColunas(
       ...rows.map((r, i) => {
         const isTotal = opts.highlightTotal && /^total$/i.test(r.campo)
         const fill = isTotal ? GOLD : i % 2 === 0 ? 'F5F5F5' : 'FFFFFF'
+        const keepNext = keepNextDaLinha(i, rows.length, opts.ultimaComNext)
         return new TableRow({
           cantSplit: true,
           children: [
@@ -307,6 +316,8 @@ function tabelaDuasColunas(
               shading: { type: 'clear', fill, color: 'auto' },
               children: [
                 new Paragraph({
+                  keepNext,
+                  keepLines: true,
                   children: [run(r.campo, { bold: true, size: 22 })],
                 }),
               ],
@@ -317,6 +328,8 @@ function tabelaDuasColunas(
               shading: { type: 'clear', fill, color: 'auto' },
               children: [
                 new Paragraph({
+                  keepNext,
+                  keepLines: true,
                   alignment: opts.highlightTotal
                     ? AlignmentType.RIGHT
                     : AlignmentType.LEFT,
@@ -362,13 +375,15 @@ function tabelaTimelineFallback(data: TimelineData): Table {
         }),
       ],
     })
-  const bodyCell = (txt: string, w: number, fill: string, bold = false) =>
+  const bodyCell = (txt: string, w: number, fill: string, bold: boolean, keepNext: boolean) =>
     new TableCell({
       width: { size: w, type: WidthType.DXA },
       borders: thinBorders,
       shading: { type: 'clear', fill, color: 'auto' },
       children: [
         new Paragraph({
+          keepNext,
+          keepLines: true,
           children: [run(limparMarkdownResidual(txt), { bold, size: 18 })],
         }),
       ],
@@ -414,12 +429,13 @@ function tabelaTimelineFallback(data: TimelineData): Table {
       }),
       ...eventos.map((ev, i) => {
         const fill = i % 2 === 0 ? 'F5F5F5' : 'FFFFFF'
+        const keepNext = keepNextDaLinha(i, eventos.length)
         return new TableRow({
           cantSplit: true,
           children: [
-            bodyCell(ev.data || '—', colA, fill),
-            bodyCell(ev.titulo || '', colB, fill, true),
-            bodyCell(ev.detalhe || '', colC, fill),
+            bodyCell(ev.data || '—', colA, fill, false, keepNext),
+            bodyCell(ev.titulo || '', colB, fill, true, keepNext),
+            bodyCell(ev.detalhe || '', colC, fill, false, keepNext),
           ],
         })
       }),
@@ -598,6 +614,7 @@ function tabelaProvas(items: ItemProvaSm[]): Table | null {
     layout: TableLayoutType.FIXED,
     rows: items.map((item, i) => {
       const fill = i % 2 === 0 ? 'F5F5F5' : 'FFFFFF'
+      const keepNext = keepNextDaLinha(i, items.length)
       return new TableRow({
         cantSplit: true,
         children: [
@@ -608,6 +625,8 @@ function tabelaProvas(items: ItemProvaSm[]): Table | null {
             verticalAlign: VerticalAlignTable.CENTER,
             children: [
               new Paragraph({
+                keepNext,
+                keepLines: true,
                 alignment: AlignmentType.CENTER,
                 spacing: { before: 60, after: 60 },
                 children: [run('✓', { bold: true, size: 22, color: '15803D' })],
@@ -620,6 +639,8 @@ function tabelaProvas(items: ItemProvaSm[]): Table | null {
             shading: { type: 'clear', fill, color: 'auto' },
             children: [
               new Paragraph({
+                keepNext,
+                keepLines: true,
                 spacing: { before: 60, after: 60 },
                 children: [
                   run(item.nome, { bold: true, size: 22 }),
@@ -670,6 +691,8 @@ function metaBox(c: ConteudoSmRural): Table {
             children: lines.map(
               (line, i) =>
                 new Paragraph({
+                  keepNext: i < lines.length - 1,
+                  keepLines: true,
                   spacing: { after: 40 },
                   children: [
                     run(line, {
@@ -721,6 +744,7 @@ async function buildBody(
   b.p({
     alignment: AlignmentType.BOTH,
     keepNext: true,
+    keepLines: true,
     spacing: { before: 200, after: 200, line: 276 },
     children: [run(c.enderecoTexto.toUpperCase(), { bold: true })],
   })
@@ -780,7 +804,54 @@ async function buildBody(
     })
   }
 
-  parasDeTexto(b, c.fechamentoExtra)
+  // Anexo (planilha + nota + "Documento gerado…") antes do encerramento: a assinatura é o último elemento.
+  b.p({
+    alignment: AlignmentType.CENTER,
+    keepNext: true,
+    keepLines: true,
+    spacing: { before: 200, after: 80 },
+    children: [run('ANEXO – PLANILHA DE CÁLCULO', { bold: true, size: 22 })],
+  })
+  b.table(
+    tabelaDuasColunas('PLANILHA DE CÁLCULO', c.planilha.rows, {
+      highlightTotal: true,
+      ultimaComNext: true,
+    }),
+    { before: 80 },
+  )
+  if (c.planilha.nota) {
+    b.p({
+      alignment: AlignmentType.CENTER,
+      keepNext: true,
+      keepLines: true,
+      spacing: { before: 80 },
+      children: [run(c.planilha.nota, { italics: true, size: 19, color: '555555' })],
+    })
+  }
+
+  const dataTxt = new Date().toLocaleDateString('pt-BR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+  b.p({
+    alignment: AlignmentType.CENTER,
+    keepLines: true,
+    spacing: { before: 160 },
+    children: [
+      run(`Documento gerado em ${dataTxt} pela plataforma Marple`, {
+        size: 16,
+        color: '888888',
+      }),
+    ],
+  })
+
+  // Encerramento (Protesta / Dá-se à causa / Termos) encadeado até a assinatura.
+  limparMarkdownResidual(String(c.fechamentoExtra || ''))
+    .split(/\n+/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .forEach((l) => b.p({ ...optsCorpo(l), keepNext: true }))
 
   // Bloco de assinatura: encadeado com keepNext até a última linha.
   // Entre local/data e o primeiro traço há sempre ESPACO_ASSINATURA_TW de altura:
@@ -838,40 +909,6 @@ async function buildBody(
       spacing: { after: 160 },
       children: [run(a.oab, { size: SIZE_SM })],
     })
-  })
-
-  b.p({
-    alignment: AlignmentType.CENTER,
-    keepNext: true,
-    keepLines: true,
-    spacing: { before: 200, after: 80 },
-    children: [run('ANEXO – PLANILHA DE CÁLCULO', { bold: true, size: 22 })],
-  })
-  b.table(tabelaDuasColunas('PLANILHA DE CÁLCULO', c.planilha.rows, { highlightTotal: true }), {
-    before: 80,
-  })
-  if (c.planilha.nota) {
-    b.p({
-      alignment: AlignmentType.CENTER,
-      spacing: { before: 80 },
-      children: [run(c.planilha.nota, { italics: true, size: 19, color: '555555' })],
-    })
-  }
-
-  const dataTxt = new Date().toLocaleDateString('pt-BR', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  })
-  b.p({
-    alignment: AlignmentType.CENTER,
-    spacing: { before: 160 },
-    children: [
-      run(`Documento gerado em ${dataTxt} pela plataforma Marple`, {
-        size: 16,
-        color: '888888',
-      }),
-    ],
   })
 
   return b.build()

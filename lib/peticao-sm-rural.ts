@@ -2126,7 +2126,7 @@ function assinaturasHtml(adv: DadosAdvogadoPeticao, fechamentoRaw: string): stri
   return `
     <div class="sm-fechamento">
       ${encerramento ? `<div class="sm-encerramento" data-pdf-block="atomic" data-pdf-nome="encerramento">${encerramento}</div>` : ''}
-      <div class="sm-assinatura-bloco keep-together" data-pdf-block="1" data-pdf-keep="1" data-pdf-nome="assinatura" style="page-break-inside:avoid;break-inside:avoid;">
+      <div class="sm-assinatura-bloco keep-together" data-pdf-block="1" data-pdf-keep="1" data-pdf-puxar-anterior="1" data-pdf-nome="assinatura" style="page-break-inside:avoid;break-inside:avoid;">
         <p class="sm-local-data">${escapar(localData)}.</p>
         <table class="sm-sign-row" cellpadding="0" cellspacing="0" width="100%">
           <tr>${cards.replace(/class="sm-sign-card"/g, `class="sm-sign-card"${nCards === 1 ? ' style="width:100%;"' : ''}`)}</tr>
@@ -2971,11 +2971,11 @@ export function montarHtmlSmRural(opts: {
       ${pedidosP5.length ? pedidosHtml(pedidosP5, false) : ''}
     </div>
     <div class="sm-fecho-bloco" style="margin-top:0;overflow:visible;height:auto;">
-      ${assinaturas}
       <div class="sm-anexo-bloco keep-together" data-pdf-block="atomic" data-pdf-nome="planilha de cálculo" style="page-break-inside:avoid;break-inside:avoid;">
         ${planilhaHtml(planilha, dataParto)}
         ${notaDocumentoGeradoHtml()}
       </div>
+      ${assinaturas}
     </div>
   `
 

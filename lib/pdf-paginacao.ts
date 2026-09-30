@@ -9,8 +9,9 @@
  * Tabela atômica maior que uma página: quebra só entre linhas completas,
  * ≥ 2 linhas de dados por parte, cabeçalho ([data-pdf-table-header]) repetido.
  * Faixa IV + lista de provas e o encerramento (Protesta / Dá-se à causa / Termos)
- * são blocos indivisíveis. Parágrafos longos só se dividem entre linhas reais
- * completas, e nenhum corte final atravessa uma linha de texto ou caixa.
+ * são blocos indivisíveis. Parágrafos e itens de pedido também: só um bloco mais
+ * alto que a página útil se divide (entre linhas reais completas), e nenhum
+ * corte final atravessa uma linha de texto ou caixa.
  * Nenhum bloco é empurrado para a página seguinte se couber inteiro.
  */
 
@@ -102,7 +103,7 @@ function nomeBloco(el: HTMLElement): string {
 export type RelatorioPaginacao = {
   /** Blocos atômicos empurrados inteiros para a página seguinte, com a sobra deixada. */
   empurrados: { bloco: string; pagina: number; sobraPx: number; sobraPct: number }[]
-  /** Tabelas divididas entre linhas (cabeçalho repetido): maiores que uma página ou pela válvula de 30%. */
+  /** Tabelas divididas entre linhas (cabeçalho repetido): maiores que uma página ou pela válvula de 15%. */
   divisoes: { bloco: string; pagina: number; linhasNaPagina: number; linhasRestantes: number }[]
   /** Fração da altura útil ocupada em cada página, após paginar. */
   ocupacao: number[]
@@ -115,7 +116,7 @@ export function novoRelatorioPaginacao(): RelatorioPaginacao {
 }
 
 /** Válvula: se manter a tabela inteira deixar mais que isso vazio na página, ela pode quebrar. */
-const VALVULA_VAZIO = 0.3
+const VALVULA_VAZIO = 0.15
 const OCUPACAO_MINIMA = 0.8
 
 /** Só tabelas marcadas com data-pdf-quebra="linhas" podem quebrar (planilha e timeline nunca). */
@@ -313,16 +314,6 @@ function dividirTabelaAtomica(
   return { ficaram: cabem, restantes: rows.length - cabem, continuacao: cont }
 }
 
-/** Parágrafo de texto corrido que pode ser dividido entre páginas (≥ 2 linhas de cada lado). */
-function isParagrafoDivisivel(el: HTMLElement): boolean {
-  return (
-    el.tagName === 'P' &&
-    (el.classList.contains('sm-para') || el.classList.contains('doc-para')) &&
-    !isBlocoAtomico(el) &&
-    !isTituloOuSubhead(el)
-  )
-}
-
 function criarEspacador(heightPx: number): HTMLElement {
   const spacer = document.createElement('div')
   spacer.className = 'pdf-page-spacer'
@@ -474,7 +465,9 @@ export function aplicarPaginacaoPorBlocos(
       const next = blocks[j]
       const nextTop = relOffsetTop(next, root)
       const lhNext = Math.max(10, lineHeightPx(next))
-      const nextAtomico = isBlocoAtomico(next) && nextTop + next.offsetHeight - top <= pageUsablePx
+      // Parágrafos são indivisíveis: o título acompanha o próximo bloco inteiro
+      // (se o grupo couber numa página); senão, título + 2 linhas.
+      const nextAtomico = nextTop + next.offsetHeight - top <= pageUsablePx
       const groupBottom = nextAtomico
         ? nextTop + next.offsetHeight
         : nextTop + Math.min(next.offsetHeight, lhNext * 2 + 8)
@@ -496,7 +489,7 @@ export function aplicarPaginacaoPorBlocos(
       continue
     }
 
-    // Válvula: tabela quebrável que, empurrada inteira, deixaria > 30% vazio —
+    // Válvula: tabela quebrável que, empurrada inteira, deixaria > 15% vazio —
     // quebra entre linhas, ≥ 3 linhas em cada parte, título na primeira parte.
     const fimAnterior = i > 0 ? relOffsetTop(blocks[i - 1], root) + blocks[i - 1].offsetHeight : pageStart
     if (
@@ -507,7 +500,7 @@ export function aplicarPaginacaoPorBlocos(
     ) {
       const div = dividirTabelaAtomica(el, root, pageEnd, 3)
       if (div) {
-        registrarDivisao(el, div.ficaram, div.restantes, 'quebrada pela válvula de 30%')
+        registrarDivisao(el, div.ficaram, div.restantes, 'quebrada pela válvula de 15%')
         blocks = getBlocks()
         continue
       }
@@ -559,39 +552,24 @@ export function aplicarPaginacaoPorBlocos(
       continue
     }
 
-    // Bloco não cabe: se já há conteúdo nesta página, empurra
-    // (exceto parágrafo longo > meia página — quebra em line-height)
+    // Bloco não cabe. Parágrafos e itens de pedido são indivisíveis: vão inteiros
+    // para a próxima página. Só um bloco mais alto que a página útil é partido
+    // (entre linhas completas, abaixo).
     const lh = Math.max(10, lineHeightPx(el))
-    const halfPage = pageUsablePx / 2
-    const room = pageEnd - top
-
-    // Parágrafo corrido que não cabe: divide entre duas linhas reais completas
-    // (Range.getClientRects), deixando ≥ 2 linhas em cada página.
-    if (isParagrafoDivisivel(el) && bottom > pageEnd + 0.5) {
-      const cutAt = corteEntreLinhas(el, root, pageEnd)
-      if (cutAt !== null) {
-        pageBreaks.push(cutAt)
-        pageStart = cutAt
-        pageEnd = pageStart + pageUsablePx
-        continue
-      }
-    }
-
-    // Bloco de texto > restante E > meia página: corta entre linhas reais completas
-    if (h > halfPage && room >= lh && bottom > pageEnd + 0.5) {
-      const cutAt = corteEntreLinhas(el, root, pageEnd, 1, 1)
-      if (cutAt !== null && cutAt > top + 1) {
-        pageBreaks.push(cutAt)
-        pageStart = cutAt
-        pageEnd = pageStart + pageUsablePx
-        continue
-      }
-    }
 
     if (top > pageStart + 2 && h <= pageUsablePx) {
-      const falta = pageEnd - top
+      // Assinatura sozinha na página: leva junto o bloco anterior (encerramento), se couberem juntos.
+      const anterior = i > 0 ? blocks[i - 1] : null
+      const puxar =
+        el.getAttribute('data-pdf-puxar-anterior') === '1' &&
+        anterior &&
+        relOffsetTop(anterior, root) > pageStart + 2 &&
+        bottom - relOffsetTop(anterior, root) <= pageUsablePx
+      const alvo = puxar && anterior ? anterior : el
+      const falta = pageEnd - relOffsetTop(alvo, root)
       if (falta > 1) {
-        el.parentNode?.insertBefore(criarEspacador(falta), el)
+        if (puxar) registrarEmpurrado(`${nomeBloco(alvo)} (junto da assinatura)`, falta)
+        alvo.parentNode?.insertBefore(criarEspacador(falta), alvo)
         pageBreaks.push(pageEnd)
         pageStart = pageEnd
         pageEnd = pageStart + pageUsablePx
