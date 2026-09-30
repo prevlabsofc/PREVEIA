@@ -1610,7 +1610,7 @@ function quadroHtml(tituloSecao: string, rows: QuadroRow[]): string {
     )
     .join('')
   return `
-    <div class="sm-quadro-bloco keep-together" data-pdf-block="atomic" data-pdf-nome="quadro sinóptico">
+    <div class="sm-quadro-bloco keep-together" data-pdf-block="atomic" data-pdf-quebra="linhas" data-pdf-nome="quadro sinóptico">
       ${sectionBar(tituloSecao)}
       <div class="sm-table-wrap">
         <div class="sm-table-caption" data-pdf-table-header="1">RESUMO DAS PRINCIPAIS INFORMAÇÕES DO PROCESSO</div>
@@ -1624,18 +1624,18 @@ function quadroHtml(tituloSecao: string, rows: QuadroRow[]): string {
 
 function provasHtml(items: string[]): string {
   return `
-    <div class="sm-provas keep-together" data-pdf-block="atomic" data-pdf-nome="lista de provas">
-      <table class="sm-provas-table" cellpadding="0" cellspacing="0" width="100%">
-        ${items
-          .map(
-            (it, i) => `
+    <div class="sm-provas">
+      ${items
+        .map(
+          (it, i) => `
+        <table class="sm-provas-table sm-prova-item" data-pdf-block="1" data-pdf-prova="1" cellpadding="0" cellspacing="0" width="100%">
           <tr class="${i % 2 === 0 ? 'even' : 'odd'}">
             <td class="sm-check">✓</td>
             <td class="sm-prova-txt">${escapar(it)}</td>
-          </tr>`,
-          )
-          .join('')}
-      </table>
+          </tr>
+        </table>`,
+        )
+        .join('')}
     </div>
   `
 }

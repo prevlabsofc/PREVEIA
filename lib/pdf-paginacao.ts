@@ -100,34 +100,56 @@ function nomeBloco(el: HTMLElement): string {
 export type RelatorioPaginacao = {
   /** Blocos atômicos empurrados inteiros para a página seguinte, com a sobra deixada. */
   empurrados: { bloco: string; pagina: number; sobraPx: number; sobraPct: number }[]
-  /** Tabelas maiores que uma página divididas entre linhas (cabeçalho repetido). */
+  /** Tabelas divididas entre linhas (cabeçalho repetido): maiores que uma página ou pela válvula de 30%. */
   divisoes: { bloco: string; pagina: number; linhasNaPagina: number; linhasRestantes: number }[]
+  /** Fração da altura útil ocupada em cada página, após paginar. */
+  ocupacao: number[]
+  /** Páginas (exceto a última) que terminam antes de 80% da altura útil. */
+  alertas: { pagina: number; ocupacaoPct: number; sobraPx: number; causa: string }[]
+}
+
+export function novoRelatorioPaginacao(): RelatorioPaginacao {
+  return { empurrados: [], divisoes: [], ocupacao: [], alertas: [] }
+}
+
+/** Válvula: se manter a tabela inteira deixar mais que isso vazio na página, ela pode quebrar. */
+const VALVULA_VAZIO = 0.3
+const OCUPACAO_MINIMA = 0.8
+
+/** Só tabelas marcadas com data-pdf-quebra="linhas" podem quebrar (planilha e timeline nunca). */
+function isTabelaQuebravel(el: HTMLElement): boolean {
+  return el.getAttribute('data-pdf-quebra') === 'linhas'
+}
+
+function isCaixaProva(el: HTMLElement): boolean {
+  return el.getAttribute('data-pdf-prova') === '1'
 }
 
 /**
  * Divide uma tabela atômica entre linhas completas: as linhas que terminam até
  * `limiteY` ficam no bloco; as demais vão para um bloco de continuação atômico,
  * inserido logo depois, com o cabeçalho da tabela repetido.
- * Retorna quantas linhas ficaram, ou null se não der para deixar ≥ 2 de cada lado.
+ * Retorna quantas linhas ficaram, ou null se não der para deixar `minLinhas` de cada lado.
  */
 function dividirTabelaAtomica(
   el: HTMLElement,
   root: HTMLElement,
   limiteY: number,
+  minLinhas = 2,
 ): { ficaram: number; restantes: number; continuacao: HTMLElement } | null {
   const table = el.querySelector('table') as HTMLTableElement | null
   const tbody = table?.tBodies[0]
   if (!table || !tbody) return null
   const rows = Array.from(tbody.rows)
-  if (rows.length < 4) return null
+  if (rows.length < minLinhas * 2) return null
 
   let cabem = 0
   for (const row of rows) {
     if (relOffsetTop(row, root) + row.offsetHeight > limiteY - 1) break
     cabem += 1
   }
-  cabem = Math.min(cabem, rows.length - 2)
-  if (cabem < 2) return null
+  cabem = Math.min(cabem, rows.length - minLinhas)
+  if (cabem < minLinhas) return null
 
   const cont = el.cloneNode(false) as HTMLElement
   cont.removeAttribute('id')
@@ -232,7 +254,7 @@ export function coletarBlocosPaginacao(root: HTMLElement): HTMLElement[] {
 export function aplicarPaginacaoPorBlocos(
   root: HTMLElement,
   pageUsablePx: number,
-  relatorio: RelatorioPaginacao = { empurrados: [], divisoes: [] },
+  relatorio: RelatorioPaginacao = novoRelatorioPaginacao(),
 ): number[] {
   // Remove espaçadores de runs anteriores
   root.querySelectorAll('[data-pdf-spacer="1"]').forEach((n) => n.remove())
@@ -251,10 +273,26 @@ export function aplicarPaginacaoPorBlocos(
     )
   }
 
+  const registrarDivisao = (el: HTMLElement, ficaram: number, restantes: number, motivo: string) => {
+    const item = { bloco: nomeBloco(el), pagina: pageBreaks.length + 1, linhasNaPagina: ficaram, linhasRestantes: restantes }
+    relatorio.divisoes.push(item)
+    console.info(
+      `[pdf-paginacao] "${item.bloco}" ${motivo}: ${ficaram} linha(s) na página ${item.pagina}, ` +
+        `${restantes} na continuação com cabeçalho repetido`,
+    )
+  }
+
   const pageBreaks: number[] = []
   let pageStart = 0
   let pageEnd = pageUsablePx
   let guard = 0
+
+  const avancarComEspacador = (alvo: HTMLElement, falta: number) => {
+    alvo.parentNode?.insertBefore(criarEspacador(falta), alvo)
+    pageBreaks.push(pageEnd)
+    pageStart = pageEnd
+    pageEnd = pageStart + pageUsablePx
+  }
 
   const getBlocks = () =>
     coletarBlocosPaginacao(root).filter((el) => el.offsetHeight > 0)
@@ -292,9 +330,12 @@ export function aplicarPaginacaoPorBlocos(
       const nextTop = relOffsetTop(next, root)
       const lhNext = Math.max(10, lineHeightPx(next))
       const nextAtomico = isBlocoAtomico(next) && nextTop + next.offsetHeight - top <= pageUsablePx
-      const groupBottom = nextAtomico
-        ? nextTop + next.offsetHeight
-        : nextTop + Math.min(next.offsetHeight, lhNext * 2 + 8)
+      const segundaCaixa = isCaixaProva(next) && blocks[j + 1] && isCaixaProva(blocks[j + 1]) ? blocks[j + 1] : null
+      const groupBottom = segundaCaixa
+        ? relOffsetTop(segundaCaixa, root) + segundaCaixa.offsetHeight
+        : nextAtomico
+          ? nextTop + next.offsetHeight
+          : nextTop + Math.min(next.offsetHeight, lhNext * 2 + 8)
 
       if (groupBottom > pageEnd + 0.5 && top > pageStart + 2) {
         const falta = pageEnd - top
@@ -313,22 +354,54 @@ export function aplicarPaginacaoPorBlocos(
       continue
     }
 
-    // Tabela atômica maior que uma página: divide entre linhas completas
+    // Caixa de prova que não cabe: quebra entre caixas, com ≥ 2 caixas em cada
+    // parte (nunca 1 sozinha no fim ou no início da página).
+    if (isCaixaProva(el) && bottom > pageEnd + 0.5 && top > pageStart + 2) {
+      const caixas = Array.from(el.parentElement?.children || []).filter(
+        (c) => c instanceof HTMLElement && isCaixaProva(c),
+      ) as HTMLElement[]
+      const idx = caixas.indexOf(el)
+      let corte = Math.min(idx, caixas.length - 2)
+      const naPagina = (k: number) =>
+        caixas.slice(0, k).filter((c) => relOffsetTop(c, root) >= pageStart - 0.5).length
+      if (corte > 0 && naPagina(corte) < 2) corte -= naPagina(corte)
+      let alvo: HTMLElement = caixas[Math.max(0, corte)]
+      if (corte <= 0) {
+        const anterior = blocks[blocks.indexOf(caixas[0]) - 1]
+        if (anterior && isTituloOuSubhead(anterior)) alvo = anterior
+      }
+      const falta = pageEnd - relOffsetTop(alvo, root)
+      if (falta > 1 && relOffsetTop(alvo, root) > pageStart + 2) {
+        registrarEmpurrado(`caixa de prova ${Math.max(0, corte) + 1} de ${caixas.length}`, falta)
+        avancarComEspacador(alvo, falta)
+        blocks = getBlocks()
+        continue
+      }
+    }
+
+    // Válvula: tabela quebrável que, empurrada inteira, deixaria > 30% vazio —
+    // quebra entre linhas, ≥ 3 linhas em cada parte, título na primeira parte.
+    const fimAnterior = i > 0 ? relOffsetTop(blocks[i - 1], root) + blocks[i - 1].offsetHeight : pageStart
+    if (
+      isTabelaQuebravel(el) &&
+      bottom > pageEnd + 0.5 &&
+      top > pageStart + 2 &&
+      pageEnd - Math.max(pageStart, fimAnterior) > pageUsablePx * VALVULA_VAZIO
+    ) {
+      const div = dividirTabelaAtomica(el, root, pageEnd, 3)
+      if (div) {
+        registrarDivisao(el, div.ficaram, div.restantes, 'quebrada pela válvula de 30%')
+        blocks = getBlocks()
+        continue
+      }
+    }
+
+    // Tabela quebrável maior que uma página: divide entre linhas completas
     // no espaço restante; se nem 2 linhas couberem aqui, vai para a próxima.
     if (isBlocoAtomico(el) && h > pageUsablePx && bottom > pageEnd + 0.5) {
-      const div = dividirTabelaAtomica(el, root, pageEnd)
+      const div = isTabelaQuebravel(el) ? dividirTabelaAtomica(el, root, pageEnd) : null
       if (div) {
-        const item = {
-          bloco: nomeBloco(el),
-          pagina: pageBreaks.length + 1,
-          linhasNaPagina: div.ficaram,
-          linhasRestantes: div.restantes,
-        }
-        relatorio.divisoes.push(item)
-        console.info(
-          `[pdf-paginacao] "${item.bloco}" maior que uma página: ${item.linhasNaPagina} linha(s) na página ${item.pagina}, ` +
-            `${item.linhasRestantes} na continuação com cabeçalho repetido`,
-        )
+        registrarDivisao(el, div.ficaram, div.restantes, 'maior que uma página')
         blocks = getBlocks()
         continue
       }
@@ -480,7 +553,50 @@ export function aplicarPaginacaoPorBlocos(
     pageEndCursor += pageUsablePx
   }
 
+  verificarOcupacao(root, pageBreaks, pageUsablePx, relatorio)
   return pageBreaks
+}
+
+/** Mede a ocupação de cada página e loga as que terminam antes de 80% (exceto a última). */
+function verificarOcupacao(
+  root: HTMLElement,
+  pageBreaks: number[],
+  pageUsablePx: number,
+  relatorio: RelatorioPaginacao,
+): void {
+  const blocos = coletarBlocosPaginacao(root)
+    .filter((b) => b.offsetHeight > 0)
+    .map((b) => ({ el: b, top: relOffsetTop(b, root), bottom: relOffsetTop(b, root) + b.offsetHeight }))
+  const fim = blocos.reduce((m, b) => Math.max(m, b.bottom), 0)
+  const inicios = [0, ...pageBreaks.filter((y) => y < fim - 1)]
+  relatorio.ocupacao = []
+  relatorio.alertas = []
+  inicios.forEach((ini, k) => {
+    const fimPagina = inicios[k + 1] ?? ini + pageUsablePx
+    let usado = ini
+    for (const b of blocos) {
+      if (b.top >= fimPagina - 0.5 || b.bottom <= ini + 0.5) continue
+      usado = Math.max(usado, Math.min(b.bottom, fimPagina))
+    }
+    const ocupacao = (usado - ini) / pageUsablePx
+    relatorio.ocupacao.push(Math.round(ocupacao * 100) / 100)
+    if (k === inicios.length - 1 || ocupacao >= OCUPACAO_MINIMA) return
+    const proximo = blocos.find((b) => b.top >= fimPagina - 1.5)
+    const causa = proximo
+      ? `${nomeBloco(proximo.el)}: "${(proximo.el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 50)}"`
+      : 'desconhecida'
+    const alerta = {
+      pagina: k + 1,
+      ocupacaoPct: Math.round(ocupacao * 100),
+      sobraPx: Math.round(ini + pageUsablePx - usado),
+      causa,
+    }
+    relatorio.alertas.push(alerta)
+    console.warn(
+      `[pdf-paginacao] página ${alerta.pagina} termina em ${alerta.ocupacaoPct}% da altura útil ` +
+        `(sobra ${alerta.sobraPx}px); bloco empurrado para a página seguinte: ${causa}`,
+    )
+  })
 }
 
 /** Converte limites CSS px → coordenadas do canvas (× scale), com fim = altura do canvas. */
