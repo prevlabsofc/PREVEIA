@@ -160,13 +160,10 @@ export default function OnboardingPage() {
       }
     }
 
-    if (sigFile) {
+    if (sigFile && sigFile.type === 'image/png') {
       const { data } = await supabase.storage.from('signatures')
-        .upload(`${user.id}/assinatura.${sigFile.name.split('.').pop()}`, sigFile, { upsert: true })
-      if (data) {
-        const { data: url } = supabase.storage.from('signatures').getPublicUrl(data.path)
-        signature_url = url.publicUrl
-      }
+        .upload(`${user.id}/assinatura.png`, sigFile, { upsert: true, contentType: 'image/png' })
+      if (data) signature_url = data.path
     }
 
     await supabase.from('lawyers').update({
@@ -440,7 +437,7 @@ export default function OnboardingPage() {
                           <p className="text-xs" style={{ color: '#555' }}>PNG fundo transparente recomendado</p>
                         </div>
                       )}
-                      <input type="file" accept="image/*" className="hidden" onChange={handleSigUpload} />
+                      <input type="file" accept="image/png" className="hidden" onChange={handleSigUpload} />
                     </label>
                   </div>
 

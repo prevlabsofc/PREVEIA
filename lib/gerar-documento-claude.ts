@@ -121,6 +121,7 @@ NÃO gere seções II–VI ainda. Feche cada marcador aberto.`,
 <<<TIMELINE>>>…<<<END_TIMELINE>>>
 <<<III_SINTESE_DEPOIS>>>…<<<END_III_DEPOIS>>>
 NÃO liste provas em III_SINTESE_DEPOIS (proibido "Documento — explicação").
+No quadro, na síntese e na timeline use SOMENTE fatos dos DADOS DO CASO; omita o que não foi informado (regra FATOS vs. ARGUMENTAÇÃO).
 NÃO gere IV–VI. Não repita o que já foi gerado.`,
   },
   {
@@ -132,7 +133,7 @@ NÃO gere IV–VI. Não repita o que já foi gerado.`,
 
 Em <<<IV_PROVAS>>> liste CADA prova em linha própria, formato obrigatório:
 ✓ Nome do documento — explicação breve
-NUNCA parágrafos corridos de provas. Mínimo 4 itens com ✓.
+NUNCA parágrafos corridos de provas. Liste somente as provas marcadas no formulário ou citadas no contexto/extras — se forem poucas, liste só elas; nunca invente documentos.
 O fecho em <<<IV_FECHO>>> é o parágrafo de análise DEPOIS da lista.
 NÃO gere V–VI.`,
   },

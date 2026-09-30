@@ -1,4 +1,6 @@
+import { carregarAssinaturaEscritorio } from '@/lib/assinatura-escritorio'
 import { montarDocxPeticao } from '@/lib/montar-docx-peticao'
+import { sessaoDaRequisicao } from '@/lib/permissions/sessao'
 import {
   type DadosAdvogadoPeticao,
   normalizarEstiloPeticao,
@@ -83,6 +85,11 @@ export async function POST(request: Request) {
       }
     }
 
+    const sessao = await sessaoDaRequisicao(request).catch(() => null)
+    const assinatura = sessao
+      ? await carregarAssinaturaEscritorio(sessao.supabase, sessao.user.id)
+      : null
+
     const buffer = await montarDocxPeticao({
       text,
       adv,
@@ -90,6 +97,7 @@ export async function POST(request: Request) {
       agentType,
       sexoParteAutora,
       timelinePng: lerTimelinePng(body),
+      assinatura,
     })
 
     const safeName = fileName.replace(/[^\w\-À-ÿ]+/gi, '_').slice(0, 80)

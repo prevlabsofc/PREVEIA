@@ -39,6 +39,10 @@ import {
   svgTimelineParaRaster,
   textoRodapeSm,
 } from '@/lib/peticao-sm-rural'
+import {
+  ASSINATURA_ESPACO_CM,
+  type AssinaturaEscritorio,
+} from '@/lib/assinatura-escritorio'
 
 const FONT = 'Times New Roman'
 const SIZE = 24 // 12pt
@@ -98,6 +102,11 @@ export type TimelinePngCliente = {
   widthPx?: number
   heightPx?: number
 }
+
+/** PNG da assinatura já dimensionado (ver `lib/assinatura-escritorio.ts`). */
+export type AssinaturaDocx = Pick<AssinaturaEscritorio, 'bytes' | 'widthPx' | 'heightPx'>
+
+const ESPACO_ASSINATURA_TW = Math.round((ASSINATURA_ESPACO_CM / 2.54) * 1440) // 1417
 
 function run(
   text: string,
@@ -705,6 +714,7 @@ async function fetchImageBytes(
 async function buildBody(
   c: ConteudoSmRural,
   pngCliente?: TimelinePngCliente | null,
+  assinaturaImg?: AssinaturaDocx | null,
 ): Promise<(Paragraph | Table)[]> {
   const b = new BodyBuilder()
 
@@ -773,20 +783,46 @@ async function buildBody(
   parasDeTexto(b, c.fechamentoExtra)
 
   // Bloco de assinatura: encadeado com keepNext até a última linha.
+  // Entre local/data e o primeiro traço há sempre ESPACO_ASSINATURA_TW de altura:
+  // com imagem, é a linha de altura exata que a contém; sem imagem, é o spacing before do traço.
   b.p({
     alignment: AlignmentType.CENTER,
     keepNext: c.assinaturas.length > 0,
     keepLines: true,
-    spacing: { before: 200, after: 280 },
+    spacing: { before: 200, after: c.assinaturas.length > 0 ? 0 : 280 },
     children: [run(`${c.localData}.`)],
   })
   c.assinaturas.forEach((a, idx) => {
     const ultima = idx === c.assinaturas.length - 1
+    const comImagem = idx === 0 && !!assinaturaImg
+    if (comImagem && assinaturaImg) {
+      b.p({
+        alignment: AlignmentType.CENTER,
+        keepNext: true,
+        keepLines: true,
+        spacing: {
+          before: 0,
+          after: 0,
+          line: ESPACO_ASSINATURA_TW,
+          lineRule: LineRuleType.EXACT,
+        },
+        children: [
+          new ImageRun({
+            data: assinaturaImg.bytes,
+            type: 'png',
+            transformation: {
+              width: assinaturaImg.widthPx,
+              height: assinaturaImg.heightPx,
+            },
+          }),
+        ],
+      })
+    }
     b.p({
       alignment: AlignmentType.CENTER,
       keepNext: true,
       keepLines: true,
-      spacing: { before: 200 },
+      spacing: { before: idx > 0 ? 200 : comImagem ? 0 : ESPACO_ASSINATURA_TW },
       children: [run('_______________________________')],
     })
     b.p({
@@ -982,11 +1018,12 @@ export async function montarDocxSmRural(opts: {
   adv: DadosAdvogadoPeticao
   sexoParteAutora?: string | null
   timelinePng?: TimelinePngCliente | null
+  assinatura?: AssinaturaDocx | null
 }): Promise<Buffer | null> {
   const conteudo = extrairConteudoSmRural(opts)
   if (!conteudo) return null
 
-  const children = await buildBody(conteudo, opts.timelinePng)
+  const children = await buildBody(conteudo, opts.timelinePng, opts.assinatura)
 
   const doc = new Document({
     styles: {

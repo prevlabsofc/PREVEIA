@@ -18,9 +18,11 @@ import {
   aplicarPaginacaoPorBlocos,
   fimConteudoPaginacaoPx,
   alturaUtilPaginaPdfPx,
+  ajustarCortesAoCanvas,
   limitesCanvasDePaginas,
 } from '@/lib/pdf-paginacao'
 import { montarHtmlPeticao } from '@/lib/montar-html-peticao'
+import { comAssinaturaEscritorio } from '@/lib/assinatura-pdf-cliente'
 import {
   AGENT_SM_RURAL,
   ERRO_GERACAO_INTERROMPIDA,
@@ -241,8 +243,13 @@ function adicionarCanvasAoPdf(
       : [{ y: 0, h: canvas.height }]
 
   const contentSlices = list.filter((slice) => slice.h >= 4)
+  const usablePxH = Math.ceil(usableH * pxPerPt)
   contentSlices.forEach((slice, pageIdx) => {
-    const slicePtH = Math.min(usableH, slice.h / pxPerPt)
+    // 1:1 (sem reescala); o que passar da altura útil seria cortado sobre o rodapé
+    if (slice.h > usablePxH) {
+      console.error(`[pdf] página ${pageIdx + 1}: fatia de ${slice.h}px excede a área útil (${usablePxH}px)`)
+    }
+    const drawH = Math.min(slice.h, usablePxH)
     if (pageIdx > 0) pdf.addPage()
 
     const pageCanvas = document.createElement('canvas')
@@ -257,11 +264,11 @@ function adicionarCanvasAoPdf(
       0,
       slice.y,
       canvas.width,
-      slice.h,
+      drawH,
       0,
       0,
       canvas.width,
-      Math.round(slicePtH * pxPerPt),
+      drawH,
     )
 
     // Rodapé na imagem da página
@@ -288,7 +295,7 @@ function adicionarCanvasAoPdf(
   })
 }
 
-async function gerarPdfBlob(
+export async function gerarPdfBlob(
   text: string,
   advogado: DadosAdvogadoPeticao,
   estilo: EstiloPeticao,
@@ -302,7 +309,7 @@ async function gerarPdfBlob(
   }
 
   const corPeticao = String(advogado.cor_peticao || '#1d4ed8')
-  const advComLogo = await prepararAdvComLogo(advogado)
+  const advComLogo = await comAssinaturaEscritorio(await prepararAdvComLogo(advogado))
 
   const html = montarHtmlPeticao({
     text,
@@ -400,6 +407,13 @@ async function gerarPdfBlob(
     await new Promise<void>((r) => requestAnimationFrame(() => r()))
     const fimConteudoCss = fimConteudoPaginacaoPx(pageEl)
 
+    // O html2canvas mede a linha de base do texto com um <img> inline em body > div; o preflight
+    // do Tailwind (img { display:block }) quebra essa medida e o texto sai ~7px abaixo do DOM.
+    const estiloMetricas = document.createElement('style')
+    estiloMetricas.id = 'pdf-html2canvas-metricas'
+    estiloMetricas.textContent =
+      'body > div[style*="visibility: hidden"][style*="white-space: nowrap"] > img { display: inline !important; }'
+    document.head.appendChild(estiloMetricas)
     const canvas = await html2canvas(pageEl, {
       scale: CAPTURE_SCALE,
       useCORS: true,
@@ -447,6 +461,8 @@ async function gerarPdfBlob(
       },
     })
 
+    estiloMetricas.remove()
+
     let finalCanvas = canvas
     const expectedW = Math.round(W * CAPTURE_SCALE)
     if (canvas.width !== expectedW) {
@@ -463,7 +479,7 @@ async function gerarPdfBlob(
     }
 
     const slices = limitesCanvasDePaginas(
-      pageBreaksCss,
+      ajustarCortesAoCanvas(finalCanvas, pageBreaksCss, CAPTURE_SCALE, usablePx, fimConteudoCss),
       finalCanvas.height,
       CAPTURE_SCALE,
       Math.ceil(usablePx * CAPTURE_SCALE),
@@ -475,6 +491,7 @@ async function gerarPdfBlob(
 
     return pdf.output('blob')
   } finally {
+    document.getElementById('pdf-html2canvas-metricas')?.remove()
     if (container.parentNode) container.parentNode.removeChild(container)
     window.scrollTo(scrollAntes.x, scrollAntes.y)
   }

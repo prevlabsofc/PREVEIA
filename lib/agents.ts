@@ -143,11 +143,42 @@ DOMICÍLIO DA PARTE AUTORA (qualificação e competência territorial JEF):
 
   // SM rural usa marcadores <<<SM_RURAL_V2>>> — hierarquia genérica conflitante
   if (agentType === 'salario-maternidade-rural') {
-    return base + REGRAS_CITACOES
+    return REGRAS_FATOS + base + REGRAS_CITACOES + LEMBRETE_FATOS
   }
 
-  return base + REGRAS_HIERARQUIA + REGRAS_CITACOES
+  return REGRAS_FATOS + base + REGRAS_HIERARQUIA + REGRAS_CITACOES + LEMBRETE_FATOS
 }
+
+/**
+ * Regra prioritária de todos os agentes que geram peça: a IA redige e argumenta,
+ * mas não completa fatos do caso que o usuário não forneceu.
+ */
+export const REGRAS_FATOS = `FATOS vs. ARGUMENTAÇÃO (PRIORIDADE MÁXIMA — prevalece sobre qualquer outra instrução deste prompt, inclusive modelos de seção, exemplos e pedidos de tom "humanizado" ou "persuasivo"):
+
+1. FONTES DOS FATOS. Os únicos fatos do caso concreto que podem ser afirmados na peça são os que constam de:
+   a) campos do formulário enviados na mensagem do usuário ("DADOS DO CASO");
+   b) dados extraídos do PDF importado (INSS ou outro documento), que chegam nesses mesmos campos;
+   c) instruções e observações escritas pelo usuário (campos "contexto", "observacoes" e "extras");
+   d) provas marcadas no formulário (campo "provas") e linha do tempo configurada pelo usuário ("timeline_json"), se houver;
+   e) dados do advogado e do domicílio da parte fornecidos neste prompt.
+2. PROIBIDO afirmar como verdadeiro fato que não esteja nessas fontes — nem para "completar" a narrativa, nem por ser comum em casos semelhantes. Isso abrange, entre outros: infância ou origem rural, com quem trabalha, culturas e criações, terra (tamanho, dono, forma de uso), comercialização da produção, ausência de vínculos urbanos, ausência de outra renda, trabalho durante a gestação, datas, nomes, documentos e testemunhas.
+   Exemplos PROIBIDOS quando não informados (inclusive variações, sinônimos e a forma masculina):
+   ✕ "A autora cresceu no campo."
+   ✕ "Nunca manteve vínculo empregatício urbano."
+   ✕ "Comercializava o excedente em feiras e mercados locais."
+   ✕ "Permaneceu trabalhando durante toda a gestação."
+   ✕ "A agricultura era a única fonte de renda da família."
+3. PERMITIDO: melhorar a redação dos fatos fornecidos (sem acrescentar conteúdo) e desenvolver a argumentação jurídica — lei, jurisprudência, doutrina, presunções legais e requisitos do benefício — desde que redigida como tese ou requisito legal ("a lei considera segurado especial quem…", "a jurisprudência admite…"), NUNCA como fato comprovado do caso.
+   Ex.: "O art. 11, VII, da Lei 8.213/91 protege quem exerce a atividade rural em regime de economia familiar" (argumentação — ok) ≠ "A autora sempre trabalhou com os pais em regime de economia familiar" (fato — só se informado).
+4. SEM EXTRAPOLAR. Dado vago não vira fato específico: "período de segurado especial: 2015–2024" NÃO autoriza "desde a infância", "durante toda a gestação" nem "de forma ininterrupta". Reproduza cada fato na exata medida em que foi informado.
+5. NA DÚVIDA, OMITA. Não escreva na peça colchetes, "[informar]", "a confirmar", "não informado" ou qualquer placeholder (salvo onde este prompt prevê expressamente, como a idade no quadro sinóptico) — a petição vai ao juiz. Se um trecho do modelo depender de fato ausente, reduza-o ou suprima-o.
+6. Isto não autoriza deixar seção obrigatória vazia: com poucos fatos, a seção fica mais curta e se apoia nos fatos efetivamente informados e na argumentação jurídica.
+
+`
+
+const LEMBRETE_FATOS = `
+
+LEMBRETE FINAL — FATOS vs. ARGUMENTAÇÃO: antes de escrever cada frase fática, confirme que ela está nos DADOS DO CASO (formulário, PDF importado, contexto/observações/extras, provas marcadas). Se não estiver, omita. Argumentação jurídica genérica é livre, mas nunca apresentada como fato do caso.`
 
 /**
  * Peças processuais são documentos formais protocolados em juízo e exportados em
@@ -329,7 +360,7 @@ AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE ${ctx
 <<<END_ENDERECO>>>
 
 <<<QUALIFICACAO>>>
-[Parágrafo corrido completo com nome, profissão, data de nascimento, idade, CPF, menção aos procuradores e fundamento legal, TERMINANDO exatamente com as palavras: propor a presente]
+[Parágrafo corrido completo com nome, profissão, data de nascimento, idade, CPF, menção aos procuradores e fundamento legal, TERMINANDO exatamente com as palavras: propor a presente. Dados pessoais ausentes nas fontes (estado civil, data de nascimento etc.) são OMITIDOS — nunca presumidos.]
 [ENDEREÇO — valor FIXO do sistema: use EXATAMENTE a string abaixo após "residente e domiciliad[oa] na" / "domiciliad[oa] na". NÃO reescreva, NÃO acrescente povoado/bairro se já estiver no logradouro, NÃO altere o CEP (formato Correios 00000-000, sem ponto milhar):
 "${enderecoFixo}"]
 [RG: só mencione "portadora do RG …" se o RG estiver informado nos dados. Se RG vazio/ausente, OMITA qualquer menção a RG — nunca escreva "RG não informado".]
@@ -373,29 +404,30 @@ DA PRIORIDADE DE TRAMITAÇÃO:
 | Situação/Decisão INSS | [Indeferido/etc.] |
 | Data do Indef. Adm. | [dd/mm/aaaa] |
 | Motivo INSS | [motivo] |
-| Tempo de trabalho antes do parto | [texto] |
-| Período de Segurado Especial declarado | [texto] |
-| Período de atividade rural | [texto] |
-| Ponto controvertido | [texto] |
+| Tempo de trabalho antes do parto | [campo tempo_trabalho_parto — omita a linha se vazio] |
+| Período de Segurado Especial declarado | [campo periodo_segurado_especial — omita a linha se vazio] |
+| Período de atividade rural | [campo periodo_segurado — omita a linha se vazio] |
+| Ponto controvertido | [decorre do motivo do INSS informado — omita a linha se não houver motivo] |
 | Benefício anterior | [texto ou omita a linha se vazio] |
 | Período averbado no CNIS | [texto ou omita a linha se vazio] |
-| Vínculo urbano | [texto] |
+| Vínculo urbano | [SOMENTE se informado nas fontes — omita a linha se vazio; NUNCA presuma "nenhum"/"inexistente"] |
 <<<END_II>>>
-[No quadro: omita linhas de campos opcionais vazios. "Não informada" só para idade. Inclua sempre a linha Município/UF.]
+[No quadro: cada valor vem das fontes (formulário, PDF importado, contexto/extras); omita linhas cujo dado não foi informado — nunca preencha por suposição. "Não informada" só para idade. Inclua sempre as linhas Nome, Município/UF e Pedido.]
 
 <<<III_SINTESE_ANTES>>>
-[2–3 parágrafos narrativos sobre a parte autora, atividade rural e economia familiar — respeitando o sexo informado]
-[OBRIGATÓRIO: cite o município ${munUf}${comunidade ? ` e ${comunidade}` : ''}${zonaTxt ? `, em ${zonaTxt}` : ''}, onde a atividade é exercida. NÃO use genéricos como "no interior do Estado do Maranhão" sem nomear o município.]
+[1–3 parágrafos narrando SOMENTE os fatos das fontes (formulário, PDF importado, contexto/observações/extras) sobre a parte autora e a atividade rural — respeitando o sexo informado. Atividade, período, local, cultivo, composição e economia familiar só entram se informados. Com poucos dados, seja breve: apresente a parte autora como segurado(a) especial que pleiteia o benefício, reproduza os períodos informados e deixe o desenvolvimento para a fundamentação jurídica.]
+[OBRIGATÓRIO: cite o município ${munUf}${comunidade ? ` e ${comunidade}` : ''}${zonaTxt ? `, em ${zonaTxt}` : ''} como domicílio da parte autora (só afirme que a atividade rural é exercida nesse local se as fontes indicarem o local da atividade). NÃO use genéricos como "no interior do Estado do Maranhão" sem nomear o município.]
 [ENDEREÇO nas seções III/IV: a qualificação já trouxe o endereço completo. Nas demais menções use APENAS o município (${munUf}) — NÃO repita logradouro/nº/povoado/CEP em toda frase.]
-[Último parágrafo deve terminar com: A seguir, a linha do tempo de sua trajetória de vida e trabalho rural:]
+[Último parágrafo deve terminar com: A seguir, a linha do tempo dos fatos relevantes do caso:]
 <<<END_III_ANTES>>>
 
 <<<TIMELINE>>>
-{"nome":"[NOME DA PARTE AUTORA]","atividade":"[OBRIGATÓRIO: 'Agricultor' se sexo masculino; 'Agricultora' se sexo feminino; NUNCA use Agricultora para autor masculino]","local":"${munUf}","estilo":"horizontal","eventos":[{"data":"AAAA ou dd/mm/aaaa","titulo":"Evento curto","detalhe":"detalhe opcional"},{"data":"...","titulo":"...","detalhe":"..."},{"data":"...","titulo":"...","detalhe":"..."},{"data":"...","titulo":"...","detalhe":"..."},{"data":"...","titulo":"...","detalhe":"..."}]}
+{"nome":"[NOME DA PARTE AUTORA]","atividade":"[OBRIGATÓRIO: 'Agricultor' se sexo masculino; 'Agricultora' se sexo feminino; NUNCA use Agricultora para autor masculino]","local":"${munUf}","estilo":"horizontal","eventos":[{"data":"AAAA ou dd/mm/aaaa (informada nas fontes)","titulo":"Evento curto","detalhe":"detalhe opcional"},{"data":"...","titulo":"...","detalhe":"..."}]}
 <<<END_TIMELINE>>>
 
 <<<III_SINTESE_DEPOIS>>>
-[Parágrafos após a timeline: nascimento do filho/filha conforme gênero, período gestacional, requerimento administrativo, indeferimento e crítica à decisão]
+[Parágrafos após a timeline: nascimento do filho/filha conforme gênero (data e nome informados), requerimento administrativo, indeferimento e motivo conforme informados, e crítica jurídica à decisão]
+[Período gestacional/carência: só afirme trabalho durante a gestação ou nos meses anteriores ao parto se as fontes informarem (ex.: campo tempo_trabalho_parto, contexto). Caso contrário, trate a carência apenas como requisito legal a ser demonstrado pelas provas — sem narrá-la como fato.]
 [PROIBIDO listar provas aqui. NÃO escreva linhas "Documento — explicação". Provas vão SOMENTE em <<<IV_PROVAS>>>]
 <<<END_III_DEPOIS>>>
 
@@ -406,12 +438,13 @@ DA PRIORIDADE DE TRAMITAÇÃO:
 ✓ Autodeclaração de segurado especial — art. 38-B, §2º, Lei 8.213/91
 ✓ [outras provas no mesmo formato]
 <<<END_IV>>>
+[Liste SOMENTE as provas marcadas no campo "provas" do formulário e documentos expressamente mencionados no contexto/extras — nunca acrescente documento não informado. A explicação diz o que o documento é apto a provar em tese (ex.: "início de prova material da atividade rural"), sem inventar seu conteúdo (datas, nomes, endereços nele constantes).]
 [OBRIGATÓRIO: cada prova em UMA linha, começando com ✓, formato "Nome — explicação".
 NUNCA escreva provas em parágrafos corridos. NUNCA coloque a lista antes da seção IV.
 NUNCA coloque provas em <<<III_SINTESE_DEPOIS>>> — o sistema renderiza as caixas com check somente dentro de IV.]
 
 <<<IV_FECHO>>>
-[Parágrafo de análise/fechamento da seção de provas — início de prova material + economia familiar + carência.
+[Parágrafo de análise/fechamento da seção de provas — início de prova material + economia familiar + carência, como análise jurídica das provas listadas (sem afirmar fatos além dos informados).
 Este parágrafo vem DEPOIS da lista de provas (não antes).
 Se houver declaração de sindicato rural, descreva-a como prova complementar (NÃO cite art. 106, III, da Lei 8.213/91).]
 <<<END_IV_FECHO>>>
@@ -457,8 +490,8 @@ nota: ${smValor.nota}
 <<<END_PLANILHA>>>
 
 REGRAS:
-- Tom formal, humanizado e persuasivo
-- Usar EXATAMENTE os dados fornecidos pelo usuário
+- Tom formal, humanizado e persuasivo — a humanização vem da redação, NUNCA de fatos acrescentados (ver FATOS vs. ARGUMENTAÇÃO)
+- Usar EXATAMENTE os dados fornecidos pelo usuário, e SOMENTE eles como fatos do caso
 - Endereço da parte autora na qualificação: reproduzir EXATAMENTE "${enderecoFixo}" (sem reescrever). CEP sempre no formato 00000-000 (sem ponto).
 - Após a qualificação (síntese fática, provas, fundamentação): citar só o município ${munUf}; não repetir o endereço completo nem o nome do povoado em toda frase.
 - Endereçamento SEM "Comarca"; juízo = "${ctx.juizoCompetente}" (NUNCA "${ctx.cidadeEscritorio || 'cidade do escritório'}" no endereçamento)
@@ -468,7 +501,7 @@ REGRAS:
 - Incluir checklist "Autodeclaração de segurado especial (art. 38-B, §2º, Lei 8.213/91)" nas provas
 - Em <<<IV_PROVAS>>>: SOMENTE lista com ✓ no formato "Nome do documento — explicação". Nunca parágrafos. Renderizadas em caixas cinza com check verde DENTRO da seção IV.
 - Em <<<I_PRELIMINARES>>>: cada tema em subtítulo próprio "DA …:" (ex.: DA GRATUIDADE DA JUSTIÇA:, DA PRIORIDADE…).
-- Na TIMELINE: 4 a 7 eventos reais do caso (nascimento, labor rural, requerimento, indeferimento etc.). O sistema pode sobrescrever este bloco com a configuração do usuário (estilo: horizontal | vertical | none). Local da timeline = município da parte autora (${munUf}), NÃO a cidade do escritório.
+- Na TIMELINE: até 7 eventos, SOMENTE com fatos e datas presentes nas fontes (ex.: período rural informado, nascimento da criança, requerimento, indeferimento). Se houver poucos fatos datados, use poucos eventos — NUNCA crie eventos ("início do labor na infância", "casamento", "trabalho na gestação") nem datas estimadas. O sistema pode sobrescrever este bloco com a configuração do usuário (estilo: horizontal | vertical | none). Local da timeline = município da parte autora (${munUf}), NÃO a cidade do escritório.
 - prioridade_menor: true se a parte autora for menor de 18 anos
 - Local/data da assinatura: o sistema completa com a cidade do escritório (${ctx.cidadeEscritorio || '[Cidade]/[UF]'}) — no FECHAMENTO NÃO escreva a linha de cidade/data
 - Valor da causa: ${smValor.totalFmt} (4 × salário mínimo ${smValor.mensalFmt} vigente desde ${smValor.dataVigenciaFmt} na data do parto)
@@ -476,7 +509,7 @@ REGRAS:
 - Copie os nomes dos marcadores EXATAMENTE, com underscores: <<<END_III_ANTES>>> (nunca <<<ENDIIANTES>>>). Todo bloco aberto DEVE ser fechado.
 - Os marcadores são instruções internas do sistema: não os explique, não os repita fora do formato e não os deixe no meio do texto jurídico.
 - Na TIMELINE escreva APENAS um objeto JSON válido (sem markdown, sem texto antes ou depois do JSON).
-- NUNCA deixe seções I–VI vazias. NUNCA corte no meio da frase. Pedidos VI devem ter i. até viii. completos.
+- NUNCA deixe seções I–VI vazias (com poucos fatos, apoie-se na argumentação jurídica — nunca em fatos presumidos). NUNCA corte no meio da frase. Pedidos VI devem ter i. até viii. completos.
 - Pedido iii: use exatamente "averbação do período de atividade rural no CNIS" (NÃO diga "carência rural").
 `
 }

@@ -16,6 +16,7 @@ import {
   resolverLocalAdvogado,
 } from '@/lib/peticao-export'
 import { valorCausaSalarioMaternidade } from '@/lib/salario-minimo'
+import { ASSINATURA_ESPACO_CM, ASSINATURA_MAX_ALTURA_CM } from '@/lib/assinatura-escritorio'
 import {
   caixaTitulo,
   caixaTituloSeMinusculo,
@@ -1406,17 +1407,25 @@ function prepararTimelineRender(
   }
 }
 
-/** Sugere eventos padrão a partir dos campos do formulário de SM. */
+/**
+ * Sugere eventos só a partir de dados informados no formulário (nada presumido:
+ * sem "infância/juventude", sem data de ajuizamento, sem eventos genéricos).
+ */
 export function sugerirEventosTimeline(
   form: Record<string, string>,
 ): TimelineEvento[] {
   const evs: TimelineEvento[] = []
   const periodo = (form.periodo_segurado || '').trim()
   if (periodo) {
+    const inicio = periodo.match(/\b(\d{1,2}\/\d{1,2}\/\d{4}|\d{1,2}\/\d{4}|(?:19|20)\d{2})\b/)?.[1]
     evs.push({
-      data: 'Infância / juventude',
-      titulo: 'Início do labor rural',
-      detalhe: periodo,
+      data: inicio
+        ? /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(inicio)
+          ? sanitizarDataPeticao(inicio, inicio)
+          : inicio
+        : periodo.slice(0, 40),
+      titulo: 'Início da atividade rural',
+      detalhe: inicio ? periodo.slice(0, 80) : '',
     })
   }
   if ((form.data_nascimento_crianca || '').trim()) {
@@ -1442,17 +1451,7 @@ export function sugerirEventosTimeline(
       detalhe: (form.motivo_inss || '').trim().slice(0, 80),
     })
   }
-  evs.push({
-    data: new Date().toLocaleDateString('pt-BR'),
-    titulo: 'Ajuizamento da ação',
-    detalhe: 'Petição inicial — JEF',
-  })
-  return evs.length
-    ? evs
-    : [
-        { data: '—', titulo: 'Evento 1', detalhe: '' },
-        { data: '—', titulo: 'Evento 2', detalhe: '' },
-      ]
+  return evs
 }
 
 export function montarTimelineDataPadrao(
@@ -2062,9 +2061,23 @@ function planilhaHtml(raw: string, dataParto?: string | null): string {
 
 function assinaturasHtml(adv: DadosAdvogadoPeticao, fechamentoRaw: string): string {
   const localData = formatarLocalData(adv)
+  const pxPorCm = 96 / 2.54
+  const espacoPx = Math.round(ASSINATURA_ESPACO_CM * pxPorCm * 100) / 100
+  const maxAssPx = ASSINATURA_MAX_ALTURA_CM * pxPorCm
+  const ass = adv.assinatura && adv.assinatura.dataUrl.startsWith('data:image/') ? adv.assinatura : null
+  let imgAss = ''
+  if (ass) {
+    const escala = Math.min(1, maxAssPx / ass.heightPx)
+    const w = Math.round(ass.widthPx * escala * 100) / 100
+    const h = Math.round(ass.heightPx * escala * 100) / 100
+    imgAss = `<img class="sm-assinatura-img" src="${ass.dataUrl}" alt="" width="${Math.round(w)}" height="${Math.round(h)}" style="display:block;width:${w}px;height:${h}px;max-width:none;margin:0 auto;">`
+  }
+  let cardIdx = 0
 
+  // Espaço de 2,5 cm entre local/data e o traço, sempre reservado (com ou sem imagem).
   const cardHtml = (nome: string, oab: string) => `
     <td class="sm-sign-card">
+      <div class="sm-assinatura-espaco" style="height:${espacoPx}px;">${cardIdx++ === 0 ? imgAss : ''}</div>
       <div class="sm-sign-line"></div>
       <div class="sm-sign-name">${escapar(nome)}</div>
       <div class="sm-sign-oab">${escapar(oab)}</div>
@@ -2107,11 +2120,13 @@ function assinaturasHtml(adv: DadosAdvogadoPeticao, fechamentoRaw: string): stri
     .replace(/^[A-Za-zÀ-ÿ ].*\/[A-Z]{2},?\s+\d{1,2}\s+de\s+\w+.*/gim, '')
     .trim()
 
-  // Parágrafos de encerramento = blocos independentes; só local/data + assinatura é indivisível.
+  // Encerramento (Protesta / Dá-se à causa / Termos em que) = um bloco indivisível,
+  // separado de local/data + assinatura (outro bloco indivisível).
+  const encerramento = parasHtml(body)
   return `
     <div class="sm-fechamento">
-      ${parasHtml(body)}
-      <div class="sm-assinatura-bloco keep-together" data-pdf-block="1" data-pdf-keep="1" style="page-break-inside:avoid;break-inside:avoid;">
+      ${encerramento ? `<div class="sm-encerramento" data-pdf-block="atomic" data-pdf-nome="encerramento">${encerramento}</div>` : ''}
+      <div class="sm-assinatura-bloco keep-together" data-pdf-block="1" data-pdf-keep="1" data-pdf-nome="assinatura" style="page-break-inside:avoid;break-inside:avoid;">
         <p class="sm-local-data">${escapar(localData)}.</p>
         <table class="sm-sign-row" cellpadding="0" cellspacing="0" width="100%">
           <tr>${cards.replace(/class="sm-sign-card"/g, `class="sm-sign-card"${nCards === 1 ? ' style="width:100%;"' : ''}`)}</tr>
@@ -2723,12 +2738,14 @@ export function cssSmRural(comMargens: boolean): string {
     .sm-tl-titulo { font-weight: bold; font-size: 11.5px; color: #0A2540; }
     .sm-tl-detalhe { font-size: 10px; color: #666; margin-top: 2px; }
 
-    .sm-provas { margin: 8px 0; }
+    .sm-provas { margin: 8px 0 10px; }
     table.sm-provas-table {
       width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed;
-      background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 4px; margin: 0 0 5px;
+      background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 4px; margin: 0 0 2.5px;
     }
-    table.sm-provas-table td { padding: 6px 10px; font-size: 12px; vertical-align: top; text-transform: none; }
+    table.sm-provas-table td {
+      padding: 3.6px 10px; font-size: 11px; line-height: 1.4; vertical-align: top; text-transform: none;
+    }
     table.sm-provas-table td.sm-prova-txt strong { font-weight: bold; }
     table.sm-provas-table td.sm-check {
       color: #15803d; font-weight: bold; width: 22px; text-align: center;
@@ -2741,7 +2758,7 @@ export function cssSmRural(comMargens: boolean): string {
       height: auto !important;
       max-height: none !important;
       overflow: visible !important;
-      margin-top: 4px !important;
+      margin-top: 0 !important;
       margin-bottom: 0 !important;
       padding-top: 0 !important;
       page-break-inside: auto !important;
@@ -2756,7 +2773,7 @@ export function cssSmRural(comMargens: boolean): string {
       page-break-after: avoid;
       page-break-inside: avoid;
       break-inside: avoid;
-      margin-top: 10px;
+      margin-top: 18px;
       margin-bottom: 8px;
     }
     .sm-secao-vi .keep-together {
@@ -2811,10 +2828,11 @@ export function cssSmRural(comMargens: boolean): string {
       page-break-before: auto !important;
       break-before: auto !important;
     }
-    .sm-local-data { text-align: center; font-size: 12px; margin: 14px 0 16px; font-weight: 500; text-transform: none; }
+    .sm-local-data { text-align: center; font-size: 12px; margin: 14px 0 0; font-weight: 500; text-transform: none; }
+    .sm-assinatura-espaco { display: flex; align-items: center; justify-content: center; overflow: hidden; margin: 0; padding: 0; }
     table.sm-sign-row {
       width: 100%; border-collapse: collapse; table-layout: fixed;
-      margin-top: 8px; page-break-inside: avoid;
+      margin-top: 0; page-break-inside: avoid;
     }
     td.sm-sign-card { text-align: center; vertical-align: top; padding: 0 12px; width: 50%; }
     .sm-sign-line { border-top: 1px solid #222; margin: 0 8px 8px; height: 0; }
@@ -2940,12 +2958,14 @@ export function montarHtmlSmRural(opts: {
     ${parasHtml(sinteseAntesLimpa)}
     ${temTimeline ? timelineHtml : ''}
     ${parasHtml(sinteseDepoisLimpa)}
-    ${sectionBar('IV – DAS PROVAS JUNTADAS AOS AUTOS')}
-    ${provasHtml(estruturarProvasSm(provas))}
+    <div class="sm-provas-bloco" data-pdf-block="atomic" data-pdf-quebra="provas" data-pdf-nome="lista de provas">
+      ${sectionBar('IV – DAS PROVAS JUNTADAS AOS AUTOS')}
+      ${provasHtml(estruturarProvasSm(provas))}
+    </div>
     ${parasHtml(provasFecho)}
     ${sectionBar('V – FUNDAMENTAÇÃO JURÍDICA')}
     ${parasHtml(fund)}
-    <div class="sm-secao-vi" style="height:auto;max-height:none;overflow:visible;margin-top:4px;padding-top:0;page-break-inside:auto;break-inside:auto;">
+    <div class="sm-secao-vi" style="height:auto;max-height:none;overflow:visible;margin-top:0;padding-top:0;page-break-inside:auto;break-inside:auto;">
       <div class="sm-section-bar" data-pdf-block="1" data-pdf-keep-with-next="1">${escapar('VI – PEDIDO / REQUERIMENTOS')}</div>
       ${pedidosHtml(pedidosP4.length ? pedidosP4 : pedidosAll, true)}
       ${pedidosP5.length ? pedidosHtml(pedidosP5, false) : ''}

@@ -18,6 +18,11 @@ export type DadosAdvogadoPeticao = {
   logo_url?: string | null
   banner_url?: string | null
   signature_url?: string | null
+  /**
+   * Imagem da assinatura já em data-URL, dimensionada (ver `lib/assinatura-escritorio.ts`).
+   * undefined = ainda não carregada; null = sem assinatura (espaço fica em branco).
+   */
+  assinatura?: { dataUrl: string; widthPx: number; heightPx: number } | null
   cor_peticao?: string | null
   estilo_peticao?: string | null
 }

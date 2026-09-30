@@ -318,7 +318,8 @@ export async function POST(request: Request) {
     )
     const anthropic = new Anthropic({ apiKey })
     const encoder = new TextEncoder()
-    const formJson = JSON.stringify(formComSexo ?? {})
+    const formJson = `DADOS DO CASO — única fonte dos fatos do caso concreto: campos do formulário, dados extraídos do PDF importado, provas marcadas ("provas") e instruções/observações do usuário ("contexto", "observacoes", "extras"). Não afirme como fato nada que não conste aqui (regra FATOS vs. ARGUMENTAÇÃO).
+${JSON.stringify(formComSexo ?? {})}`
     let fullText = ''
 
     const readable = new ReadableStream({

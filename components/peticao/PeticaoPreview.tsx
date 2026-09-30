@@ -8,6 +8,7 @@ import {
   normalizarEstiloPeticao,
 } from '@/lib/peticao-export'
 import { montarHtmlPeticao } from '@/lib/montar-html-peticao'
+import { comAssinaturaEscritorio } from '@/lib/assinatura-pdf-cliente'
 
 type Props = {
   text: string
@@ -103,12 +104,29 @@ export function PeticaoPreview({
     }
   }, [adv?.logo_url, adv?.banner_url])
 
+  const [assinatura, setAssinatura] = useState<DadosAdvogadoPeticao['assinatura']>(null)
+  useEffect(() => {
+    let cancelled = false
+    if (!adv) {
+      setAssinatura(null)
+      return
+    }
+    void comAssinaturaEscritorio(adv).then((a) => {
+      if (!cancelled) setAssinatura(a.assinatura ?? null)
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adv?.signature_url, adv?.assinatura])
+
   useEffect(() => {
     const t = setTimeout(() => {
       const advForRender: DadosAdvogadoPeticao = {
         ...(adv || {}),
         logo_url: logoDataUrl,
         banner_url: bannerDataUrl,
+        assinatura,
       }
 
       setHtml(
@@ -123,7 +141,7 @@ export function PeticaoPreview({
       )
     }, debounceMs)
     return () => clearTimeout(t)
-  }, [text, adv, estilo, corPeticao, debounceMs, agentType, logoDataUrl, bannerDataUrl])
+  }, [text, adv, estilo, corPeticao, debounceMs, agentType, logoDataUrl, bannerDataUrl, assinatura])
 
   useEffect(() => {
     const el = hostRef.current

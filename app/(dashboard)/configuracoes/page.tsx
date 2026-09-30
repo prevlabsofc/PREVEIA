@@ -9,6 +9,13 @@ import { GlassCard } from '@/components/GlassCard'
 import { ModulosEscritorio } from '@/components/configuracoes/ModulosEscritorio'
 import { GoogleIcon } from '@/components/auth/GoogleSignInButton'
 import { UFS_BRASIL } from '@/lib/estados-brasil'
+import {
+  ASSINATURA_MAX_BYTES,
+  SIGNATURES_BUCKET,
+  assinaturaDeBytesPng,
+  caminhoAssinaturaStorage,
+  carregarAssinaturaEscritorio,
+} from '@/lib/assinatura-escritorio'
 import { DIAS_ALERTA_SEM_CONTATO_PADRAO } from '@/lib/registrar-contato'
 import {
   linkGoogleAccount,
@@ -51,6 +58,8 @@ export default function ConfiguracoesPage() {
   const logoRef = useRef<HTMLInputElement>(null)
   const bannerRef = useRef<HTMLInputElement>(null)
   const signRef = useRef<HTMLInputElement>(null)
+  const [assinaturaPreview, setAssinaturaPreview] = useState<string | null>(null)
+  const [assinaturaMsg, setAssinaturaMsg] = useState('')
 
   const [isLight, setIsLight] = useState(false)
   useEffect(() => {
@@ -80,6 +89,10 @@ export default function ConfiguracoesPage() {
         estado: data?.estado || data?.oab_uf || 'SP',
       })
       setCorPeticao(data?.cor_peticao || '#1d4ed8')
+      if (data?.signature_url) {
+        carregarAssinaturaEscritorio(supabase, user.id, { signatureUrl: data.signature_url })
+          .then((a) => setAssinaturaPreview(a?.dataUrl ?? null))
+      }
 
       const identities = user.identities || []
       const g = identities.find((i) => i.provider === 'google') || null
@@ -149,6 +162,59 @@ export default function ConfiguracoesPage() {
     set(field, url)
     await supabase.from('lawyers').update({ [field]: url }).eq('id', me.id)
     setUploading(false)
+  }
+
+  async function uploadAssinatura(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !me) return
+    setAssinaturaMsg('')
+    if (file.size > ASSINATURA_MAX_BYTES) {
+      setAssinaturaMsg('Arquivo muito grande (máximo 3 MB).')
+      return
+    }
+    const assinatura = assinaturaDeBytesPng(new Uint8Array(await file.arrayBuffer()))
+    if (!assinatura) {
+      setAssinaturaMsg('Envie uma imagem PNG válida.')
+      return
+    }
+    setUploading(true)
+    const path = `${me.id}/assinatura.png`
+    const { error } = await supabase.storage
+      .from(SIGNATURES_BUCKET)
+      .upload(path, file, { upsert: true, contentType: 'image/png' })
+    if (error) {
+      setUploading(false)
+      setAssinaturaMsg('Erro ao enviar: ' + error.message)
+      return
+    }
+    const { error: dbErr } = await supabase.from('lawyers').update({ signature_url: path }).eq('id', me.id)
+    setUploading(false)
+    if (dbErr) {
+      setAssinaturaMsg('Erro ao salvar: ' + dbErr.message)
+      return
+    }
+    set('signature_url', path)
+    setAssinaturaPreview(assinatura.dataUrl)
+    setAssinaturaMsg('Assinatura salva.')
+  }
+
+  async function removerAssinatura() {
+    if (!me) return
+    if (!confirm('Remover a imagem da assinatura? As próximas petições sairão com o espaço em branco para assinar.')) return
+    setUploading(true)
+    setAssinaturaMsg('')
+    const path = caminhoAssinaturaStorage(form.signature_url)
+    if (path) await supabase.storage.from(SIGNATURES_BUCKET).remove([path])
+    const { error } = await supabase.from('lawyers').update({ signature_url: null }).eq('id', me.id)
+    setUploading(false)
+    if (error) {
+      setAssinaturaMsg('Erro ao remover: ' + error.message)
+      return
+    }
+    set('signature_url', null)
+    setAssinaturaPreview(null)
+    setAssinaturaMsg('Assinatura removida.')
   }
 
   async function trocarSenha() {
@@ -472,21 +538,38 @@ export default function ConfiguracoesPage() {
 
         {tab === 'assinatura' && (
           <div className="space-y-5">
-            <p className="text-sm" style={{ color: isLight ? '#5E5E5E' : undefined }}>Sua assinatura digital aparecerá no rodapé das petições geradas.</p>
+            <p className="text-sm" style={{ color: isLight ? '#5E5E5E' : undefined }}>A imagem da sua assinatura aparecerá nas petições geradas, no espaço entre a data e o traço de assinatura.</p>
+            <p className="text-xs" style={{ color: isLight ? '#5E5E5E' : '#999' }}>
+              Formato aceito: PNG (até 3 MB). Recomendado: PNG com fundo transparente, recortado rente à assinatura. A imagem é ajustada a no máximo 2,2 cm de altura, sem distorcer.
+            </p>
             <div className="flex items-center gap-5">
-              <div className="w-40 h-20 rounded-2xl flex items-center justify-center overflow-hidden flex-shrink-0" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(212,175,55,0.2)' }}>
-                {form.signature_url ? (
+              <div className="w-40 h-20 rounded-2xl flex items-center justify-center overflow-hidden flex-shrink-0" style={{ background: '#fff', border: '1px solid rgba(212,175,55,0.2)' }}>
+                {assinaturaPreview ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={form.signature_url} alt="Assinatura" style={{ width: '100%', height: '100%', objectFit: 'contain' }}/>
+                  <img src={assinaturaPreview} alt="Assinatura" style={{ width: '100%', height: '100%', objectFit: 'contain' }}/>
                 ) : <PenTool size={28} color="#555"/>}
               </div>
-              <div>
-                <input ref={signRef} type="file" accept="image/*" onChange={e => uploadFile(e, 'signatures', 'signature_url')} style={{ display: 'none' }}/>
+              <div className="flex flex-col gap-2">
+                <input ref={signRef} type="file" accept="image/png" onChange={uploadAssinatura} style={{ display: 'none' }}/>
                 <button onClick={() => signRef.current?.click()} disabled={uploading} className="btn-gold flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm">
-                  {uploading ? <><Loader2 size={15} className="animate-spin"/> Enviando...</> : <><Upload size={15}/> Enviar Assinatura</>}
+                  {uploading ? <><Loader2 size={15} className="animate-spin"/> Enviando...</> : <><Upload size={15}/> Enviar Assinatura (PNG)</>}
                 </button>
+                {form.signature_url && (
+                  <button
+                    type="button"
+                    onClick={removerAssinatura}
+                    disabled={uploading}
+                    className="block text-xs text-left"
+                    style={{ color: '#888' }}
+                  >
+                    Remover assinatura
+                  </button>
+                )}
               </div>
             </div>
+            {assinaturaMsg && (
+              <p className="text-xs" style={{ color: isLight ? '#5E5E5E' : '#bbb' }}>{assinaturaMsg}</p>
+            )}
           </div>
         )}
 

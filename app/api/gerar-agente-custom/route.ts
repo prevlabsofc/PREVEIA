@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
+import { REGRAS_FATOS } from '@/lib/agents'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -29,8 +30,8 @@ export async function POST(req: Request) {
       const refined = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
         max_tokens: 6000,
-        system: `Você é um assistente jurídico. Instruções do escritório: ${agent.instrucoes}`,
-        messages: [{ role: 'user', content: `Revise e melhore esta petição seguindo as instruções do escritório:\n\n${peticao}` }],
+        system: `${REGRAS_FATOS}Você é um assistente jurídico. Instruções do escritório: ${agent.instrucoes}`,
+        messages: [{ role: 'user', content: `Revise e melhore esta petição seguindo as instruções do escritório. Os fatos do caso são apenas os já presentes no texto e nos DADOS DO CASO abaixo — não acrescente outros.\n\nDADOS DO CASO:\n${JSON.stringify(formData ?? {})}\n\nPETIÇÃO:\n${peticao}` }],
       })
       peticao = refined.content[0].type === 'text' ? refined.content[0].text : peticao
     }
