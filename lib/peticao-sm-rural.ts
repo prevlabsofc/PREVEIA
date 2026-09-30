@@ -220,6 +220,13 @@ const CANON_BY_COMPACT: Record<string, string> = {
   IIIANTES: 'III_SINTESE_ANTES',
   ENDIIIANTES: 'END_III_ANTES',
   ENDIIANTES: 'END_III_ANTES',
+  ENDIIISINTESEANTES: 'END_III_ANTES',
+  ENDIPRELIMINARES: 'END_I',
+  ENDIIQUADRO: 'END_II',
+  ENDIIISINTESEDEPOIS: 'END_III_DEPOIS',
+  ENDIVPROVAS: 'END_IV',
+  ENDVFUNDAMENTACAO: 'END_V',
+  ENDVIPEDIDOS: 'END_VI',
   TIMELINE: 'TIMELINE',
   ENDTIMELINE: 'END_TIMELINE',
   IIISINTESEDEPOIS: 'III_SINTESE_DEPOIS',
@@ -246,6 +253,29 @@ export function canonicalizarMarcadoresSm(text: string): string {
     const canon = CANON_BY_COMPACT[compactTag(name)]
     return canon ? `<<<${canon}>>>` : ''
   })
+}
+
+const CHECK_PROTEGIDO = '\uE000'
+
+/**
+ * Aplica `limparMarkdownResidual` só nos trechos ENTRE marcadores.
+ * O limpador remove tags HTML curtas sem diferenciar caixa (`<i…>`, `<sub…>`,
+ * `<em…>`), o que destruiria `<<<IV_PROVAS>>>`, `<<<SUBTITULO>>>` etc. se o
+ * marcador estivesse dentro do trecho limpo. O ✓ de início de linha é
+ * preservado para a detecção de provas.
+ */
+function limparTextoEntreMarcadores(text: string): string {
+  return String(text || '')
+    .split(/(<<<[A-Z0-9_]+>>>)/)
+    .map((parte) => {
+      if (/^<<<[A-Z0-9_]+>>>$/.test(parte)) return parte
+      const protegido = parte.replace(/^([ \t]*)✓/gm, `$1${CHECK_PROTEGIDO}`)
+      const limpo = limparMarkdownResidual(protegido).split(CHECK_PROTEGIDO).join('✓')
+      const lead = /^\s*\n/.test(parte) ? '\n' : ''
+      const trail = /\n\s*$/.test(parte) ? '\n' : ''
+      return limpo ? `${lead}${limpo}${trail}` : lead || trail
+    })
+    .join('')
 }
 
 /** Remove qualquer <<<TAG>>> residual do texto/HTML. */
@@ -670,6 +700,8 @@ export function posProcessarPeticaoSmRural(
     nomeAutora?: string | null
     nomeCrianca?: string | null
     municipioAutor?: string | null
+    /** Provas marcadas no formulário — fonte de verdade da lista da seção IV. */
+    provasFormulario?: readonly string[] | null
   },
 ): string {
   let out = canonicalizarMarcadoresSm(text)
@@ -690,6 +722,7 @@ export function posProcessarPeticaoSmRural(
     out = simplificarMencoesEnderecoAposQualificacao(out, end, munUf, bairro)
   }
   out = normalizarCepEmTexto(out)
+  out = normalizarProvasNoTexto(out, opts?.provasFormulario)
   return out
 }
 
@@ -819,23 +852,40 @@ function normalizarItemProva(item: string): string {
   return s
 }
 
-/** Linha curta no padrão "Documento — explicação" (não parágrafo narrativo). */
+/**
+ * Linha no padrão "Documento — explicação" (não parágrafo narrativo).
+ * Linha iniciada por ✓ é sempre item. Sem ✓, o nome antes do primeiro
+ * travessão precisa ser curto e sem ponto final de frase.
+ */
 function pareceLinhaProva(linha: string): boolean {
-  const s = String(linha || '')
+  const bruto = String(linha || '').trim()
+  const comCheck = /^✓/.test(bruto)
+  const s = bruto
     .replace(/^✓\s*/, '')
     .replace(/^[-*•]\s*/, '')
     .replace(/^\d+[.)]\s*/, '')
     .trim()
-  if (s.length < 8 || s.length > 220) return false
-  if (!/\s+[—–\-]\s+/.test(s)) return false
-  // Parágrafo narrativo: duas frases (". " + maiúscula). Abreviações (art. 8.213) ok.
-  if (/\.\s+[A-ZÁÉÍÓÚÀÃÕÂÊÔ]/.test(s)) return false
+  if (s.length < 8) return false
+  if (comCheck) return s.length <= 700
+  if (s.length > 450) return false
+  const m = s.match(/^(.+?)\s+[—–\-]\s+(.+)$/)
+  if (!m) return false
+  const nome = m[1].trim()
+  if (nome.length < 4 || nome.length > 90) return false
+  if (/[.;:!?]$/.test(nome) || /\.\s+[A-ZÁÉÍÓÚÀÃÕÂÊÔ]/.test(nome)) return false
   return true
 }
 
+/** Linha-título solta antes de uma lista de provas ("Provas juntadas:"). */
+function pareceTituloListaProvas(linha: string): boolean {
+  const s = String(linha || '').trim()
+  return s.length < 80 && /\bprovas?\b/i.test(s) && (/:$/.test(s) || /^(das?\s+)?provas\b/i.test(s))
+}
+
 /**
- * Se a IA listou provas no fim da III (padrão "Documento — explicação"),
- * remove da síntese e devolve os itens para a seção IV.
+ * Se a IA listou provas no fim de um trecho da III (padrão "Documento — explicação"),
+ * remove da síntese e devolve os itens para a seção IV. Tolera linhas em branco
+ * entre itens, itens longos e mais de um travessão.
  */
 export function extrairProvasDoFimDaSintese(texto: string): {
   limpo: string
@@ -845,20 +895,17 @@ export function extrairProvasDoFimDaSintese(texto: string): {
   if (!raw.trim()) return { limpo: raw, provas: [] }
 
   const lines = raw.split(/\n/)
-  let end = lines.length - 1
-  while (end >= 0 && !lines[end].trim()) end -= 1
-
   const collected: string[] = []
-  let i = end
+  let comCheck = 0
+  let i = lines.length - 1
   while (i >= 0) {
     const t = lines[i].trim()
     if (!t) {
-      // linha em branco no meio do bloco de provas: interrompe
-      if (collected.length) break
       i -= 1
       continue
     }
     if (pareceLinhaProva(t)) {
+      if (/^✓/.test(t)) comCheck += 1
       collected.unshift(t)
       i -= 1
       continue
@@ -866,14 +913,31 @@ export function extrairProvasDoFimDaSintese(texto: string): {
     break
   }
 
-  if (collected.length < 2) return { limpo: raw, provas: [] }
+  if (collected.length < 2 && comCheck < 1) return { limpo: raw, provas: [] }
+  if (i >= 0 && pareceTituloListaProvas(lines[i])) i -= 1
 
   const keep = lines.slice(0, i + 1)
   while (keep.length && !keep[keep.length - 1].trim()) keep.pop()
   return {
     limpo: keep.join('\n').trim(),
-    provas: collected.map(normalizarItemProva).filter(Boolean),
+    provas: collected
+      .map((l) => normalizarItemProva(l.replace(/^✓\s*/, '').replace(/^[-*•]\s*/, '')))
+      .filter(Boolean),
   }
+}
+
+/**
+ * Itens de prova que ainda restam num trecho da III: qualquer linha com ✓ ou
+ * duas ou mais linhas "Documento — explicação" seguidas no fim.
+ */
+function residuosProvasNaIII(texto: string): string[] {
+  const lines = String(texto || '').split(/\n/).map((l) => l.trim()).filter(Boolean)
+  const fim: string[] = []
+  for (let i = lines.length - 1; i >= 0 && pareceLinhaProva(lines[i]); i -= 1) {
+    fim.unshift(lines[i])
+  }
+  const comCheck = lines.filter((l) => /^✓/.test(l))
+  return [...new Set([...comCheck, ...(fim.length >= 2 ? fim : [])])]
 }
 
 function mesclarProvas(base: string[], extras: string[]): string[] {
@@ -888,6 +952,263 @@ function mesclarProvas(base: string[], extras: string[]): string[] {
     out.push(n)
   }
   return out
+}
+
+/** Chave comparável do nome do documento (sem acento, parênteses ou pontuação). */
+function chaveNomeProva(s: string): string {
+  return String(s || '')
+    .split(/\s+[—–\-]\s+/)[0]
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\([^)]*\)/g, ' ')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+/**
+ * Mantém só as provas marcadas no formulário (fonte de verdade).
+ * Itens da IA que casam com um marcado preservam a explicação; marcados sem
+ * item correspondente entram só com o nome do formulário.
+ */
+export function filtrarProvasPeloFormulario(
+  provas: string[],
+  provasFormulario?: readonly string[] | null,
+): string[] {
+  const form = (provasFormulario || []).map((p) => String(p || '').trim()).filter(Boolean)
+  if (!form.length) return provas
+  const casa = (a: string, b: string) =>
+    a === b || (Math.min(a.length, b.length) >= 10 && (a.startsWith(b) || b.startsWith(a)))
+  const usados = new Set<number>()
+  const out: string[] = []
+  for (const item of provas) {
+    const k = chaveNomeProva(item)
+    const idx = form.findIndex((f, i) => !usados.has(i) && casa(k, chaveNomeProva(f)))
+    if (idx === -1) continue
+    usados.add(idx)
+    out.push(item)
+  }
+  form.forEach((f, i) => {
+    if (!usados.has(i)) out.push(normalizarItemProva(f))
+  })
+  return out
+}
+
+export type ItemProvaSm = {
+  /** Nome do documento (antes do primeiro travessão). */
+  nome: string
+  /** Explicação (pode conter outros travessões). Vazio se a IA não explicou. */
+  explicacao: string
+  /** "Nome — explicação" pronto para texto corrido. */
+  texto: string
+}
+
+/**
+ * Estrutura única da lista de provas da seção IV — usada pelo PDF (caixas)
+ * e pelo DOCX (tabela). Nenhum outro caminho monta essa lista.
+ */
+export function estruturarProvasSm(provas: readonly string[]): ItemProvaSm[] {
+  const out: ItemProvaSm[] = []
+  for (const raw of provas) {
+    const s = normalizarItemProva(
+      limparMarkdownResidual(stripMarcadoresSm(String(raw || '')))
+        .replace(/^[-*•]\s*/, '')
+        .replace(/^\d+[.)]\s*/, ''),
+    )
+    if (!s) continue
+    const m = s.match(/^(.+?)\s+—\s+(.+)$/)
+    const nome = (m ? m[1] : s).trim()
+    const explicacao = (m ? m[2] : '').trim()
+    out.push({ nome, explicacao, texto: explicacao ? `${nome} — ${explicacao}` : nome })
+  }
+  return out
+}
+
+/**
+ * Resolve a lista de provas a partir do bloco IV e da III: itens deixados pela
+ * IA no fim da III são removidos de lá e levados para a IV.
+ */
+function resolverProvasSm(opts: {
+  ivRaw: string
+  sinteseAntes: string
+  sinteseDepois: string
+  provasFormulario?: readonly string[] | null
+}): { provas: string[]; sinteseAntes: string; sinteseDepois: string; movidas: number } {
+  let provas = parseProvas(opts.ivRaw)
+  let { sinteseAntes, sinteseDepois } = opts
+  let movidas = 0
+  for (const trecho of ['depois', 'antes'] as const) {
+    const movido = extrairProvasDoFimDaSintese(trecho === 'depois' ? sinteseDepois : sinteseAntes)
+    if (!movido.provas.length) continue
+    movidas += movido.provas.length
+    if (trecho === 'depois') sinteseDepois = movido.limpo
+    else sinteseAntes = movido.limpo
+    provas = mesclarProvas(provas, movido.provas)
+  }
+  provas = filtrarProvasPeloFormulario(provas, opts.provasFormulario)
+  return { provas, sinteseAntes, sinteseDepois, movidas }
+}
+
+type SecoesSm = {
+  meta: ReturnType<typeof parseMeta>
+  endereco: string
+  qualificacao: string
+  titulo: string
+  subtitulo: string
+  emFace: string
+  preliminaresRaw: string
+  quadro: QuadroRow[]
+  sinteseAntes: string
+  timeline: TimelineData | null
+  sinteseDepois: string
+  provas: string[]
+  provasMovidas: number
+  provasFecho: string
+  fundamentacao: string
+  pedidos: string[]
+  fechamento: string
+  planilhaRaw: string
+}
+
+/** Leitura única das seções SM (usada por PDF, DOCX e validação). */
+function lerSecoesSm(
+  textoBruto: string,
+  provasFormulario?: readonly string[] | null,
+): SecoesSm | null {
+  const canonical = canonicalizarMarcadoresSm(textoBruto)
+  if (!isSmRuralStructured(canonical)) return null
+  const text = limparTextoEntreMarcadores(canonical)
+
+  let titulo = bloco(text, '<<<TITULO>>>', '<<<SUBTITULO>>>')
+  const subtitulo = bloco(text, '<<<SUBTITULO>>>', '<<<END_TITULO>>>')
+  if (!titulo) titulo = bloco(text, '<<<TITULO>>>', '<<<END_TITULO>>>')
+  let timeline = parseTimeline(bloco(text, '<<<TIMELINE>>>', '<<<END_TIMELINE>>>'))
+  if (!timeline) timeline = parseTimeline(extrairJsonTimeline(text) || '')
+
+  const provasRes = resolverProvasSm({
+    ivRaw: bloco(text, '<<<IV_PROVAS>>>', '<<<END_IV>>>'),
+    sinteseAntes: removerJsonTimelineDoTexto(
+      bloco(text, '<<<III_SINTESE_ANTES>>>', '<<<END_III_ANTES>>>'),
+    ),
+    sinteseDepois: removerJsonTimelineDoTexto(
+      bloco(text, '<<<III_SINTESE_DEPOIS>>>', '<<<END_III_DEPOIS>>>'),
+    ),
+    provasFormulario,
+  })
+
+  return {
+    meta: parseMeta(bloco(text, '<<<META>>>', '<<<END_META>>>')),
+    endereco: bloco(text, '<<<ENDERECO>>>', '<<<END_ENDERECO>>>'),
+    qualificacao: bloco(text, '<<<QUALIFICACAO>>>', '<<<END_QUALIFICACAO>>>'),
+    titulo,
+    subtitulo,
+    emFace: bloco(text, '<<<EM_FACE>>>', '<<<END_EM_FACE>>>'),
+    preliminaresRaw: bloco(text, '<<<I_PRELIMINARES>>>', '<<<END_I>>>'),
+    quadro: parseQuadro(bloco(text, '<<<II_QUADRO>>>', '<<<END_II>>>')),
+    sinteseAntes: provasRes.sinteseAntes,
+    timeline,
+    sinteseDepois: provasRes.sinteseDepois,
+    provas: provasRes.provas,
+    provasMovidas: provasRes.movidas,
+    provasFecho: bloco(text, '<<<IV_FECHO>>>', '<<<END_IV_FECHO>>>'),
+    fundamentacao: bloco(text, '<<<V_FUNDAMENTACAO>>>', '<<<END_V>>>'),
+    pedidos: parsePedidos(bloco(text, '<<<VI_PEDIDOS>>>', '<<<END_VI>>>')),
+    fechamento: bloco(text, '<<<FECHAMENTO>>>', '<<<END_FECHAMENTO>>>'),
+    planilhaRaw: bloco(text, '<<<PLANILHA>>>', '<<<END_PLANILHA>>>'),
+  }
+}
+
+/** Segmento [início do corpo, fim do corpo) de um marcador de abertura, até o próximo marcador. */
+function segmentoAposMarcador(text: string, tag: string): { a: number; b: number } | null {
+  const open = `<<<${tag}>>>`
+  const i = text.indexOf(open)
+  if (i === -1) return null
+  const a = i + open.length
+  const next = proximoMarcadorIndex(text, a)
+  return { a, b: next === -1 ? text.length : next }
+}
+
+/**
+ * Reescreve o texto salvo com a lista de provas canônica: tira os itens do fim
+ * da III, grava cada prova como linha "✓ Nome — explicação" dentro de
+ * <<<IV_PROVAS>>>…<<<END_IV>>> e filtra pelas provas marcadas no formulário.
+ */
+export function normalizarProvasNoTexto(
+  text: string,
+  provasFormulario?: readonly string[] | null,
+): string {
+  let out = canonicalizarMarcadoresSm(text)
+  if (!isSmRuralStructured(out)) return out
+
+  const extras: string[] = []
+  for (const tag of ['III_SINTESE_DEPOIS', 'III_SINTESE_ANTES']) {
+    const seg = segmentoAposMarcador(out, tag)
+    if (!seg) continue
+    const corpo = out.slice(seg.a, seg.b)
+    const movido = extrairProvasDoFimDaSintese(corpo)
+    if (!movido.provas.length) continue
+    extras.push(...movido.provas)
+    out = `${out.slice(0, seg.a)}\n${movido.limpo}\n${out.slice(seg.b)}`
+  }
+
+  const depois = segmentoAposMarcador(out, 'III_SINTESE_DEPOIS')
+  if (depois && !out.startsWith('<<<END_III_DEPOIS>>>', depois.b)) {
+    out = `${out.slice(0, depois.b)}<<<END_III_DEPOIS>>>\n${out.slice(depois.b)}`
+  }
+
+  const segIv = segmentoAposMarcador(out, 'IV_PROVAS')
+  const ivRaw = segIv ? limparTextoEntreMarcadores(out.slice(segIv.a, segIv.b)) : ''
+  const provas = filtrarProvasPeloFormulario(
+    mesclarProvas(parseProvas(ivRaw), extras),
+    provasFormulario,
+  )
+  if (!provas.length) return out
+
+  const lista = estruturarProvasSm(provas).map((p) => `✓ ${p.texto}`).join('\n')
+  if (segIv) {
+    const fechado = out.startsWith('<<<END_IV>>>', segIv.b)
+    return `${out.slice(0, segIv.a)}\n${lista}\n${fechado ? '' : '<<<END_IV>>>\n'}${out.slice(segIv.b)}`
+  }
+  const novoBloco = `<<<IV_PROVAS>>>\n${lista}\n<<<END_IV>>>\n\n`
+  const ancora = ['<<<IV_FECHO>>>', '<<<V_FUNDAMENTACAO>>>']
+    .map((t) => out.indexOf(t))
+    .find((i) => i !== -1)
+  return ancora === undefined ? out : `${out.slice(0, ancora)}${novoBloco}${out.slice(ancora)}`
+}
+
+export const ERRO_PROVAS_SM =
+  'A lista de provas (seção IV) não pôde ser estruturada a partir do texto gerado. Gere a petição novamente.'
+
+/**
+ * Valida a lista de provas antes de gerar qualquer formato. Faz a mesma
+ * recuperação automática do PDF/DOCX; só reprova se ainda restar problema.
+ */
+export function diagnosticarProvasSm(text: string): {
+  ok: boolean
+  provas: string[]
+  movidas: number
+  residuosIII: string[]
+  motivo?: string
+} {
+  const s = lerSecoesSm(String(text || ''))
+  if (!s) return { ok: false, provas: [], movidas: 0, residuosIII: [], motivo: 'sem marcadores SM' }
+  const residuosIII = [
+    ...residuosProvasNaIII(s.sinteseAntes),
+    ...residuosProvasNaIII(s.sinteseDepois),
+  ]
+  const semLista = s.provas.length < 1
+  if (!semLista && residuosIII.length === 0) {
+    return { ok: true, provas: s.provas, movidas: s.provasMovidas, residuosIII }
+  }
+  return {
+    ok: false,
+    provas: s.provas,
+    movidas: s.provasMovidas,
+    residuosIII,
+    motivo: semLista
+      ? 'seção IV sem lista estruturada de provas'
+      : 'linhas "Documento — explicação" restantes no fim da seção III',
+  }
 }
 
 /** Data de nascimento da criança no quadro sinóptico (dd/mm/aaaa ou ISO). */
@@ -1622,16 +1943,16 @@ function quadroHtml(tituloSecao: string, rows: QuadroRow[]): string {
   `
 }
 
-function provasHtml(items: string[]): string {
+function provasHtml(items: ItemProvaSm[]): string {
   return `
     <div class="sm-provas">
       ${items
         .map(
-          (it, i) => `
+          (it) => `
         <table class="sm-provas-table sm-prova-item" data-pdf-block="1" data-pdf-prova="1" cellpadding="0" cellspacing="0" width="100%">
-          <tr class="${i % 2 === 0 ? 'even' : 'odd'}">
+          <tr>
             <td class="sm-check">✓</td>
-            <td class="sm-prova-txt">${escapar(it)}</td>
+            <td class="sm-prova-txt"><strong>${escapar(it.nome)}</strong>${it.explicacao ? ` — ${escapar(it.explicacao)}` : ''}</td>
           </tr>
         </table>`,
         )
@@ -1916,55 +2237,12 @@ export function extrairConteudoSmRural(opts: {
   adv: DadosAdvogadoPeticao
   sexoParteAutora?: string | null
 }): ConteudoSmRural | null {
-  const canonical = canonicalizarMarcadoresSm(
-    corrigirLocalNoTexto(opts.text, opts.adv),
-  )
-  if (!isSmRuralStructured(canonical)) return null
-
-  const text = canonical.replace(
-    /(<<<[A-Z0-9_]+>>>)([\s\S]*?)(<<<END_[A-Z0-9_]+>>>)/g,
-    (_m, open: string, body: string, close: string) =>
-      `${open}${limparMarkdownResidual(body)}${close}`,
-  )
-
-  const meta = parseMeta(bloco(text, '<<<META>>>', '<<<END_META>>>'))
-  const endereco = bloco(text, '<<<ENDERECO>>>', '<<<END_ENDERECO>>>')
-  const qualificacao = bloco(text, '<<<QUALIFICACAO>>>', '<<<END_QUALIFICACAO>>>')
-  let titulo = bloco(text, '<<<TITULO>>>', '<<<SUBTITULO>>>')
-  let subtitulo = bloco(text, '<<<SUBTITULO>>>', '<<<END_TITULO>>>')
-  if (!titulo) titulo = bloco(text, '<<<TITULO>>>', '<<<END_TITULO>>>')
-  const emFace = bloco(text, '<<<EM_FACE>>>', '<<<END_EM_FACE>>>')
-  const preliminaresRaw = bloco(text, '<<<I_PRELIMINARES>>>', '<<<END_I>>>')
-  const quadro = parseQuadro(bloco(text, '<<<II_QUADRO>>>', '<<<END_II>>>'))
-  let sinteseAntes = bloco(text, '<<<III_SINTESE_ANTES>>>', '<<<END_III_ANTES>>>')
-  const timelineRaw = bloco(text, '<<<TIMELINE>>>', '<<<END_TIMELINE>>>')
-  let timeline = parseTimeline(timelineRaw)
-  if (!timeline) timeline = parseTimeline(extrairJsonTimeline(text) || '')
-  let sinteseDepois = bloco(text, '<<<III_SINTESE_DEPOIS>>>', '<<<END_III_DEPOIS>>>')
-  let provas = parseProvas(bloco(text, '<<<IV_PROVAS>>>', '<<<END_IV>>>'))
-  const provasFecho = bloco(text, '<<<IV_FECHO>>>', '<<<END_IV_FECHO>>>')
-  const fund = bloco(text, '<<<V_FUNDAMENTACAO>>>', '<<<END_V>>>')
-  const pedidos = parsePedidos(bloco(text, '<<<VI_PEDIDOS>>>', '<<<END_VI>>>'))
-  const fechamento = bloco(text, '<<<FECHAMENTO>>>', '<<<END_FECHAMENTO>>>')
-  const planilhaRaw = bloco(text, '<<<PLANILHA>>>', '<<<END_PLANILHA>>>')
-
-  sinteseAntes = removerJsonTimelineDoTexto(sinteseAntes)
-  sinteseDepois = removerJsonTimelineDoTexto(sinteseDepois)
-
-  {
-    const movido = extrairProvasDoFimDaSintese(sinteseDepois)
-    if (movido.provas.length) {
-      sinteseDepois = movido.limpo
-      provas = mesclarProvas(provas, movido.provas)
-    }
-  }
-  {
-    const movido = extrairProvasDoFimDaSintese(sinteseAntes)
-    if (movido.provas.length) {
-      sinteseAntes = movido.limpo
-      provas = mesclarProvas(provas, movido.provas)
-    }
-  }
+  const s = lerSecoesSm(corrigirLocalNoTexto(opts.text, opts.adv))
+  if (!s) return null
+  const { meta, endereco, qualificacao, emFace, preliminaresRaw, quadro, provas, provasFecho } = s
+  const { pedidos, fechamento, planilhaRaw } = s
+  const fund = s.fundamentacao
+  let { titulo, subtitulo, sinteseAntes, sinteseDepois, timeline } = s
 
   const dataParto = dataNascimentoDoQuadro(quadro)
   // Endereçamento = subseção do texto gerado (domicílio da autora).
@@ -2052,7 +2330,6 @@ export function validarCompletudeSmRural(
     ['I', '<<<I_PRELIMINARES>>>', '<<<END_I>>>'],
     ['II', '<<<II_QUADRO>>>', '<<<END_II>>>'],
     ['III', '<<<III_SINTESE_ANTES>>>', '<<<END_III_ANTES>>>'],
-    ['IV', '<<<IV_PROVAS>>>', '<<<END_IV>>>'],
     ['V', '<<<V_FUNDAMENTACAO>>>', '<<<END_V>>>'],
     ['VI', '<<<VI_PEDIDOS>>>', '<<<END_VI>>>'],
   ]
@@ -2066,8 +2343,8 @@ export function validarCompletudeSmRural(
     // Texto sem pontuação final (corte no meio da frase)
     const tail = body.replace(/\s+/g, ' ').trim()
     if (tail.length > 40 && !/[.!?…:;"')\]]$/.test(tail) && !/\|\s*$/.test(tail)) {
-      // Tabelas (II) e listas (IV/VI) podem terminar sem ponto
-      if (nome !== 'II' && nome !== 'IV' && nome !== 'VI') {
+      // Tabelas (II) e listas (VI) podem terminar sem ponto; a IV é validada abaixo
+      if (nome !== 'II' && nome !== 'VI') {
         console.warn(`[SM_RURAL] Seção ${nome} sem pontuação final — possível truncamento`)
         return { ok: false, motivo: ERRO_GERACAO_INTERROMPIDA }
       }
@@ -2085,10 +2362,17 @@ export function validarCompletudeSmRural(
     return { ok: false, motivo: ERRO_GERACAO_INTERROMPIDA }
   }
 
-  const provas = parseProvas(bloco(t, '<<<IV_PROVAS>>>', '<<<END_IV>>>'))
-  if (provas.length < 1) {
-    console.warn('[SM_RURAL] Seção IV sem itens de prova estruturados')
-    return { ok: false, motivo: ERRO_GERACAO_INTERROMPIDA }
+  const diag = diagnosticarProvasSm(t)
+  if (!diag.ok) {
+    console.error('[SM_RURAL] Lista de provas inválida após recuperação automática', {
+      motivo: diag.motivo,
+      provasEstruturadas: diag.provas.length,
+      movidasDaIII: diag.movidas,
+      residuosNaIII: diag.residuosIII,
+      temMarcadorIV: t.includes('<<<IV_PROVAS>>>'),
+      temFimIV: t.includes('<<<END_IV>>>'),
+    })
+    return { ok: false, motivo: ERRO_PROVAS_SM }
   }
 
   return { ok: true }
@@ -2440,10 +2724,12 @@ export function cssSmRural(comMargens: boolean): string {
     .sm-tl-detalhe { font-size: 10px; color: #666; margin-top: 2px; }
 
     .sm-provas { margin: 8px 0; }
-    table.sm-provas-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    table.sm-provas-table tr.even td { background: #f5f5f5; }
-    table.sm-provas-table tr.odd td { background: #fff; }
+    table.sm-provas-table {
+      width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed;
+      background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 4px; margin: 0 0 5px;
+    }
     table.sm-provas-table td { padding: 6px 10px; font-size: 12px; vertical-align: top; text-transform: none; }
+    table.sm-provas-table td.sm-prova-txt strong { font-weight: bold; }
     table.sm-provas-table td.sm-check {
       color: #15803d; font-weight: bold; width: 22px; text-align: center;
     }
@@ -2566,58 +2852,15 @@ export function montarHtmlSmRural(opts: {
   /** Sexo da parte autora (masculino/feminino) — define subtítulo canônico. */
   sexoParteAutora?: string | null
 }): string | null {
-  const canonical = canonicalizarMarcadoresSm(
-    corrigirLocalNoTexto(opts.text, opts.adv),
-  )
-  if (!isSmRuralStructured(canonical)) return null
-
-  const text = canonical.replace(
-    /(<<<[A-Z0-9_]+>>>)([\s\S]*?)(<<<END_[A-Z0-9_]+>>>)/g,
-    (_m, open: string, body: string, close: string) =>
-      `${open}${limparMarkdownResidual(body)}${close}`,
-  )
-
-  const meta = parseMeta(bloco(text, '<<<META>>>', '<<<END_META>>>'))
-  const endereco = bloco(text, '<<<ENDERECO>>>', '<<<END_ENDERECO>>>')
-  const qualificacao = bloco(text, '<<<QUALIFICACAO>>>', '<<<END_QUALIFICACAO>>>')
-  let titulo = bloco(text, '<<<TITULO>>>', '<<<SUBTITULO>>>')
-  let subtitulo = bloco(text, '<<<SUBTITULO>>>', '<<<END_TITULO>>>')
-  if (!titulo) titulo = bloco(text, '<<<TITULO>>>', '<<<END_TITULO>>>')
-  // Se SUBTITULO ausente e o título já traz o parêntese, normalizarTituloSubtitulo separa.
-  const emFace = bloco(text, '<<<EM_FACE>>>', '<<<END_EM_FACE>>>')
-  const preliminares = bloco(text, '<<<I_PRELIMINARES>>>', '<<<END_I>>>')
-  const quadro = parseQuadro(bloco(text, '<<<II_QUADRO>>>', '<<<END_II>>>'))
-  let sinteseAntes = bloco(text, '<<<III_SINTESE_ANTES>>>', '<<<END_III_ANTES>>>')
-  const timelineRaw = bloco(text, '<<<TIMELINE>>>', '<<<END_TIMELINE>>>')
-  let timeline = parseTimeline(timelineRaw)
-  if (!timeline) timeline = parseTimeline(extrairJsonTimeline(text) || '')
-  let sinteseDepois = bloco(text, '<<<III_SINTESE_DEPOIS>>>', '<<<END_III_DEPOIS>>>')
-  let provas = parseProvas(bloco(text, '<<<IV_PROVAS>>>', '<<<END_IV>>>'))
-  const provasFecho = bloco(text, '<<<IV_FECHO>>>', '<<<END_IV_FECHO>>>')
-  const fund = bloco(text, '<<<V_FUNDAMENTACAO>>>', '<<<END_V>>>')
-  const pedidosAll = parsePedidos(bloco(text, '<<<VI_PEDIDOS>>>', '<<<END_VI>>>'))
-  const fechamento = bloco(text, '<<<FECHAMENTO>>>', '<<<END_FECHAMENTO>>>')
-  const planilha = bloco(text, '<<<PLANILHA>>>', '<<<END_PLANILHA>>>')
-
-  sinteseAntes = removerJsonTimelineDoTexto(sinteseAntes)
-  sinteseDepois = removerJsonTimelineDoTexto(sinteseDepois)
-
-  // Fallback: provas listadas no fim da III → mover para IV (caixas com check)
-  {
-    const movido = extrairProvasDoFimDaSintese(sinteseDepois)
-    if (movido.provas.length) {
-      sinteseDepois = movido.limpo
-      provas = mesclarProvas(provas, movido.provas)
-    }
-  }
-  // Também varre síntese antes (caso raro)
-  {
-    const movido = extrairProvasDoFimDaSintese(sinteseAntes)
-    if (movido.provas.length) {
-      sinteseAntes = movido.limpo
-      provas = mesclarProvas(provas, movido.provas)
-    }
-  }
+  const s = lerSecoesSm(corrigirLocalNoTexto(opts.text, opts.adv))
+  if (!s) return null
+  const { meta, endereco, qualificacao, emFace, quadro, provas, provasFecho, fechamento } = s
+  const preliminares = s.preliminaresRaw
+  const fund = s.fundamentacao
+  const pedidosAll = s.pedidos
+  const planilha = s.planilhaRaw
+  const { titulo, sinteseAntes, sinteseDepois } = s
+  let { subtitulo, timeline } = s
 
   const dataParto = dataNascimentoDoQuadro(quadro)
 
@@ -2698,7 +2941,7 @@ export function montarHtmlSmRural(opts: {
     ${temTimeline ? timelineHtml : ''}
     ${parasHtml(sinteseDepoisLimpa)}
     ${sectionBar('IV – DAS PROVAS JUNTADAS AOS AUTOS')}
-    ${provasHtml(provas)}
+    ${provasHtml(estruturarProvasSm(provas))}
     ${parasHtml(provasFecho)}
     ${sectionBar('V – FUNDAMENTAÇÃO JURÍDICA')}
     ${parasHtml(fund)}

@@ -24,6 +24,7 @@ import { montarHtmlPeticao } from '@/lib/montar-html-peticao'
 import {
   AGENT_SM_RURAL,
   ERRO_GERACAO_INTERROMPIDA,
+  ERRO_PROVAS_SM,
   extrairConteudoSmRural,
   isSmRuralStructured,
   svgTimelineParaRaster,
@@ -598,8 +599,8 @@ export function DownloadButtons({
       console.error('Falha ao gerar preview PDF:', err)
       const msg = err instanceof Error ? err.message : ''
       setPreviewErro(
-        msg === ERRO_GERACAO_INTERROMPIDA
-          ? ERRO_GERACAO_INTERROMPIDA
+        msg === ERRO_GERACAO_INTERROMPIDA || msg === ERRO_PROVAS_SM
+          ? msg
           : 'Não foi possível gerar o preview do PDF. Tente novamente.',
       )
     } finally {
@@ -667,8 +668,8 @@ export function DownloadButtons({
       console.error('Falha ao gerar PDF:', err)
       const msg = err instanceof Error ? err.message : ''
       alert(
-        msg === ERRO_GERACAO_INTERROMPIDA
-          ? ERRO_GERACAO_INTERROMPIDA
+        msg === ERRO_GERACAO_INTERROMPIDA || msg === ERRO_PROVAS_SM
+          ? msg
           : 'Não foi possível gerar o PDF. Tente novamente.',
       )
     } finally {

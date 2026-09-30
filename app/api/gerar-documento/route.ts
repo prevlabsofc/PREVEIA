@@ -30,6 +30,12 @@ const supabaseAdmin = createClient(
 
 export const runtime = 'nodejs'
 
+function provasDoFormulario(form: Record<string, unknown>): string[] {
+  return Array.isArray(form.provas)
+    ? form.provas.map((p) => String(p || '').trim()).filter(Boolean)
+    : []
+}
+
 export async function POST(request: Request) {
   try {
     let body: any
@@ -369,6 +375,7 @@ export async function POST(request: Request) {
               nomeAutora: String(formComSexo.nome || ''),
               nomeCrianca: String(formComSexo.nome_crianca || ''),
               municipioAutor: munAutor,
+              provasFormulario: provasDoFormulario(formComSexo),
             })
           } else {
             fullText = await gerarDocumentoComContinuacao(
@@ -422,6 +429,7 @@ export async function POST(request: Request) {
                 nomeAutora: String(formComSexo.nome || ''),
                 nomeCrianca: String(formComSexo.nome_crianca || ''),
                 municipioAutor: munAutor,
+                provasFormulario: provasDoFormulario(formComSexo),
               })
               const v = validarCompletudeSmRural(fullText)
               if (!v.ok) throw new Error(v.motivo)

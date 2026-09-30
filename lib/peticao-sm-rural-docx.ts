@@ -31,8 +31,10 @@ import {
 } from '@/lib/peticao-export'
 import {
   type ConteudoSmRural,
+  type ItemProvaSm,
   type QuadroRow,
   type TimelineData,
+  estruturarProvasSm,
   extrairConteudoSmRural,
   svgTimelineParaRaster,
   textoRodapeSm,
@@ -564,7 +566,7 @@ async function blocosTimeline(
 /* ------------------------------ Provas / Meta ------------------------------ */
 
 /** Lista de provas: tabela 2 colunas (✓ | texto), fundo alternado. */
-function tabelaProvas(items: string[]): Table | null {
+function tabelaProvas(items: ItemProvaSm[]): Table | null {
   if (!items.length) return null
   const width = CONTENT_W
   const colCheck = Math.round(width * 0.06)
@@ -587,7 +589,6 @@ function tabelaProvas(items: string[]): Table | null {
     layout: TableLayoutType.FIXED,
     rows: items.map((item, i) => {
       const fill = i % 2 === 0 ? 'F5F5F5' : 'FFFFFF'
-      const txt = limparMarkdownResidual(item)
       return new TableRow({
         cantSplit: true,
         children: [
@@ -611,7 +612,10 @@ function tabelaProvas(items: string[]): Table | null {
             children: [
               new Paragraph({
                 spacing: { before: 60, after: 60 },
-                children: [run(txt, { size: 22 })],
+                children: [
+                  run(item.nome, { bold: true, size: 22 }),
+                  ...(item.explicacao ? [run(` — ${item.explicacao}`, { size: 22 })] : []),
+                ],
               }),
             ],
           }),
@@ -747,7 +751,7 @@ async function buildBody(
   parasDeTexto(b, c.sinteseDepois)
 
   b.p(sectionBar('IV – DAS PROVAS JUNTADAS AOS AUTOS'))
-  const provasTable = tabelaProvas(c.provas)
+  const provasTable = tabelaProvas(estruturarProvasSm(c.provas))
   if (provasTable) b.table(provasTable)
   parasDeTexto(b, c.provasFecho)
 

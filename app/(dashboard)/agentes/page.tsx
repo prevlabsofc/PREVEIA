@@ -653,6 +653,7 @@ function AgentesPageContent() {
             nomeAutora: formData.nome || '',
             nomeCrianca: formData.nome_crianca || '',
             municipioAutor: formData.autor_municipio || formData.municipio || '',
+            provasFormulario: provas,
           },
         )
       }
