@@ -43,3 +43,5 @@ next-env.d.ts
 
 .env.local
 tmp-*.html
+
+scripts/verificacao-*/
