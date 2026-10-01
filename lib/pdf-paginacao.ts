@@ -213,6 +213,22 @@ function corteEntreLinhas(
   return Math.min((linhas[k - 1].bottom + linhas[k].top) / 2, limiteY)
 }
 
+/** Parágrafo longo pode ser dividido só se empurrá-lo inteiro deixar mais que isso vazio na página. */
+const VAZIO_DIVIDE_PARAGRAFO = 0.15
+const LINHAS_PARAGRAFO_LONGO = 8
+const MIN_LINHAS_FRAGMENTO = 4
+
+/**
+ * Nº de linhas de um parágrafo de texto corrido que pode ser dividido entre páginas
+ * (≥ 8 linhas); 0 para parágrafos curtos, itens de pedido, encerramento, assinatura etc.
+ */
+function linhasSeParagrafoLongo(el: HTMLElement, root: HTMLElement): number {
+  if (el.tagName !== 'P' || el.hasAttribute('data-pdf-puxar-anterior')) return 0
+  if (el.closest('.sm-pedido-item, .sm-encerramento, .sm-fechamento, [data-pdf-block="atomic"]')) return 0
+  const n = linhasDeTexto(el, root).length
+  return n >= LINHAS_PARAGRAFO_LONGO ? n : 0
+}
+
 /** Faixas verticais que nenhum corte de página pode atravessar (linhas de texto e caixas visuais). */
 function faixasIndivisiveis(root: HTMLElement, pageUsablePx: number): FaixaY[] {
   const caixas = Array.from(
@@ -465,12 +481,17 @@ export function aplicarPaginacaoPorBlocos(
       const next = blocks[j]
       const nextTop = relOffsetTop(next, root)
       const lhNext = Math.max(10, lineHeightPx(next))
-      // Parágrafos são indivisíveis: o título acompanha o próximo bloco inteiro
-      // (se o grupo couber numa página); senão, título + 2 linhas.
-      const nextAtomico = nextTop + next.offsetHeight - top <= pageUsablePx
+      // O título acompanha o próximo bloco inteiro (se o grupo couber numa página);
+      // parágrafo longo que pode ser dividido: título + 4 primeiras linhas; senão, título + 2 linhas.
+      const sobraTitulo = pageEnd - nextTop
+      const linhasNext =
+        sobraTitulo > pageUsablePx * VAZIO_DIVIDE_PARAGRAFO ? linhasSeParagrafoLongo(next, root) : 0
+      const nextAtomico = !linhasNext && nextTop + next.offsetHeight - top <= pageUsablePx
       const groupBottom = nextAtomico
         ? nextTop + next.offsetHeight
-        : nextTop + Math.min(next.offsetHeight, lhNext * 2 + 8)
+        : linhasNext
+          ? linhasDeTexto(next, root)[MIN_LINHAS_FRAGMENTO - 1].bottom + FOLGA_DESCENDENTE
+          : nextTop + Math.min(next.offsetHeight, lhNext * 2 + 8)
 
       if (groupBottom > pageEnd + 0.5 && top > pageStart + 2) {
         const falta = pageEnd - top
@@ -534,10 +555,18 @@ export function aplicarPaginacaoPorBlocos(
 
     // Bloco atômico (tabela inteira, timeline, assinatura…): nunca partir
     if (isBlocoAtomico(el) && h <= pageUsablePx && bottom > pageEnd + 0.5 && top > pageStart + 2) {
-      const falta = pageEnd - top
+      // Assinatura nunca vai sozinha: leva junto o bloco anterior (encerramento), se couberem juntos.
+      const anterior = i > 0 ? blocks[i - 1] : null
+      const puxar =
+        el.getAttribute('data-pdf-puxar-anterior') === '1' &&
+        anterior &&
+        relOffsetTop(anterior, root) > pageStart + 2 &&
+        bottom - relOffsetTop(anterior, root) <= pageUsablePx
+      const alvo = puxar && anterior ? anterior : el
+      const falta = pageEnd - relOffsetTop(alvo, root)
       if (falta > 1) {
-        registrarEmpurrado(nomeBloco(el), falta)
-        el.parentNode?.insertBefore(criarEspacador(falta), el)
+        registrarEmpurrado(puxar ? `${nomeBloco(alvo)} (junto da assinatura)` : nomeBloco(el), falta)
+        alvo.parentNode?.insertBefore(criarEspacador(falta), alvo)
         pageBreaks.push(pageEnd)
         pageStart = pageEnd
         pageEnd = pageStart + pageUsablePx
@@ -552,10 +581,34 @@ export function aplicarPaginacaoPorBlocos(
       continue
     }
 
-    // Bloco não cabe. Parágrafos e itens de pedido são indivisíveis: vão inteiros
-    // para a próxima página. Só um bloco mais alto que a página útil é partido
-    // (entre linhas completas, abaixo).
+    // Bloco não cabe. Parágrafos curtos (≤ 7 linhas) e itens de pedido vão inteiros para a
+    // próxima página. Parágrafo longo (≥ 8 linhas) só se divide se empurrá-lo deixar > 15% da
+    // página vazia, entre linhas completas, com ≥ 4 linhas de cada lado; senão vai inteiro.
     const lh = Math.max(10, lineHeightPx(el))
+
+    if (top > pageStart + 2 && pageEnd - Math.max(pageStart, fimAnterior) > pageUsablePx * VAZIO_DIVIDE_PARAGRAFO) {
+      const total = linhasSeParagrafoLongo(el, root)
+      const corte = total
+        ? corteEntreLinhas(el, root, pageEnd, MIN_LINHAS_FRAGMENTO, MIN_LINHAS_FRAGMENTO)
+        : null
+      if (corte !== null) {
+        const ficaram = linhasDeTexto(el, root).filter((l) => l.bottom <= corte).length
+        relatorio.divisoes.push({
+          bloco: nomeBloco(el),
+          pagina: pageBreaks.length + 1,
+          linhasNaPagina: ficaram,
+          linhasRestantes: total - ficaram,
+        })
+        console.info(
+          `[pdf-paginacao] parágrafo longo dividido: ${ficaram} linha(s) na página ${pageBreaks.length + 1}, ` +
+            `${total - ficaram} na seguinte (empurrá-lo deixaria ${Math.round(pageEnd - Math.max(pageStart, fimAnterior))}px vazios)`,
+        )
+        pageBreaks.push(corte)
+        pageStart = corte
+        pageEnd = pageStart + pageUsablePx
+        continue
+      }
+    }
 
     if (top > pageStart + 2 && h <= pageUsablePx) {
       // Assinatura sozinha na página: leva junto o bloco anterior (encerramento), se couberem juntos.
