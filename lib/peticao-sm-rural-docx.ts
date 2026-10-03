@@ -804,48 +804,6 @@ async function buildBody(
     })
   }
 
-  // Anexo (planilha + nota + "Documento gerado…") antes do encerramento: a assinatura é o último elemento.
-  b.p({
-    alignment: AlignmentType.CENTER,
-    keepNext: true,
-    keepLines: true,
-    spacing: { before: 200, after: 80 },
-    children: [run('ANEXO – PLANILHA DE CÁLCULO', { bold: true, size: 22 })],
-  })
-  b.table(
-    tabelaDuasColunas('PLANILHA DE CÁLCULO', c.planilha.rows, {
-      highlightTotal: true,
-      ultimaComNext: true,
-    }),
-    { before: 80 },
-  )
-  if (c.planilha.nota) {
-    b.p({
-      alignment: AlignmentType.CENTER,
-      keepNext: true,
-      keepLines: true,
-      spacing: { before: 80 },
-      children: [run(c.planilha.nota, { italics: true, size: 19, color: '555555' })],
-    })
-  }
-
-  const dataTxt = new Date().toLocaleDateString('pt-BR', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  })
-  b.p({
-    alignment: AlignmentType.CENTER,
-    keepLines: true,
-    spacing: { before: 160 },
-    children: [
-      run(`Documento gerado em ${dataTxt} pela plataforma Marple`, {
-        size: 16,
-        color: '888888',
-      }),
-    ],
-  })
-
   // Encerramento (Protesta / Dá-se à causa / Termos) encadeado até a assinatura.
   limparMarkdownResidual(String(c.fechamentoExtra || ''))
     .split(/\n+/)
@@ -909,6 +867,48 @@ async function buildBody(
       spacing: { after: 160 },
       children: [run(a.oab, { size: SIZE_SM })],
     })
+  })
+
+  // Anexo depois da assinatura (último ato antes dos anexos): bloco indivisível, sem keepNext vindo da OAB.
+  b.p({
+    alignment: AlignmentType.CENTER,
+    keepNext: true,
+    keepLines: true,
+    spacing: { before: 200, after: 80 },
+    children: [run('ANEXO – PLANILHA DE CÁLCULO', { bold: true, size: 22 })],
+  })
+  b.table(
+    tabelaDuasColunas('PLANILHA DE CÁLCULO', c.planilha.rows, {
+      highlightTotal: true,
+      ultimaComNext: true,
+    }),
+    { before: 80 },
+  )
+  if (c.planilha.nota) {
+    b.p({
+      alignment: AlignmentType.CENTER,
+      keepNext: true,
+      keepLines: true,
+      spacing: { before: 80 },
+      children: [run(c.planilha.nota, { italics: true, size: 19, color: '555555' })],
+    })
+  }
+
+  const dataTxt = new Date().toLocaleDateString('pt-BR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+  b.p({
+    alignment: AlignmentType.CENTER,
+    keepLines: true,
+    spacing: { before: 160 },
+    children: [
+      run(`Documento gerado em ${dataTxt} pela plataforma Marple`, {
+        size: 16,
+        color: '888888',
+      }),
+    ],
   })
 
   return b.build()

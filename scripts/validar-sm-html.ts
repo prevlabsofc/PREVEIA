@@ -228,6 +228,23 @@ const checks: [string, boolean][] = [
   ['SM 12/02/2000 = 136', sm2000 === 136 && sm2000b === 136],
   ['nota planilha vigência 01/05/1999', /01\/05\/1999/.test(vc2000.nota)],
   ['nota planilha sem só-ano-1999 enganoso', !/vigente em 1999/.test(vc2000.nota)],
+  [
+    'ordem final: encerramento → assinatura → anexo → Documento gerado',
+    (() => {
+      const corpo = html.replace(/<style[\s\S]*?<\/style>/g, '')
+      const pos = [
+        'Protesta o alegado',
+        'Termos em que',
+        'sm-assinatura-bloco',
+        'sm-sign-oab',
+        'sm-anexo-bloco',
+        'TOTAL',
+        'Documento gerado em',
+      ].map((s) => corpo.indexOf(s))
+      const ultimoTexto = corpo.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+      return pos.every((p, i) => p >= 0 && (i === 0 || p > pos[i - 1])) && /Documento gerado em [^.]+ pela plataforma Marple$/.test(ultimoTexto)
+    })(),
+  ],
 ]
 
 let ok = true

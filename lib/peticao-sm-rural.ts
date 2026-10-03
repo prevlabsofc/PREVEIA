@@ -2818,6 +2818,7 @@ export function cssSmRural(comMargens: boolean): string {
     .sm-rom { font-weight: bold; margin-right: 4px; }
 
     .sm-fechamento { margin-top: 12px; margin-bottom: 0; text-transform: none; overflow: visible; }
+    .sm-fechamento + .sm-anexo-bloco { margin-top: 18px; }
     .sm-fecho-bloco {
       margin-bottom: 0;
       margin-top: 0;
@@ -2971,11 +2972,11 @@ export function montarHtmlSmRural(opts: {
       ${pedidosP5.length ? pedidosHtml(pedidosP5, false) : ''}
     </div>
     <div class="sm-fecho-bloco" style="margin-top:0;overflow:visible;height:auto;">
+      ${assinaturas}
       <div class="sm-anexo-bloco keep-together" data-pdf-block="atomic" data-pdf-nome="planilha de cálculo" style="page-break-inside:avoid;break-inside:avoid;">
         ${planilhaHtml(planilha, dataParto)}
         ${notaDocumentoGeradoHtml()}
       </div>
-      ${assinaturas}
     </div>
   `
 
