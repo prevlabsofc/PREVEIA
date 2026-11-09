@@ -360,10 +360,14 @@ AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE ${ctx
 <<<END_ENDERECO>>>
 
 <<<QUALIFICACAO>>>
-[Parágrafo corrido completo com nome, profissão, data de nascimento, idade, CPF, menção aos procuradores e fundamento legal, TERMINANDO exatamente com as palavras: propor a presente. Dados pessoais ausentes nas fontes (estado civil, data de nascimento etc.) são OMITIDOS — nunca presumidos.]
+[Parágrafo corrido na ORDEM FORENSE, flexionando pelo sexo da parte autora:
+"Nome, nacionalidade, estado civil, profissão, nascid[oa] em DD/MM/AAAA, portador[a] do CPF nº … e do RG nº …, residente e domiciliad[oa] em …, por intermédio de seus procuradores, vem … propor a presente."
+- Inclua data de nascimento (campo data_nascimento) e estado civil (campo estado_civil) quando informados.
+- CPF da autora: obrigatório se informado no formulário.
+- RG: só mencione se o RG estiver informado; se vazio, OMITA qualquer menção a RG — nunca "RG não informado".
+- Dados ausentes são OMITIDOS — nunca presumidos.]
 [ENDEREÇO — valor FIXO do sistema: use EXATAMENTE a string abaixo após "residente e domiciliad[oa] na" / "domiciliad[oa] na". NÃO reescreva, NÃO acrescente povoado/bairro se já estiver no logradouro, NÃO altere o CEP (formato Correios 00000-000, sem ponto milhar):
 "${enderecoFixo}"]
-[RG: só mencione "portadora do RG …" se o RG estiver informado nos dados. Se RG vazio/ausente, OMITA qualquer menção a RG — nunca escreva "RG não informado".]
 [NÃO use o endereço do escritório na qualificação — use o domicílio da parte autora.]
 <<<END_QUALIFICACAO>>>
 
@@ -380,7 +384,7 @@ IMPORTANTE SOBRE TÍTULO (OBRIGATÓRIO):
 - NÃO invente << >> / marcadores extras entre título e subtítulo.
 
 <<<EM_FACE>>>
-[Parágrafo "Em face do INSTITUTO NACIONAL DO SEGURO SOCIAL – INSS, autarquia federal, a ser citado na pessoa de seu representante legal, por meio da Procuradoria Federal..." — redação NEUTRA. NUNCA invente "Agência da Previdência Social em …" nem "Agência do INSS na Comarca de …".]
+[Parágrafo: "Em face do INSTITUTO NACIONAL DO SEGURO SOCIAL – INSS, autarquia federal, a ser citado na pessoa de seu representante legal, por meio da Procuradoria Federal..." — redação NEUTRA via Procuradoria. Se o sistema injetar endereço de citação, o pós-processamento completa com "Procuradoria Federal Especializada junto ao INSS, com endereço em …, nos termos do art. 17 da Lei nº 10.259/2001". NUNCA invente agência municipal, endereço postal nem e-mail.]
 <<<END_EM_FACE>>>
 
 <<<I_PRELIMINARES>>>
@@ -394,11 +398,14 @@ DA PRIORIDADE DE TRAMITAÇÃO:
 | Campo | Valor |
 | --- | --- |
 | Nome | [nome] |
+| Data de nascimento da autora | [campo data_nascimento — dd/mm/aaaa; omita a linha se vazio] |
+| Estado civil | [campo estado_civil — omita a linha se vazio] |
+| CPF da autora | [campo cpf — omita a linha se vazio] |
 | Município/UF | ${munUf} |
 | Idade no Req. Adm. | [idade — se desconhecida, use "Não informada"] |
 | Pedido | Salário-Maternidade – Segurado Especial |
-| Criança | [nome da criança] |
-| Data de Nascimento | [dd/mm/aaaa] |
+| Criança | [nome da criança; se houver CPF da criança (cpf_crianca), acrescente " — CPF …"; omita CPF se vazio] |
+| Data de Nascimento | [data de nascimento da criança — dd/mm/aaaa] |
 | Data do Req. Adm. | [dd/mm/aaaa] |
 | NB | [número] |
 | Situação/Decisão INSS | [Indeferido/etc.] |
@@ -412,10 +419,10 @@ DA PRIORIDADE DE TRAMITAÇÃO:
 | Período averbado no CNIS | [texto ou omita a linha se vazio] |
 | Vínculo urbano | [SOMENTE se informado nas fontes — omita a linha se vazio; NUNCA presuma "nenhum"/"inexistente"] |
 <<<END_II>>>
-[No quadro: cada valor vem das fontes (formulário, PDF importado, contexto/extras); omita linhas cujo dado não foi informado — nunca preencha por suposição. "Não informada" só para idade. Inclua sempre as linhas Nome, Município/UF e Pedido.]
+[No quadro: cada valor vem das fontes (formulário, PDF importado, contexto/extras); omita linhas cujo dado não foi informado — nunca preencha por suposição. "Não informada" só para idade. Inclua sempre as linhas Nome, Município/UF e Pedido. Nunca invente CPF da criança.]
 
 <<<III_SINTESE_ANTES>>>
-[1–3 parágrafos narrando SOMENTE os fatos das fontes (formulário, PDF importado, contexto/observações/extras) sobre a parte autora e a atividade rural — respeitando o sexo informado. Atividade, período, local, cultivo, composição e economia familiar só entram se informados. Com poucos dados, seja breve: apresente a parte autora como segurado(a) especial que pleiteia o benefício, reproduza os períodos informados e deixe o desenvolvimento para a fundamentação jurídica.]
+[1–3 parágrafos narrando SOMENTE os fatos das fontes (formulário, PDF importado, contexto/observações/extras) sobre a parte autora e a atividade rural — respeitando o sexo informado. Use forma_exercicio e local_atividade se informados. Atividade, período, local, cultivo, composição e economia familiar só entram se informados. Com poucos dados, seja breve: apresente a parte autora como segurado(a) especial que pleiteia o benefício, reproduza os períodos informados e deixe o desenvolvimento para a fundamentação jurídica.]
 [OBRIGATÓRIO: cite o município ${munUf}${comunidade ? ` e ${comunidade}` : ''}${zonaTxt ? `, em ${zonaTxt}` : ''} como domicílio da parte autora (só afirme que a atividade rural é exercida nesse local se as fontes indicarem o local da atividade). NÃO use genéricos como "no interior do Estado do Maranhão" sem nomear o município.]
 [ENDEREÇO nas seções III/IV: a qualificação já trouxe o endereço completo. Nas demais menções use APENAS o município (${munUf}) — NÃO repita logradouro/nº/povoado/CEP em toda frase.]
 [Último parágrafo deve terminar com: A seguir, a linha do tempo dos fatos relevantes do caso:]
@@ -438,7 +445,7 @@ DA PRIORIDADE DE TRAMITAÇÃO:
 ✓ Autodeclaração de segurado especial — art. 38-B, §2º, Lei 8.213/91
 ✓ [outras provas no mesmo formato]
 <<<END_IV>>>
-[Liste SOMENTE as provas marcadas no campo "provas" do formulário e documentos expressamente mencionados no contexto/extras — nunca acrescente documento não informado. A explicação diz o que o documento é apto a provar em tese (ex.: "início de prova material da atividade rural"), sem inventar seu conteúdo (datas, nomes, endereços nele constantes).]
+[Liste SOMENTE as provas marcadas no campo "provas" do formulário, as de "outras_provas" e documentos expressamente mencionados no contexto/extras — nunca acrescente documento não informado. A explicação diz o que o documento é apto a provar em tese (ex.: "início de prova material da atividade rural"), sem inventar seu conteúdo (datas, nomes, endereços nele constantes).]
 [OBRIGATÓRIO: cada prova em UMA linha, começando com ✓, formato "Nome — explicação".
 NUNCA escreva provas em parágrafos corridos. NUNCA coloque a lista antes da seção IV.
 NUNCA coloque provas em <<<III_SINTESE_DEPOIS>>> — o sistema renderiza as caixas com check somente dentro de IV.]
@@ -495,7 +502,7 @@ REGRAS:
 - Endereço da parte autora na qualificação: reproduzir EXATAMENTE "${enderecoFixo}" (sem reescrever). CEP sempre no formato 00000-000 (sem ponto).
 - Após a qualificação (síntese fática, provas, fundamentação): citar só o município ${munUf}; não repetir o endereço completo nem o nome do povoado em toda frase.
 - Endereçamento SEM "Comarca"; juízo = "${ctx.juizoCompetente}" (NUNCA "${ctx.cidadeEscritorio || 'cidade do escritório'}" no endereçamento)
-- Citação INSS: redação neutra via Procuradoria Federal — NUNCA invente agência da Previdência Social
+- Citação INSS: redação neutra via Procuradoria Federal (o sistema pode completar com endereço da Procuradoria Especializada se configurado) — NUNCA invente agência da Previdência Social nem endereço/e-mail
 - Sempre citar STF ADIs 2110 e 2111, j. 28/03/2024 (texto fixo acima)
 - Declaração de sindicato: prova complementar — NÃO mencionar art. 106, III, Lei 8.213
 - Incluir checklist "Autodeclaração de segurado especial (art. 38-B, §2º, Lei 8.213/91)" nas provas

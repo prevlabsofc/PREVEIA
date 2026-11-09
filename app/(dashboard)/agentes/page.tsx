@@ -31,6 +31,7 @@ import {
 import { createBrowserClient } from '@supabase/ssr'
 import { SeletorModelo } from '@/components/SeletorModelo'
 import { MeusAgentesCard, type AgenteCardItem } from '@/components/agentes/MeusAgentesCard'
+import { FormularioSmRural } from '@/components/agentes/FormularioSmRural'
 import { PeticaoEditorComPreview } from '@/components/peticao/PeticaoEditorComPreview'
 import { ConfigurarTimelineSm } from '@/components/peticao/ConfigurarTimelineSm'
 import type { DadosAdvogadoPeticao, EstiloPeticao } from '@/lib/peticao-export'
@@ -245,6 +246,7 @@ function AgentesPageContent() {
           signature_url: lawyer?.signature_url,
           cor_peticao: lawyer?.cor_peticao,
           estilo_peticao: lawyer?.estilo_peticao,
+          endereco_citacao_inss: lawyer?.endereco_citacao_inss || '',
         })
         const { data: clis } = await supabase.from('clients').select('*').eq('lawyer_id', user.id).order('name')
         setClientes(clis || [])
@@ -374,10 +376,17 @@ function AgentesPageContent() {
     const subMap = buscarSubsecao(mun, uf)
     setSubsecaoManual(!subMap)
     setFormData(prev => {
+      const nascCli = String(cli.data_nascimento || cli.birth_date || '')
+        .trim()
+        .slice(0, 10)
       const next = {
         ...prev,
         nome: cli.name || prev.nome,
         cpf: cli.cpf || prev.cpf,
+        rg: cli.rg || prev.rg || '',
+        data_nascimento: nascCli || prev.data_nascimento || '',
+        estado_civil: cli.estado_civil || prev.estado_civil || '',
+        cpf_crianca: cli.cpf_crianca || prev.cpf_crianca || '',
         telefone: cli.phone || prev.telefone,
         email: cli.email || prev.email,
         autor_cep: cli.cep || prev.autor_cep || '',
@@ -404,6 +413,10 @@ function AgentesPageContent() {
         sexo_parte_autora: sexoCli || prev.sexo_parte_autora || '',
         profession: flexionarAtividadeTimeline(cli.profession || prev.profession || '', sexoCli),
         atividade: flexionarAtividadeTimeline(cli.profession || prev.atividade || '', sexoCli),
+        profissao: flexionarAtividadeTimeline(
+          cli.profession || prev.profissao || prev.profession || '',
+          sexoCli,
+        ),
       }
       return next
     })
@@ -654,6 +667,7 @@ function AgentesPageContent() {
             nomeCrianca: formData.nome_crianca || '',
             municipioAutor: formData.autor_municipio || formData.municipio || '',
             provasFormulario: provas,
+            enderecoCitacaoInss: advPeticao.endereco_citacao_inss || '',
           },
         )
       }
@@ -1136,6 +1150,42 @@ function AgentesPageContent() {
                       )}
                     </div>
 
+                    {selectedAgent.key === 'salario-maternidade-rural' && (
+                      <>
+                        <SeletorModelo
+                          agentType={selectedAgent.key}
+                          onSelect={desc => setContexto(desc)}
+                          isLight={isLight}
+                        />
+                        <FormularioSmRural
+                          isLight={isLight}
+                          formData={formData}
+                          setFormData={setFormData}
+                          formErrors={formErrors}
+                          setFormErrors={setFormErrors}
+                          provas={provas}
+                          setProvas={setProvas}
+                          provasOpcoes={provasOpcoes}
+                          contexto={contexto}
+                          setContexto={setContexto}
+                          imagensPreview={imagensPreview}
+                          handleImagemUpload={handleImagemUpload}
+                          removerImagem={removerImagem}
+                          estiloPeticao={estiloPeticao}
+                          setEstiloPeticao={setEstiloPeticao}
+                          corPeticao={corPeticao}
+                          setCorPeticao={setCorPeticao}
+                          cepLoading={cepLoading}
+                          buscarCepAutor={buscarCepAutor}
+                          atualizarEnderecoAutor={atualizarEnderecoAutor}
+                          subsecaoManual={subsecaoManual}
+                          setSubsecaoManual={setSubsecaoManual}
+                        />
+                      </>
+                    )}
+
+                    {/* Formulário legado (agentes não-SM-rural) — Nome e CPF */}
+                    {selectedAgent.key !== 'salario-maternidade-rural' && (<>
                     {/* Nome e CPF do cliente — logo abaixo do select */}
                     <div className="grid grid-cols-2 gap-3">
                       <div>
@@ -1799,6 +1849,7 @@ function AgentesPageContent() {
                         </div>
                       )}
                     </div>
+                    </>)}
 
                     {/* Botão gerar */}
                     <button onClick={iniciarGeracao} disabled={streaming}

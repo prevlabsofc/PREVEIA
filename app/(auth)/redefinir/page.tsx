@@ -5,6 +5,7 @@ import { createBrowserClient } from '@supabase/ssr'
 import { motion } from 'framer-motion'
 import { Lock, Loader2, CheckCircle } from 'lucide-react'
 import { GlassCard } from '@/components/GlassCard'
+import { mensagemErroAuth } from '@/lib/auth/auth-errors'
 
 const supabase = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
 
@@ -23,7 +24,7 @@ export default function RedefinirPage() {
     if (pwd !== confirm) { setMsg('As senhas não coincidem.'); return }
     setLoading(true)
     const { error } = await supabase.auth.updateUser({ password: pwd })
-    if (error) { setMsg('Erro: ' + error.message); setLoading(false); return }
+    if (error) { setMsg(mensagemErroAuth(error, 'redefinir')); setLoading(false); return }
     setDone(true)
     setLoading(false)
     setTimeout(() => router.push('/login'), 2500)

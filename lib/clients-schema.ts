@@ -2,16 +2,17 @@
  * Schema canônico de `public.clients` (produção Supabase).
  *
  * Colunas EXATAS:
- * id, lawyer_id, name, cpf, rg, birth_date, phone, whatsapp, email,
- * profession, zone, cep, address, rua, numero, bairro, city, state, notes,
- * sexo, status, created_at, ultimo_contato, lembrete_enviado_em
+ * id, lawyer_id, name, cpf, rg, birth_date, data_nascimento, estado_civil,
+ * cpf_crianca, phone, whatsapp, email, profession, zone, cep, address, rua,
+ * numero, bairro, city, state, notes, sexo, status, created_at,
+ * ultimo_contato, lembrete_enviado_em
  *
  * NÃO existem: nome, telefone, tipo_beneficio, etapa_funil, stage, arquivado,
  * last_contact_at, office_id, assigned_lawyer_id…
  */
 
 export const CLIENTS_COLUMNS =
-  'id, lawyer_id, name, cpf, rg, birth_date, phone, whatsapp, email, profession, zone, cep, address, rua, numero, bairro, city, state, notes, sexo, status, created_at, ultimo_contato, lembrete_enviado_em' as const
+  'id, lawyer_id, name, cpf, rg, birth_date, data_nascimento, estado_civil, cpf_crianca, phone, whatsapp, email, profession, zone, cep, address, rua, numero, bairro, city, state, notes, sexo, status, created_at, ultimo_contato, lembrete_enviado_em' as const
 
 export const CLIENTS_SELECT_SAFE = CLIENTS_COLUMNS
 
@@ -49,6 +50,11 @@ export type ClienteNormalizado = Record<string, unknown> & {
   cep: string
   /** Sexo da parte autora: 'masculino' | 'feminino' | ''. */
   sexo: string
+  /** Data de nascimento (coluna nova); fallback birth_date. */
+  data_nascimento?: string | null
+  birth_date?: string | null
+  estado_civil?: string | null
+  cpf_crianca?: string | null
   last_contact_at: string | null
   ultimo_contato: string | null
   lembrete_enviado_em: string | null

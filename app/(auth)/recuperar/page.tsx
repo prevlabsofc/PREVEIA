@@ -5,6 +5,7 @@ import { createBrowserClient } from '@supabase/ssr'
 import { motion } from 'framer-motion'
 import { Mail, ArrowLeft, Loader2, CheckCircle } from 'lucide-react'
 import { GlassCard } from '@/components/GlassCard'
+import { mensagemErroAuth } from '@/lib/auth/auth-errors'
 
 const supabase = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
 
@@ -21,7 +22,7 @@ export default function RecuperarPage() {
     const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: `${window.location.origin}/redefinir`,
     })
-    if (err) { setError(err.message); setLoading(false); return }
+    if (err) { setError(mensagemErroAuth(err, 'recuperar')); setLoading(false); return }
     setSent(true)
     setLoading(false)
   }

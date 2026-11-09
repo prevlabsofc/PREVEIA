@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { GlassCard } from '@/components/GlassCard'
 import { GoogleSignInButton } from '@/components/auth/GoogleSignInButton'
+import { mensagemErroAuth } from '@/lib/auth/auth-errors'
 
 const UFS = [
   'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG',
@@ -93,7 +94,7 @@ export default function RegistroPage() {
       password: form.password,
     })
     if (signErr) {
-      setError(signErr.message)
+      setError(mensagemErroAuth(signErr, 'registro'))
       setLoading(false)
       return
     }

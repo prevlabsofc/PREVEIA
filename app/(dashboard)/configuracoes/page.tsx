@@ -497,6 +497,23 @@ export default function ConfiguracoesPage() {
                 ? `${(form.cidade || '').trim()}/${form.estado || form.oab_uf || 'UF'}, …`
                 : `São Luís/${form.estado || form.oab_uf || 'MA'}, … (fallback — cadastre a cidade acima)`}
             </p>
+            <div>
+              <label className={labelCls} style={{ color: '#bbb' }}>
+                Endereço para citação do INSS
+              </label>
+              <textarea
+                value={form.endereco_citacao_inss || ''}
+                onChange={e => set('endereco_citacao_inss', e.target.value)}
+                placeholder="Informe o endereço de citação da Procuradoria Federal Especializada junto ao INSS"
+                className={inputCls}
+                style={{ height: 88, resize: 'vertical', paddingTop: 12 }}
+                spellCheck={true}
+              />
+              <p className="text-xs mt-1.5" style={{ color: isLight ? '#5E5E5E' : '#666' }}>
+                Informe o endereço de citação da Procuradoria Federal Especializada junto ao INSS.
+                Se vazio, a peça usa redação neutra (sem inventar endereço postal ou e-mail).
+              </p>
+            </div>
             <div className="pt-2 border-t" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
               <div className="flex items-center gap-2 mb-2">
                 <Bell size={16} color="#D4AF37" />

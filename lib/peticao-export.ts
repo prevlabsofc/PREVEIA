@@ -25,6 +25,11 @@ export type DadosAdvogadoPeticao = {
   assinatura?: { dataUrl: string; widthPx: number; heightPx: number } | null
   cor_peticao?: string | null
   estilo_peticao?: string | null
+  /**
+   * Endereço de citação da Procuradoria Federal Especializada junto ao INSS.
+   * Editável em /configuracoes. Vazio → peça usa redação neutra sem endereço.
+   */
+  endereco_citacao_inss?: string | null
 }
 
 /** Margens forenses: esquerda/superior 3cm, direita/inferior 2cm. */

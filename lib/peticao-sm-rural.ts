@@ -24,6 +24,10 @@ import {
   inteiramenteMinusculo,
   normalizarCepEmTexto,
 } from '@/lib/formatar-endereco'
+import {
+  textoCitacaoInss,
+  CITACAO_INSS_SEM_ENDERECO,
+} from '@/lib/peticoes/fundamentos'
 
 export type TimelineLabelLayout = {
   i: number
@@ -583,8 +587,8 @@ export function limparRgNaQualificacao(texto: string): string {
   return s.trim()
 }
 
-const CITACAO_INSS_NEUTRA =
-  'a ser citado na pessoa de seu representante legal, por meio da Procuradoria Federal'
+/** @deprecated use textoCitacaoInss() — mantido para imports acidentais. */
+const CITACAO_INSS_NEUTRA = CITACAO_INSS_SEM_ENDERECO
 
 /** Normaliza endereçamento JEF (sem "Comarca"). `subsecaoUf` = juízo competente (domicílio da autora), NÃO a cidade do escritório. */
 export function normalizarEnderecoJef(texto: string, subsecaoUf?: string): string {
@@ -613,29 +617,42 @@ export function normalizarEnderecoJef(texto: string, subsecaoUf?: string): strin
   return s
 }
 
-/** Redação neutra de citação do INSS — sem inventar agência municipal. */
-export function normalizarCitacaoInss(texto: string): string {
+/**
+ * Redação de citação do INSS — sem inventar agência municipal.
+ * Se `enderecoCitacao` estiver preenchido (configurações), usa Procuradoria
+ * Federal Especializada + art. 17 da Lei 10.259/2001; senão, redação neutra.
+ */
+export function normalizarCitacaoInss(
+  texto: string,
+  enderecoCitacao?: string | null,
+): string {
+  const citacao = textoCitacaoInss(enderecoCitacao)
   let s = String(texto || '')
   s = s.replace(
     /a\s+ser\s+citad[oa]\s+na\s+Ag[eê]ncia\s+da\s+Previd[eê]ncia\s+Social\s+em\s+[^.,;\n]+/gi,
-    CITACAO_INSS_NEUTRA,
+    citacao,
   )
   s = s.replace(
     /a\s+ser\s+citad[oa]\s+na\s+Ag[eê]ncia\s+do\s+INSS\s+(?:na\s+Comarca\s+de|em|de|na)\s+[^.,;\n]+/gi,
-    CITACAO_INSS_NEUTRA,
+    citacao,
+  )
+  s = s.replace(
+    /a\s+ser\s+citad[oa]\s+na\s+pessoa\s+de\s+seu\s+representante\s+legal[^.,;\n]*/gi,
+    citacao,
   )
   s = s.replace(
     /Ag[eê]ncia\s+do\s+INSS\s+na\s+Comarca\s+de\s+[^.,;\n]+/gi,
-    'Procuradoria Federal',
+    'Procuradoria Federal Especializada junto ao INSS',
   )
   s = s.replace(
     /Ag[eê]ncia\s+da\s+Previd[eê]ncia\s+Social\s+em\s+[^.,;\n]+/gi,
-    'Procuradoria Federal',
+    'Procuradoria Federal Especializada junto ao INSS',
   )
   s = s.replace(
     /Ag[eê]ncia\s+do\s+INSS\s+(?:em|de|na)\s+[^.,;\n]+/gi,
-    'Procuradoria Federal',
+    'Procuradoria Federal Especializada junto ao INSS',
   )
+  void CITACAO_INSS_NEUTRA
   return s
 }
 
@@ -673,16 +690,19 @@ export function garantirEnderecamentoSubsecao(
   return `${base.trim()}\n\n<<<ENDERECO>>>\n${linha}\n<<<END_ENDERECO>>>\n`
 }
 
-/** Aplica citação neutra do INSS no bloco <<<EM_FACE>>> (e no texto geral). */
-export function garantirCitacaoInssNeutra(text: string): string {
+/** Aplica citação do INSS no bloco <<<EM_FACE>>> (e no texto geral). */
+export function garantirCitacaoInssNeutra(
+  text: string,
+  enderecoCitacao?: string | null,
+): string {
   const base = canonicalizarMarcadoresSm(text)
   const re = /<<<EM_FACE>>>([\s\S]*?)<<<END_EM_FACE>>>/i
   if (re.test(base)) {
     return base.replace(re, (_m, corpo: string) => {
-      return `<<<EM_FACE>>>\n${normalizarCitacaoInss(String(corpo).trim())}\n<<<END_EM_FACE>>>`
+      return `<<<EM_FACE>>>\n${normalizarCitacaoInss(String(corpo).trim(), enderecoCitacao)}\n<<<END_EM_FACE>>>`
     })
   }
-  return normalizarCitacaoInss(base)
+  return normalizarCitacaoInss(base, enderecoCitacao)
 }
 
 /**
@@ -703,6 +723,8 @@ export function posProcessarPeticaoSmRural(
     municipioAutor?: string | null
     /** Provas marcadas no formulário — fonte de verdade da lista da seção IV. */
     provasFormulario?: readonly string[] | null
+    /** Endereço de citação do INSS (configurações). Vazio → redação neutra. */
+    enderecoCitacaoInss?: string | null
   },
 ): string {
   let out = canonicalizarMarcadoresSm(text)
@@ -714,7 +736,7 @@ export function posProcessarPeticaoSmRural(
   }
   const sub = String(opts?.subsecaoUf || '').trim()
   if (sub) out = garantirEnderecamentoSubsecao(out, sub)
-  out = garantirCitacaoInssNeutra(out)
+  out = garantirCitacaoInssNeutra(out, opts?.enderecoCitacaoInss)
   const end = String(opts?.enderecoAutor || '').trim()
   const munUf = String(opts?.municipioUf || '').trim()
   const bairro = String(opts?.bairroAutor || '').trim()
@@ -1214,11 +1236,18 @@ export function diagnosticarProvasSm(text: string): {
 
 /** Data de nascimento da criança no quadro sinóptico (dd/mm/aaaa ou ISO). */
 function dataNascimentoDoQuadro(quadro: QuadroRow[]): string | null {
-  const row = quadro.find((r) =>
-    /data\s+de\s+nascimento|nascimento\s+da\s+crian|parto/i.test(r.campo),
+  const crianca = quadro.find((r) =>
+    /nascimento\s+da\s+crian|parto/i.test(r.campo) ||
+    (/^data\s+de\s+nascimento$/i.test(r.campo.trim()) &&
+      !/autor/i.test(r.campo)),
   )
-  const v = row?.valor?.trim()
-  return v || null
+  if (crianca?.valor?.trim()) return crianca.valor.trim()
+  // Fallback: "Data de Nascimento" genérica (não "… da autora")
+  const generica = quadro.find(
+    (r) =>
+      /data\s+de\s+nascimento/i.test(r.campo) && !/autor/i.test(r.campo),
+  )
+  return generica?.valor?.trim() || null
 }
 
 function parsePedidos(raw: string): string[] {
@@ -2312,7 +2341,7 @@ export function extrairConteudoSmRural(opts: {
     qualificacao: normalizarCaixaQualificacao(limparRgNaQualificacao(qualificacao || '')),
     titulo: titulo.replace(/\s*SALÁRIO-MATERNIDADE\s*/gi, ' SALÁRIO-MATERNIDADE ').trim(),
     subtitulo,
-    emFace: normalizarCitacaoInss(emFace || ''),
+    emFace: normalizarCitacaoInss(emFace || '', opts.adv?.endereco_citacao_inss),
     preliminares: parsePreliminaresBlocos(preliminaresRaw),
     quadro,
     sinteseAntes,
@@ -2904,7 +2933,10 @@ export function montarHtmlSmRural(opts: {
   const qualificacaoLimpa = normalizarCaixaQualificacao(
     limparRgNaQualificacao(qualificacao || ''),
   )
-  const emFaceLimpo = normalizarCitacaoInss(emFace || '')
+  const emFaceLimpo = normalizarCitacaoInss(
+    emFace || '',
+    opts.adv?.endereco_citacao_inss,
+  )
 
   let tituloBruto = ''
   {

@@ -217,6 +217,7 @@ export async function POST(request: Request) {
       vara_padrao: varaPadrao,
       cor_peticao: corPeticao,
       estilo_peticao: estiloPeticao,
+      endereco_citacao_inss: String(lawyer?.endereco_citacao_inss || ''),
       trial_expires_at: trialExpiresAt,
       docs_trial_used: docsTrialUsed,
       plan,
@@ -247,6 +248,9 @@ export async function POST(request: Request) {
           cpf: cli?.cpf ?? null,
           rg: cli?.rg ?? null,
           birth_date: cli?.birth_date ?? null,
+          data_nascimento: cli?.data_nascimento ?? cli?.birth_date ?? null,
+          estado_civil: cli?.estado_civil ?? null,
+          cpf_crianca: cli?.cpf_crianca ?? null,
           profession: cli?.profession ?? null,
           zone: cli?.zone ?? null,
           address: cli?.address ?? null,
@@ -297,7 +301,7 @@ export async function POST(request: Request) {
       return Response.json({ error: 'ANTHROPIC_API_KEY não configurada' }, { status: 500 })
     }
 
-    // Garante sexo da parte autora no form (cadastro do cliente como fallback)
+    // Garante sexo / qualificação da parte autora no form (cadastro como fallback)
     const formComSexo: Record<string, unknown> = {
       ...(normalizedFormData && typeof normalizedFormData === 'object'
         ? (normalizedFormData as Record<string, unknown>)
@@ -308,6 +312,19 @@ export async function POST(request: Request) {
       cliForPrompt?.sexo
     ) {
       formComSexo.sexo_parte_autora = cliForPrompt.sexo
+    }
+    if (!String(formComSexo.data_nascimento || formComSexo.birth_date || '').trim()) {
+      const nascCli = cliForPrompt?.data_nascimento || cliForPrompt?.birth_date
+      if (nascCli) formComSexo.data_nascimento = nascCli
+    }
+    if (!String(formComSexo.estado_civil || '').trim() && cliForPrompt?.estado_civil) {
+      formComSexo.estado_civil = cliForPrompt.estado_civil
+    }
+    if (!String(formComSexo.rg || '').trim() && cli?.rg) {
+      formComSexo.rg = cli.rg
+    }
+    if (!String(formComSexo.cpf_crianca || '').trim() && cliForPrompt?.cpf_crianca) {
+      formComSexo.cpf_crianca = cliForPrompt.cpf_crianca
     }
 
     const systemPrompt = getSystemPrompt(
@@ -377,6 +394,7 @@ ${JSON.stringify(formComSexo ?? {})}`
               nomeCrianca: String(formComSexo.nome_crianca || ''),
               municipioAutor: munAutor,
               provasFormulario: provasDoFormulario(formComSexo),
+              enderecoCitacaoInss: String(lawyer?.endereco_citacao_inss || ''),
             })
           } else {
             fullText = await gerarDocumentoComContinuacao(
@@ -431,6 +449,7 @@ ${JSON.stringify(formComSexo ?? {})}`
                 nomeCrianca: String(formComSexo.nome_crianca || ''),
                 municipioAutor: munAutor,
                 provasFormulario: provasDoFormulario(formComSexo),
+                enderecoCitacaoInss: String(lawyer?.endereco_citacao_inss || ''),
               })
               const v = validarCompletudeSmRural(fullText)
               if (!v.ok) throw new Error(v.motivo)

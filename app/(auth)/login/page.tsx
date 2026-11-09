@@ -9,6 +9,7 @@ import { Eye, EyeOff, Loader2, AlertCircle, Mail, Lock } from 'lucide-react'
 import { GlassCard } from '@/components/GlassCard'
 import { GoogleSignInButton } from '@/components/auth/GoogleSignInButton'
 import { logAudit } from '@/lib/audit'
+import { MSG_CREDENCIAIS, mensagemErroAuth } from '@/lib/auth/auth-errors'
 import { postLoginPath } from '@/lib/auth/super-admin'
 import { clearPanelPreference } from '@/lib/auth/panel-preference'
 
@@ -54,9 +55,14 @@ export default function LoginPage() {
       email: email.trim(),
       password,
     })
-    console.log('Auth result:', { user: data?.user?.id, error: authErr?.message })
-    if (authErr || !data?.user) {
-      setError('Email ou senha incorretos. Verifique e tente novamente.')
+    console.log('Auth result:', { user: data?.user?.id, error: authErr?.message, code: authErr?.code, status: authErr?.status, name: authErr?.name })
+    if (authErr) {
+      setError(mensagemErroAuth(authErr, 'login'))
+      setLoading(false)
+      return
+    }
+    if (!data?.user) {
+      setError(MSG_CREDENCIAIS)
       setLoading(false)
       return
     }

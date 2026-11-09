@@ -74,6 +74,7 @@ function asAdv(raw: Record<string, unknown> | DadosAdvogadoPeticao): DadosAdvoga
     signature_url: (r.signature_url as string) || null,
     cor_peticao: String(r.cor_peticao || '#1d4ed8'),
     estilo_peticao: String(r.estilo_peticao || 'moderno'),
+    endereco_citacao_inss: String(r.endereco_citacao_inss || ''),
   }
 }
 

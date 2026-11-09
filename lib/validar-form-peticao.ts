@@ -147,8 +147,109 @@ export function avisoPrescricaoQuinquenal(dataIndeferimento: string): string | n
   return null
 }
 
+export const ESTADOS_CIVIS_SM = [
+  'solteira',
+  'casada',
+  'divorciada',
+  'viuva',
+  'uniao_estavel',
+  'separada_judicialmente',
+] as const
+
+export type EstadoCivilSm = (typeof ESTADOS_CIVIS_SM)[number]
+
+export const LABELS_ESTADO_CIVIL: Record<EstadoCivilSm, string> = {
+  solteira: 'Solteira',
+  casada: 'Casada',
+  divorciada: 'Divorciada',
+  viuva: 'Viúva',
+  uniao_estavel: 'União estável',
+  separada_judicialmente: 'Separada judicialmente',
+}
+
+/** Máscara CPF 000.000.000-00. */
+export function mascaraCPF(v: string): string {
+  return v
+    .replace(/\D/g, '')
+    .slice(0, 11)
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d{1,2})$/, '$1-$2')
+}
+
+/** Valida dígitos verificadores do CPF. Vazio → null se opcional. */
+export function validarCpf(
+  valor: string,
+  opts?: { obrigatorio?: boolean },
+): string | null {
+  const v = valor.trim()
+  if (!v) return opts?.obrigatorio === false ? null : 'Informe o CPF'
+  const n = v.replace(/\D/g, '')
+  if (n.length !== 11) return 'CPF deve ter 11 dígitos'
+  if (/^(\d)\1+$/.test(n)) return 'CPF inválido'
+  let s = 0
+  for (let i = 0; i < 9; i++) s += parseInt(n[i], 10) * (10 - i)
+  let r = (s * 10) % 11
+  if (r === 10 || r === 11) r = 0
+  if (r !== parseInt(n[9], 10)) return 'CPF inválido'
+  s = 0
+  for (let i = 0; i < 10; i++) s += parseInt(n[i], 10) * (11 - i)
+  r = (s * 10) % 11
+  if (r === 10 || r === 11) r = 0
+  if (r !== parseInt(n[10], 10)) return 'CPF inválido'
+  return null
+}
+
+export function validarEstadoCivil(valor: string): string | null {
+  const v = valor.trim().toLowerCase().normalize('NFD').replace(/\p{M}/gu, '')
+  if (!v) return 'Informe o estado civil'
+  const ok = ESTADOS_CIVIS_SM.some((k) => {
+    const key = k.normalize('NFD').replace(/\p{M}/gu, '')
+    return key === v || LABELS_ESTADO_CIVIL[k].toLowerCase().normalize('NFD').replace(/\p{M}/gu, '') === v
+  })
+  if (!ok) return 'Selecione o estado civil'
+  return null
+}
+
+/** Flexiona estado civil pelo sexo da parte autora para a peça. */
+export function flexionarEstadoCivil(
+  valor: string,
+  sexoRaw?: string | null,
+): string {
+  const raw = valor.trim().toLowerCase()
+  if (!raw) return ''
+  const sexo = String(sexoRaw || '').trim().toLowerCase()
+  const masc = sexo === 'masculino' || sexo === 'm'
+  const map: Record<string, [string, string]> = {
+    solteira: ['solteiro', 'solteira'],
+    solteiro: ['solteiro', 'solteira'],
+    casada: ['casado', 'casada'],
+    casado: ['casado', 'casada'],
+    divorciada: ['divorciado', 'divorciada'],
+    divorciado: ['divorciado', 'divorciada'],
+    viuva: ['viúvo', 'viúva'],
+    viúvo: ['viúvo', 'viúva'],
+    viúva: ['viúvo', 'viúva'],
+    uniao_estavel: ['em união estável', 'em união estável'],
+    'uniao estavel': ['em união estável', 'em união estável'],
+    'união estável': ['em união estável', 'em união estável'],
+    separada_judicialmente: ['separado judicialmente', 'separada judicialmente'],
+    'separada judicialmente': ['separado judicialmente', 'separada judicialmente'],
+    'separado judicialmente': ['separado judicialmente', 'separada judicialmente'],
+  }
+  const pair = map[raw] || map[raw.normalize('NFD').replace(/\p{M}/gu, '')]
+  if (!pair) return valor.trim()
+  return masc ? pair[0] : pair[1]
+}
+
 export type ErrosFormSm = {
+  nome?: string
+  cpf?: string
+  data_nascimento?: string
+  estado_civil?: string
+  profissao?: string
   nome_crianca?: string
+  cpf_crianca?: string
   nb?: string
   data_nascimento_crianca?: string
   data_requerimento?: string
@@ -252,6 +353,34 @@ export function validarFormularioSm(
 
   if (opts?.rural) {
     Object.assign(erros, validarEnderecoAutorSmRural(form))
+
+    if (!(form.nome || '').trim()) {
+      erros.nome = 'Informe o nome completo'
+    }
+
+    const eCpf = validarCpf(form.cpf || '', { obrigatorio: true })
+    if (eCpf) erros.cpf = eCpf
+
+    const eNascAutora = validarDataPeticao(
+      form.data_nascimento || form.birth_date || '',
+      true,
+    )
+    if (eNascAutora) erros.data_nascimento = eNascAutora
+
+    const eCivil = validarEstadoCivil(form.estado_civil || '')
+    if (eCivil) erros.estado_civil = eCivil
+
+    const prof = (
+      form.profession ||
+      form.profissao ||
+      form.atividade ||
+      form.ocupacao ||
+      ''
+    ).trim()
+    if (!prof) erros.profissao = 'Informe a profissão / tipo de atividade'
+
+    const eCpfCrianca = validarCpf(form.cpf_crianca || '', { obrigatorio: false })
+    if (eCpfCrianca) erros.cpf_crianca = eCpfCrianca
   }
 
   return erros
