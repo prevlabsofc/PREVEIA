@@ -434,3 +434,289 @@ html.light .admin-panel table tr:hover {
   font-weight: 500;
 }
 
+/* ===== Formulário SM Rural — apresentação (camadas / hierarquia) ===== */
+.form-sm-rural {
+  --smr-bg: #0D0D0B;
+  --smr-surface: #15150F;
+  --smr-card: #1B1A12;
+  --smr-card-header: #1F1E15;
+  --smr-field: #222117;
+  --smr-provas: #16150F;
+  --smr-border: #393521;
+  --smr-gold: #D6AD32;
+  --smr-gold-2: #A98725;
+  --smr-text: #F5F3EA;
+  --smr-text-2: #A6A18F;
+  --smr-placeholder: #6B6655;
+  --smr-selected: rgba(214, 173, 50, 0.1);
+  --smr-hover: rgba(255, 255, 255, 0.03);
+  color: var(--smr-text);
+}
+
+html.light .form-sm-rural {
+  --smr-bg: #F8F8F8;
+  --smr-surface: #FFFFFF;
+  --smr-card: #FFFFFF;
+  --smr-card-header: #FAFAF7;
+  --smr-field: #FFFFFF;
+  --smr-provas: #F4F3EE;
+  --smr-border: #E5E1D4;
+  --smr-gold: #B8941F;
+  --smr-gold-2: #A98725;
+  --smr-text: #1E1E1E;
+  --smr-text-2: #6B6655;
+  --smr-placeholder: #9A9585;
+  --smr-selected: rgba(184, 148, 31, 0.1);
+  --smr-hover: rgba(0, 0, 0, 0.03);
+}
+
+.form-sm-rural .smr-card {
+  background: var(--smr-card);
+  border: 1px solid var(--smr-border);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+}
+
+html.light .form-sm-rural .smr-card {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+
+.form-sm-rural .smr-card-header {
+  margin: -24px -24px 20px;
+  padding: 16px 24px;
+  background: var(--smr-card-header);
+  border-bottom: 1px solid var(--smr-border);
+  border-radius: 12px 12px 0 0;
+}
+
+.form-sm-rural .smr-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 0.01em;
+  color: var(--smr-text);
+  text-transform: none;
+}
+
+.form-sm-rural .smr-title-bar {
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--smr-gold);
+  flex-shrink: 0;
+}
+
+.form-sm-rural .smr-subtitle {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--smr-text-2);
+  padding-top: 16px;
+  margin-top: 4px;
+  border-top: 1px solid var(--smr-border);
+}
+
+.form-sm-rural .smr-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  color: var(--smr-text-2);
+  margin-bottom: 6px;
+}
+
+.form-sm-rural .smr-req {
+  color: var(--smr-gold);
+  font-weight: 600;
+}
+
+.form-sm-rural .smr-help {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--smr-text-2);
+  margin-top: 6px;
+}
+
+.form-sm-rural .smr-error {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #ef4444;
+  margin-top: 6px;
+}
+
+.form-sm-rural .smr-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-sm-rural .smr-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px 16px;
+}
+
+@media (max-width: 767px) {
+  .form-sm-rural .smr-grid-2 {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
+
+.form-sm-rural .input-glass,
+.form-sm-rural select.input-glass,
+.form-sm-rural textarea.input-glass,
+html.light .form-sm-rural .input-glass,
+html.light .form-sm-rural select.input-glass,
+html.light .form-sm-rural textarea.input-glass {
+  min-height: 44px;
+  padding: 10px 14px;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--smr-text) !important;
+  background: var(--smr-field) !important;
+  border: 1px solid var(--smr-border) !important;
+  border-radius: 10px;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  background-image: none;
+}
+
+.form-sm-rural textarea.input-glass,
+html.light .form-sm-rural textarea.input-glass {
+  min-height: unset;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.form-sm-rural .input-glass::placeholder,
+.form-sm-rural textarea.input-glass::placeholder,
+html.light .form-sm-rural .input-glass::placeholder,
+html.light .form-sm-rural textarea.input-glass::placeholder {
+  color: var(--smr-placeholder) !important;
+  opacity: 1;
+}
+
+.form-sm-rural .input-glass:focus,
+.form-sm-rural select.input-glass:focus,
+.form-sm-rural textarea.input-glass:focus,
+html.light .form-sm-rural .input-glass:focus,
+html.light .form-sm-rural select.input-glass:focus,
+html.light .form-sm-rural textarea.input-glass:focus {
+  border-color: var(--smr-gold) !important;
+  box-shadow: 0 0 0 2px rgba(214, 173, 50, 0.22) !important;
+  background: var(--smr-field) !important;
+}
+
+.form-sm-rural select.input-glass {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 40px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%23A6A18F' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 14px center !important;
+  background-size: 12px 8px !important;
+  background-color: var(--smr-field) !important;
+  color-scheme: dark;
+}
+
+html.light .form-sm-rural select.input-glass {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%236B6655' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
+  color-scheme: light;
+}
+
+.form-sm-rural input[type='date'].input-glass {
+  color-scheme: dark;
+}
+
+html.light .form-sm-rural input[type='date'].input-glass {
+  color-scheme: light;
+}
+
+.form-sm-rural .smr-provas-box {
+  background: var(--smr-provas);
+  border: 1px solid var(--smr-border);
+  border-radius: 10px;
+  padding: 6px 8px;
+  overflow: hidden;
+}
+
+.form-sm-rural .smr-prova-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  color: var(--smr-text);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.form-sm-rural .smr-prova-item:hover {
+  background: var(--smr-hover);
+}
+
+.form-sm-rural .smr-prova-item[data-checked='true'] {
+  background: var(--smr-selected);
+}
+
+.form-sm-rural .smr-check {
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 4px;
+  border: 1px solid var(--smr-border);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.form-sm-rural .smr-prova-item[data-checked='true'] .smr-check {
+  background: var(--smr-gold);
+  border-color: var(--smr-gold);
+}
+
+.form-sm-rural .smr-check-mark {
+  color: #0D0D0B;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.modal-sm-rural {
+  background: #0D0D0B !important;
+  border: 1px solid #393521 !important;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5) !important;
+}
+
+html.light .modal-sm-rural {
+  background: #FFFFFF !important;
+  border: 1px solid #E5E1D4 !important;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.12) !important;
+}
+
+.modal-sm-rural .modal-sm-rural-title {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: #F5F3EA;
+}
+
+html.light .modal-sm-rural .modal-sm-rural-title {
+  color: #1E1E1E;
+}
+

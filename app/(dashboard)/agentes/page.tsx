@@ -1060,15 +1060,25 @@ function AgentesPageContent() {
             style={{ background: isLight ? 'rgba(15,15,15,0.45)' : 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }}>
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className={`w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl ${isLight ? 'bg-white' : 'bg-[#0A0800]'}`}
-              style={{
-                border: isLight ? '1px solid #EDEDED' : '1px solid rgba(212,175,55,0.2)',
-                boxShadow: isLight ? '0 24px 64px rgba(0,0,0,0.18)' : '0 0 80px rgba(180,120,10,0.15)',
-              }}>
+              className={`w-full max-h-[90vh] overflow-y-auto rounded-2xl ${
+                selectedAgent.key === 'salario-maternidade-rural'
+                  ? 'modal-sm-rural max-w-3xl'
+                  : `max-w-2xl ${isLight ? 'bg-white' : 'bg-[#0A0800]'}`
+              }`}
+              style={
+                selectedAgent.key === 'salario-maternidade-rural'
+                  ? undefined
+                  : {
+                      border: isLight ? '1px solid #EDEDED' : '1px solid rgba(212,175,55,0.2)',
+                      boxShadow: isLight ? '0 24px 64px rgba(0,0,0,0.18)' : '0 0 80px rgba(180,120,10,0.15)',
+                    }
+              }>
 
               {/* Header modal */}
               <div className="flex items-start justify-between p-6 border-b"
-                style={{ borderColor: isLight ? '#EDEDED' : 'rgba(255,255,255,0.06)' }}>
+                style={{ borderColor: selectedAgent.key === 'salario-maternidade-rural'
+                  ? (isLight ? '#E5E1D4' : '#393521')
+                  : (isLight ? '#EDEDED' : 'rgba(255,255,255,0.06)') }}>
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center"
                     style={{ background: `${selectedAgent.grupo.color}18`,
@@ -1076,7 +1086,11 @@ function AgentesPageContent() {
                     <SelectedAgentIcon size={18} color={selectedAgent.grupo.color}/>
                   </div>
                   <div>
-                    <div className={`font-bold text-sm ${isLight ? 'text-gray-900' : 'text-white'}`}>{selectedAgent.nome}</div>
+                    <div className={
+                      selectedAgent.key === 'salario-maternidade-rural'
+                        ? 'modal-sm-rural-title'
+                        : `font-bold text-sm ${isLight ? 'text-gray-900' : 'text-white'}`
+                    }>{selectedAgent.nome}</div>
                     <div className={`text-xs ${isLight ? 'text-gray-500' : 'text-gray-500'}`}>{selectedAgent.desc}</div>
                   </div>
                 </div>
@@ -1179,7 +1193,11 @@ function AgentesPageContent() {
                           selectedClientId={selectedClientId}
                           clientes={clientes}
                           onSelecionarCliente={selecionarCliente}
-                          optionStyle={optionStyle}
+                          optionStyle={
+                            isLight
+                              ? { background: '#FFFFFF', color: '#1E1E1E' }
+                              : { background: '#222117', color: '#F5F3EA' }
+                          }
                           abaixoCliente={
                             <SeletorModelo
                               agentType={selectedAgent.key}
@@ -1861,8 +1879,13 @@ function AgentesPageContent() {
                     <button onClick={iniciarGeracao} disabled={streaming}
                       className="w-full h-12 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all"
                       style={{
-                        background: streaming ? '#333' : 'linear-gradient(135deg,#D4AF37,#F0D060)',
-                        color: streaming ? '#888' : '#000',
+                        background: streaming
+                          ? '#333'
+                          : 'linear-gradient(135deg,#D6AD32,#E8C45A)',
+                        color: streaming ? '#888' : '#0D0D0B',
+                        boxShadow: streaming
+                          ? 'none'
+                          : '0 0 0 1px rgba(214,173,50,0.35), 0 8px 24px rgba(214,173,50,0.22)',
                       }}>
                       {streaming
                         ? <><Loader2 size={16} className="animate-spin"/> Gerando petição...</>
