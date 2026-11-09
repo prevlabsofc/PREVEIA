@@ -5,7 +5,7 @@
  * Estilo visual: caixas dourado/escuro do padrão atual.
  */
 
-import type { Dispatch, SetStateAction } from 'react'
+import type { CSSProperties, Dispatch, ReactNode, SetStateAction } from 'react'
 import { Upload } from 'lucide-react'
 import { ESTADOS_BRASIL } from '@/lib/estados-brasil'
 import {
@@ -31,6 +31,7 @@ import type { EstiloPeticao } from '@/lib/peticao-export'
 
 const LABEL = { color: 'rgba(212,175,55,0.7)' as const }
 const LABEL_TITLE = { color: 'rgba(212,175,55,0.85)' as const }
+const LABEL_SUB = { color: 'rgba(212,175,55,0.75)' as const }
 
 function caixaBloco(isLight: boolean) {
   return {
@@ -38,6 +39,8 @@ function caixaBloco(isLight: boolean) {
     background: isLight ? '#FAFAFA' : 'rgba(212,175,55,0.04)',
   } as const
 }
+
+const CARD_CLASS = 'rounded-xl p-4 sm:p-5 space-y-4'
 
 function chaveProfissao(v: string): string {
   const s = v.toLowerCase()
@@ -78,6 +81,12 @@ export type FormularioSmRuralProps = {
   atualizarEnderecoAutor: (patch: Record<string, string>) => void
   subsecaoManual: boolean
   setSubsecaoManual: Dispatch<SetStateAction<boolean>>
+  selectedClientId: string
+  clientes: { id: string; name: string; cpf?: string | null }[]
+  onSelecionarCliente: (clienteId: string) => void
+  optionStyle?: CSSProperties
+  /** Fora dos cards — ex.: "Usar modelo pronto", logo abaixo da seleção de cliente */
+  abaixoCliente?: ReactNode
 }
 
 export function FormularioSmRural({
@@ -103,6 +112,11 @@ export function FormularioSmRural({
   atualizarEnderecoAutor,
   subsecaoManual,
   setSubsecaoManual,
+  selectedClientId,
+  clientes,
+  onSelecionarCliente,
+  optionStyle,
+  abaixoCliente,
 }: FormularioSmRuralProps) {
   const avisoSexo = avisoNomeSexoIncompativel(
     formData.nome || '',
@@ -117,13 +131,53 @@ export function FormularioSmRural({
   }
 
   return (
-    <div className="space-y-4">
-      {/* ——— BLOCO 1: MÃE / PARTE AUTORA ——— */}
-      <div className="rounded-xl p-3 space-y-3" style={caixaBloco(isLight)}>
-        <div className="text-[10px] font-bold tracking-widest" style={LABEL_TITLE}>
-          1. INFORMAÇÕES DA MÃE / PARTE AUTORA
+    <div className="space-y-5">
+      {/* ——— BLOCO 1: MÃE ——— */}
+      <div className="rounded-xl overflow-hidden" style={caixaBloco(isLight)}>
+        <div className="p-4 sm:p-5 space-y-4">
+          <div className="text-[10px] font-bold tracking-widest" style={LABEL_TITLE}>
+            INFORMAÇÕES DA MÃE
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-bold tracking-widest mb-1.5" style={LABEL}>
+              👤 CLIENTE *{' '}
+              <span className="font-normal normal-case tracking-normal" style={{ color: '#888' }}>
+                (cadastrado ou nome manual abaixo)
+              </span>
+            </label>
+            <select
+              value={selectedClientId}
+              onChange={e => onSelecionarCliente(e.target.value)}
+              className="input-glass w-full text-sm"
+              style={{ height: 44 }}
+            >
+              <option value="" style={optionStyle}>
+                Sem cliente cadastrado — usar nome manual
+              </option>
+              {clientes.map(c => (
+                <option key={c.id} value={c.id} style={optionStyle}>
+                  {c.name} {c.cpf ? `— ${c.cpf}` : ''}
+                </option>
+              ))}
+            </select>
+            {selectedClientId ? (
+              <p className="text-[10px] mt-1" style={{ color: '#22C55E' }}>
+                ✅ Cliente vinculado — dados preenchidos automaticamente
+              </p>
+            ) : (
+              <p className="text-[10px] mt-1" style={{ color: '#F59E0B' }}>
+                Informe o nome do cliente no campo abaixo se ainda não estiver cadastrado
+              </p>
+            )}
+          </div>
         </div>
 
+        {abaixoCliente ? (
+          <div className="px-4 sm:px-5 pb-1">{abaixoCliente}</div>
+        ) : null}
+
+        <div className="p-4 sm:p-5 pt-2 space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-[10px] font-bold tracking-widest mb-1.5" style={LABEL}>
@@ -345,10 +399,10 @@ export function FormularioSmRural({
         </div>
 
         {/* Endereço */}
-        <div className="space-y-3 pt-1">
-          <label className="block text-[10px] font-bold tracking-widest" style={LABEL}>
-            ENDEREÇO DA PARTE AUTORA
-          </label>
+        <div className="space-y-3 pt-2 border-t" style={{ borderColor: isLight ? '#E5E7EB' : 'rgba(212,175,55,0.15)' }}>
+          <div className="text-[10px] font-bold tracking-widest pt-1" style={LABEL_SUB}>
+            ENDEREÇO
+          </div>
           <p className="text-[10px]" style={{ color: '#888' }}>
             Competência territorial do JEF pelo domicílio da autora — não use a cidade do escritório.
           </p>
@@ -586,8 +640,8 @@ export function FormularioSmRural({
         </div>
 
         {/* Atividade rural */}
-        <div className="space-y-3 pt-1">
-          <div className="text-[10px] font-bold tracking-widest" style={LABEL_TITLE}>
+        <div className="space-y-3 pt-2 border-t" style={{ borderColor: isLight ? '#E5E7EB' : 'rgba(212,175,55,0.15)' }}>
+          <div className="text-[10px] font-bold tracking-widest pt-1" style={LABEL_SUB}>
             ATIVIDADE RURAL
           </div>
           <div>
@@ -627,7 +681,22 @@ export function FormularioSmRural({
             </div>
             <div>
               <label className="block text-[10px] font-bold tracking-widest mb-1.5" style={LABEL}>
-                FORMA DE EXERCÍCIO DA ATIVIDADE
+                PERÍODO DE SEGURADO ESPECIAL
+              </label>
+              <input
+                type="text"
+                placeholder="Ex.: 01/2018 a 12/2025"
+                className="input-glass w-full text-sm"
+                value={formData.periodo_segurado_especial || ''}
+                onChange={e => setCampo({ periodo_segurado_especial: e.target.value })}
+                spellCheck={true}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[10px] font-bold tracking-widest mb-1.5" style={LABEL}>
+                FORMA DE EXERCÍCIO
               </label>
               <input
                 type="text"
@@ -638,27 +707,28 @@ export function FormularioSmRural({
                 spellCheck={true}
               />
             </div>
+            <div>
+              <label className="block text-[10px] font-bold tracking-widest mb-1.5" style={LABEL}>
+                LOCAL ONDE EXERCIA A ATIVIDADE
+              </label>
+              <input
+                type="text"
+                placeholder="Ex.: sítio da família no povoado X"
+                className="input-glass w-full text-sm"
+                value={formData.local_atividade || ''}
+                onChange={e => setCampo({ local_atividade: e.target.value })}
+                spellCheck={true}
+              />
+            </div>
           </div>
-          <div>
-            <label className="block text-[10px] font-bold tracking-widest mb-1.5" style={LABEL}>
-              LOCAL ONDE EXERCIA A ATIVIDADE
-            </label>
-            <input
-              type="text"
-              placeholder="Ex.: sítio da família no povoado X"
-              className="input-glass w-full text-sm"
-              value={formData.local_atividade || ''}
-              onChange={e => setCampo({ local_atividade: e.target.value })}
-              spellCheck={true}
-            />
-          </div>
+        </div>
         </div>
       </div>
 
-      {/* ——— BLOCO 2: FILHO / CRIANÇA ——— */}
-      <div className="rounded-xl p-3 space-y-3" style={caixaBloco(isLight)}>
+      {/* ——— BLOCO 2: FILHO ——— */}
+      <div className={CARD_CLASS} style={caixaBloco(isLight)}>
         <div className="text-[10px] font-bold tracking-widest" style={LABEL_TITLE}>
-          2. INFORMAÇÕES DO FILHO / DA CRIANÇA
+          INFORMAÇÕES DO FILHO
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -682,33 +752,6 @@ export function FormularioSmRural({
               <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>{formErrors.nome_crianca}</p>
             ) : null}
           </div>
-          <div>
-            <label className="block text-[10px] font-bold tracking-widest mb-1.5" style={LABEL}>
-              CPF DA CRIANÇA
-            </label>
-            <input
-              type="text"
-              placeholder="000.000.000-00 (opcional)"
-              className="input-glass w-full text-sm"
-              value={formData.cpf_crianca || ''}
-              onChange={e => setCampo({ cpf_crianca: mascaraCPF(e.target.value) })}
-              onBlur={e => {
-                const erros = validarFormularioSm(
-                  { ...formData, cpf_crianca: e.target.value },
-                  { rural: true },
-                )
-                setFormErrors(p => ({ ...p, cpf_crianca: erros.cpf_crianca }))
-              }}
-              style={formErrors.cpf_crianca ? { borderColor: '#ef4444', borderWidth: 1 } : undefined}
-              inputMode="numeric"
-              spellCheck={false}
-            />
-            {formErrors.cpf_crianca ? (
-              <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>{formErrors.cpf_crianca}</p>
-            ) : null}
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-[10px] font-bold tracking-widest mb-1.5" style={LABEL}>
               DATA DE NASCIMENTO*
@@ -738,9 +781,36 @@ export function FormularioSmRural({
               <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>{formErrors.data_nascimento_crianca}</p>
             ) : null}
           </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-[10px] font-bold tracking-widest mb-1.5" style={LABEL}>
-              SEXO
+              CPF DA CRIANÇA
+            </label>
+            <input
+              type="text"
+              placeholder="000.000.000-00 (opcional)"
+              className="input-glass w-full text-sm"
+              value={formData.cpf_crianca || ''}
+              onChange={e => setCampo({ cpf_crianca: mascaraCPF(e.target.value) })}
+              onBlur={e => {
+                const erros = validarFormularioSm(
+                  { ...formData, cpf_crianca: e.target.value },
+                  { rural: true },
+                )
+                setFormErrors(p => ({ ...p, cpf_crianca: erros.cpf_crianca }))
+              }}
+              style={formErrors.cpf_crianca ? { borderColor: '#ef4444', borderWidth: 1 } : undefined}
+              inputMode="numeric"
+              spellCheck={false}
+            />
+            {formErrors.cpf_crianca ? (
+              <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>{formErrors.cpf_crianca}</p>
+            ) : null}
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold tracking-widest mb-1.5" style={LABEL}>
+              SEXO DA CRIANÇA
             </label>
             <select
               className="input-glass w-full text-sm"
@@ -755,10 +825,10 @@ export function FormularioSmRural({
         </div>
       </div>
 
-      {/* ——— BLOCO 3: CASO ——— */}
-      <div className="rounded-xl p-3 space-y-3" style={caixaBloco(isLight)}>
+      {/* ——— BLOCO 3: PROCESSO ——— */}
+      <div className={CARD_CLASS} style={caixaBloco(isLight)}>
         <div className="text-[10px] font-bold tracking-widest" style={LABEL_TITLE}>
-          3. INFORMAÇÕES DO CASO
+          INFORMAÇÕES DO PROCESSO
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -786,6 +856,19 @@ export function FormularioSmRural({
             {formErrors.nb ? (
               <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>{formErrors.nb}</p>
             ) : null}
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold tracking-widest mb-1.5" style={LABEL}>
+              MOTIVO DO INDEFERIMENTO INSS*
+            </label>
+            <input
+              type="text"
+              placeholder="Ex: Falta de período de carência"
+              className="input-glass w-full text-sm"
+              value={formData.motivo_inss || ''}
+              onChange={e => setCampo({ motivo_inss: e.target.value })}
+              spellCheck={true}
+            />
           </div>
         </div>
 
@@ -847,20 +930,6 @@ export function FormularioSmRural({
             ) : null}
           </div>
         </div>
-
-        <div>
-          <label className="block text-[10px] font-bold tracking-widest mb-1.5" style={LABEL}>
-            MOTIVO DO INDEFERIMENTO INSS*
-          </label>
-          <input
-            type="text"
-            placeholder="Ex: Falta de período de carência"
-            className="input-glass w-full text-sm"
-            value={formData.motivo_inss || ''}
-            onChange={e => setCampo({ motivo_inss: e.target.value })}
-            spellCheck={true}
-          />
-        </div>
         {avisoPrescricaoQuinquenal(formData.data_indeferimento || '') ? (
           <div
             className="rounded-lg px-3 py-2 text-[11px] leading-snug"
@@ -875,7 +944,11 @@ export function FormularioSmRural({
           </div>
         ) : null}
 
-        <div>
+        <div className="space-y-3 pt-2 border-t" style={{ borderColor: isLight ? '#E5E7EB' : 'rgba(212,175,55,0.15)' }}>
+          <div className="text-[10px] font-bold tracking-widest pt-1" style={LABEL_SUB}>
+            PROVAS
+          </div>
+          <div>
           <label className="block text-[10px] font-bold tracking-widest mb-2" style={LABEL}>
             PROVAS DISPONÍVEIS
           </label>
@@ -925,7 +998,12 @@ export function FormularioSmRural({
             spellCheck={true}
           />
         </div>
+        </div>
 
+        <div className="space-y-3 pt-2 border-t" style={{ borderColor: isLight ? '#E5E7EB' : 'rgba(212,175,55,0.15)' }}>
+          <div className="text-[10px] font-bold tracking-widest pt-1" style={LABEL_SUB}>
+            COMPLEMENTOS
+          </div>
         <div>
           <label className="block text-[10px] font-bold tracking-widest mb-1.5" style={LABEL}>
             CONTEXTO ADICIONAL / OBSERVAÇÕES
@@ -1083,6 +1161,7 @@ export function FormularioSmRural({
               </div>
             </div>
           )}
+        </div>
         </div>
       </div>
     </div>

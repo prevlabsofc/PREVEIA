@@ -1131,6 +1131,7 @@ function AgentesPageContent() {
                 {tab === 'form' && (
                   <div className="space-y-4">
 
+                    {selectedAgent.key !== 'salario-maternidade-rural' && (
                     <div>
                       <label className="block text-[10px] font-bold tracking-widest mb-1.5" style={{ color: 'rgba(212,175,55,0.7)' }}>
                         👤 CLIENTE * <span className="font-normal normal-case tracking-normal" style={{ color: '#888' }}>(cadastrado ou nome manual abaixo)</span>
@@ -1149,14 +1150,9 @@ function AgentesPageContent() {
                         <p className="text-[10px] mt-1" style={{ color: '#F59E0B' }}>Informe o nome do cliente no campo abaixo se ainda não estiver cadastrado</p>
                       )}
                     </div>
+                    )}
 
                     {selectedAgent.key === 'salario-maternidade-rural' && (
-                      <>
-                        <SeletorModelo
-                          agentType={selectedAgent.key}
-                          onSelect={desc => setContexto(desc)}
-                          isLight={isLight}
-                        />
                         <FormularioSmRural
                           isLight={isLight}
                           formData={formData}
@@ -1180,8 +1176,18 @@ function AgentesPageContent() {
                           atualizarEnderecoAutor={atualizarEnderecoAutor}
                           subsecaoManual={subsecaoManual}
                           setSubsecaoManual={setSubsecaoManual}
+                          selectedClientId={selectedClientId}
+                          clientes={clientes}
+                          onSelecionarCliente={selecionarCliente}
+                          optionStyle={optionStyle}
+                          abaixoCliente={
+                            <SeletorModelo
+                              agentType={selectedAgent.key}
+                              onSelect={desc => setContexto(desc)}
+                              isLight={isLight}
+                            />
+                          }
                         />
-                      </>
                     )}
 
                     {/* Formulário legado (agentes não-SM-rural) — Nome e CPF */}
