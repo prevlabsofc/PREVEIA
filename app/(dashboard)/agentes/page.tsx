@@ -182,6 +182,8 @@ function AgentesPageContent() {
   const [selectedAgent, setSelectedAgent] = useState<any>(null)
   const [tab, setTab] = useState<'pdf' | 'form'>('form')
   const [contexto, setContexto] = useState('')
+  /** Observações da ficha do cliente — não entram no prompt da petição. */
+  const [observacoesCliente, setObservacoesCliente] = useState('')
   const [formData, setFormData] = useState<Record<string, string>>({})
   const [formErrors, setFormErrors] = useState<ErrosFormSm>({})
   const [provas, setProvas] = useState<string[]>([])
@@ -608,6 +610,8 @@ function AgentesPageContent() {
           },
           clientId: selectedClient || null,
           clientName: nomeManual || null,
+          // Separado do formData: grava em client_notes e não entra no prompt.
+          observacoes: observacoesCliente.trim() || null,
         }),
       })
 
@@ -1178,6 +1182,8 @@ function AgentesPageContent() {
                           provasOpcoes={provasOpcoes}
                           contexto={contexto}
                           setContexto={setContexto}
+                          observacoesCliente={observacoesCliente}
+                          setObservacoesCliente={setObservacoesCliente}
                           imagensPreview={imagensPreview}
                           handleImagemUpload={handleImagemUpload}
                           removerImagem={removerImagem}

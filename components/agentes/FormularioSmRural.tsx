@@ -90,6 +90,9 @@ export type FormularioSmRuralProps = {
   provasOpcoes: string[]
   contexto: string
   setContexto: Dispatch<SetStateAction<string>>
+  /** Observações sobre o cliente — vão para client_notes, não entram na petição. */
+  observacoesCliente: string
+  setObservacoesCliente: Dispatch<SetStateAction<string>>
   imagensPreview: string[]
   handleImagemUpload: (e: React.ChangeEvent<HTMLInputElement>) => void
   removerImagem: (i: number) => void
@@ -121,6 +124,8 @@ export function FormularioSmRural({
   provasOpcoes,
   contexto,
   setContexto,
+  observacoesCliente,
+  setObservacoesCliente,
   imagensPreview,
   handleImagemUpload,
   removerImagem,
@@ -927,11 +932,25 @@ export function FormularioSmRural({
           <div className="smr-fields">
             <SubTitle>Complementos</SubTitle>
             <div>
-              <Label>Contexto adicional / observações</Label>
+              <Label>Observações sobre o cliente</Label>
+              <Help>Fica salvo na ficha do cliente e não entra na petição. Útil para quem for atender depois.</Help>
               <textarea
-                placeholder="Descreva detalhes do caso, contexto da cliente, informações relevantes..."
+                placeholder="Ex.: telefone do filho para recado, ponto de referência da casa, prefere ser contatado à tarde."
                 className="input-glass w-full"
-                style={{ height: 100, resize: 'none' }}
+                style={{ height: 88, resize: 'none', marginTop: 6 }}
+                value={observacoesCliente}
+                onChange={e => setObservacoesCliente(e.target.value)}
+                spellCheck={true}
+              />
+            </div>
+
+            <div>
+              <Label>Histórico e contexto do caso</Label>
+              <Help>A IA usa estas informações para escrever a petição. Quanto mais detalhe, mais a peça reflete a realidade do cliente.</Help>
+              <textarea
+                placeholder="Ex.: trabalha na roça com os pais desde criança, nunca teve carteira assinada, o INSS negou dizendo que faltava comprovação."
+                className="input-glass w-full"
+                style={{ height: 100, resize: 'none', marginTop: 6 }}
                 value={contexto}
                 onChange={e => setContexto(e.target.value)}
                 spellCheck={true}
@@ -939,16 +958,16 @@ export function FormularioSmRural({
             </div>
 
             <div>
-              <Label>O que mais você quer na petição?</Label>
+              <Label>Instruções para a petição</Label>
+              <Help>Orientações específicas que você quer que a IA siga ao redigir.</Help>
               <textarea
-                placeholder="Ex: Incluir pedido de tutela de urgência, citar ADI 2110…"
+                placeholder="Ex.: destacar que os documentos rurais estão no nome do pai e explicar que ela faz parte do mesmo núcleo familiar."
                 className="input-glass w-full"
-                style={{ height: 80, resize: 'none' }}
+                style={{ height: 80, resize: 'none', marginTop: 6 }}
                 value={formData.extras || ''}
                 onChange={e => setCampo({ extras: e.target.value })}
                 spellCheck={true}
               />
-              <Help>A IA vai incluir essas instruções específicas na petição</Help>
             </div>
 
             <div>

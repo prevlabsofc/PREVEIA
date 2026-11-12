@@ -6,6 +6,7 @@ import { getSystemPrompt } from '@/lib/agents'
 import { temAcessoTotal } from '@/lib/permissions/cargos'
 import { rateLimit } from '@/lib/rateLimit'
 import { registrarContato } from '@/lib/registrar-contato'
+import { gravarObservacaoAoGerarPeticao } from '@/lib/client-notes'
 import {
   AGENT_SM_RURAL,
   ERRO_GERACAO_INTERROMPIDA,
@@ -52,12 +53,13 @@ export async function POST(request: Request) {
     console.log('API KEY existe:', !!process.env.ANTHROPIC_API_KEY)
 
     // Payload esperado (alinhado com app/(dashboard)/agentes/page.tsx):
-    // { agentType, formData, clientId, clientName }
+    // { agentType, formData, clientId, clientName, observacoes? }
     const {
       agentType: rawAgentType,
       formData = {},
       clientId = null,
       clientName = null,
+      observacoes: rawObservacoes = null,
     } = body ?? {}
 
     const agentType =
@@ -76,6 +78,8 @@ export async function POST(request: Request) {
       typeof clientName === 'string' && clientName.trim()
         ? clientName.trim()
         : clientName || null
+    const observacoesCliente =
+      typeof rawObservacoes === 'string' ? rawObservacoes.trim() : ''
 
     const ip = request.headers.get('x-forwarded-for') || 'unknown'
     if (!rateLimit(ip, 20, 60000)) {
@@ -292,8 +296,8 @@ export async function POST(request: Request) {
       normalizedClientName || (normalizedFormData as any)?.nome || '',
     ).trim()
 
-    const resolvedClientId = cliForPrompt?.id ?? null
-    const resolvedClientName =
+    let resolvedClientId: string | null = cliForPrompt?.id ?? null
+    let resolvedClientName =
       cliForPrompt?.name || manualClientName || 'Cliente não informado'
 
     const apiKey = process.env.ANTHROPIC_API_KEY
@@ -492,6 +496,39 @@ ${JSON.stringify(formComSexo ?? {})}`
             })
             .select('id')
             .maybeSingle()
+
+          // Observações sobre o cliente → client_notes (e cria cliente se era nome manual).
+          if (observacoesCliente) {
+            try {
+              const sync = await gravarObservacaoAoGerarPeticao({
+                db: supabaseAdmin,
+                lawyerId: user.id,
+                clientId: resolvedClientId,
+                formData: formComSexo,
+                observacoes: observacoesCliente,
+              })
+              if (sync.clientId) {
+                if (sync.clientId !== resolvedClientId && novoDoc?.id) {
+                  const nomeDoc =
+                    String(formComSexo.nome || resolvedClientName || '').trim() ||
+                    resolvedClientName
+                  await supabaseAdmin
+                    .from('documents')
+                    .update({
+                      client_id: sync.clientId,
+                      client_name: nomeDoc,
+                    })
+                    .eq('id', novoDoc.id)
+                  resolvedClientId = sync.clientId
+                  resolvedClientName = nomeDoc
+                } else if (!resolvedClientId) {
+                  resolvedClientId = sync.clientId
+                }
+              }
+            } catch (errObs) {
+              console.error('[gerar-documento] observações cliente:', errObs)
+            }
+          }
 
           if (resolvedClientId) {
             await registrarContato(resolvedClientId, { db: supabaseAdmin })

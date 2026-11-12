@@ -25,6 +25,7 @@ import {
 import { CHECKLIST_ANEXO_AGENT_TYPE, type DocChecklist } from '@/lib/checklist-inss'
 import { carregarMembrosEscritorio, carregarNomesForaDaEquipe, type MembroEquipe } from '@/lib/equipe'
 import { PainelCrmCliente } from '@/components/clientes/PainelCrmCliente'
+import { ObservacoesHistoricoCliente } from '@/components/clientes/ObservacoesHistoricoCliente'
 import { ehContratoHonorarios, rotuloTipoContratoHonorarios } from '@/lib/contrato-honorarios'
 import { useFeedback } from '@/components/clientes/clientes-shared'
 import FeedbackToast from '@/components/clientes/FeedbackToast'
@@ -459,6 +460,12 @@ export default function ClienteDetalhesPage() {
             setClient((c: any) => ({ ...c, ...patch }))
             setForm((f: any) => ({ ...f, ...patch }))
           }}
+        />
+
+        <ObservacoesHistoricoCliente
+          clientId={String(id)}
+          membros={membros}
+          isLight={isLight}
         />
 
         <div className="mb-6">
