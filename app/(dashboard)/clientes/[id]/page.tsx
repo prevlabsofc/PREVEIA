@@ -1,9 +1,9 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Phone, Mail, MapPin, FileText, Archive, Edit2, Save, X, Bot, Clock, Sparkles, Plus, Eye, Briefcase, User } from 'lucide-react'
+import { ArrowLeft, Phone, Mail, MapPin, FileText, Archive, Edit2, Save, X, Bot, Clock, Sparkles, Plus, Eye, Briefcase, User, Scale, Handshake } from 'lucide-react'
 import Link from 'next/link'
 import { GlassCard } from '@/components/GlassCard'
 import HistoricoAprovacoesCliente from '@/components/clientes/HistoricoAprovacoesCliente'
@@ -26,7 +26,11 @@ import { CHECKLIST_ANEXO_AGENT_TYPE, type DocChecklist } from '@/lib/checklist-i
 import { carregarMembrosEscritorio, carregarNomesForaDaEquipe, type MembroEquipe } from '@/lib/equipe'
 import { PainelCrmCliente } from '@/components/clientes/PainelCrmCliente'
 import { ObservacoesHistoricoCliente } from '@/components/clientes/ObservacoesHistoricoCliente'
-import { ehContratoHonorarios, rotuloTipoContratoHonorarios } from '@/lib/contrato-honorarios'
+import { ObservacoesRelevantesCliente } from '@/components/clientes/ObservacoesRelevantesCliente'
+import { SobreOCasoCliente } from '@/components/clientes/SobreOCasoCliente'
+import { RelatorioPessoalCliente } from '@/components/clientes/RelatorioPessoalCliente'
+import { ProximoPassoCliente } from '@/components/clientes/ProximoPassoCliente'
+import { ehContratoDocumento, rotuloTipoContratoHonorarios } from '@/lib/contrato-honorarios'
 import { useFeedback } from '@/components/clientes/clientes-shared'
 import FeedbackToast from '@/components/clientes/FeedbackToast'
 import type { ProcessoParaPasta } from '@/lib/documentos-pastas'
@@ -34,6 +38,8 @@ import { UFS_BRASIL } from '@/lib/estados-brasil'
 import { juntarEnderecoLegado, mascaraCEP } from '@/lib/formatar-endereco'
 import { avisoNomeSexoIncompativel } from '@/lib/aviso-nome-sexo'
 import { flexionarAtividadeTimeline } from '@/lib/peticao-sm-rural'
+import { GerarDocumentoModelo } from '@/components/modelos/GerarDocumentoModelo'
+import type { TipoModeloDocumento } from '@/lib/modelos'
 
 const supabase = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
 
@@ -72,6 +78,9 @@ export default function ClienteDetalhesPage() {
   const [feedback, mostrarFeedback] = useFeedback()
   const [membros, setMembros] = useState<MembroEquipe[]>([])
   const [nomesExtras, setNomesExtras] = useState<Record<string, string>>({})
+  const [gerarModeloTipo, setGerarModeloTipo] = useState<TipoModeloDocumento | null>(null)
+  const docsSectionRef = useRef<HTMLDivElement>(null)
+  const peticoesSectionRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const check = () => setIsLight(document.documentElement.classList.contains('light'))
@@ -310,20 +319,21 @@ export default function ClienteDetalhesPage() {
   )
 
   const statusColor = isClienteArquivado(client) ? '#888' : '#22C55E'
-  const contratos = docs.filter((d: any) => ehContratoHonorarios(d.agent_type))
+  const contratos = docs.filter((d: any) => ehContratoDocumento(d.agent_type))
   const peticoes = docs.filter(
     (d: any) =>
       d.agent_type !== CHECKLIST_ANEXO_AGENT_TYPE &&
       d.agent_type !== EXTRACAO_PDF_AGENT_TYPE &&
-      !ehContratoHonorarios(d.agent_type)
+      !ehContratoDocumento(d.agent_type)
   )
+  const tipoBeneficioFicha = client.tipo_beneficio || null
 
   return (
-    <div className="p-8 max-w-5xl mx-auto" style={{ background: isLight ? '#F8F8F8' : 'transparent' }}>
+    <div className="p-4 sm:p-8 max-w-5xl mx-auto" style={{ background: isLight ? '#F8F8F8' : 'transparent' }}>
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
 
         {/* HEADER */}
-        <div className="flex items-center gap-4 mb-6">
+        <div className="flex items-center gap-4 mb-4 sm:mb-6">
           <Link href="/clientes" className="flex items-center gap-2 text-sm transition-all hover:opacity-70" style={{ color: '#D4AF37' }}>
             <ArrowLeft size={16}/> Voltar
           </Link>
@@ -342,6 +352,24 @@ export default function ClienteDetalhesPage() {
             </button>
           </div>
         </div>
+
+        {/* TOPO: próximo passo + dados básicos */}
+        <ProximoPassoCliente
+          client={client}
+          documentos={metaDocs(docs)}
+          temPeticao={peticoes.length > 0}
+          tipoBeneficio={tipoBeneficioFicha}
+          isLight={isLight}
+          onGerarPeticao={() => {
+            if (peticoes.length > 0) {
+              peticoesSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            } else {
+              gerarPeticao()
+            }
+          }}
+          onIrDocumentos={() => docsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+          onEditarCadastro={() => setEditing(true)}
+        />
 
         {/* PERFIL */}
         <GlassCard intensity={0.5} style={{ padding: 28, marginBottom: 20 }}>
@@ -378,7 +406,7 @@ export default function ClienteDetalhesPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {[
               { icon: Mail, label: 'Email', field: 'email', type: 'email' },
               { icon: Phone, label: 'Telefone', field: 'phone', type: 'tel' },
@@ -449,6 +477,35 @@ export default function ClienteDetalhesPage() {
           </div>
         </GlassCard>
 
+        {/* Relatório pessoal → Sobre o caso + Observações → documentos → histórico */}
+        <RelatorioPessoalCliente
+          cliente={client}
+          documentos={docs}
+          isLight={isLight}
+        />
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 lg:gap-4">
+          <SobreOCasoCliente
+            clientId={String(id)}
+            valorInicial={client.notes}
+            isLight={isLight}
+            onAtualizar={(patch) => {
+              setClient((c: any) => ({ ...c, ...patch }))
+              setForm((f: any) => ({ ...f, ...patch }))
+            }}
+          />
+
+          <ObservacoesRelevantesCliente
+            clientId={String(id)}
+            valorInicial={client.observacoes_relevantes}
+            isLight={isLight}
+            onAtualizar={(patch) => {
+              setClient((c: any) => ({ ...c, ...patch }))
+              setForm((f: any) => ({ ...f, ...patch }))
+            }}
+          />
+        </div>
+
         <PainelCrmCliente
           clientId={String(id)}
           ultimoContato={client.last_contact_at}
@@ -462,12 +519,6 @@ export default function ClienteDetalhesPage() {
           }}
         />
 
-        <ObservacoesHistoricoCliente
-          clientId={String(id)}
-          membros={membros}
-          isLight={isLight}
-        />
-
         <div className="mb-6">
           <EtapaFunilCliente
             clientId={String(id)}
@@ -478,11 +529,12 @@ export default function ClienteDetalhesPage() {
         </div>
 
         {/* CHECKLIST INSS — resumo X/Y + pendências + upload */}
+        <div ref={docsSectionRef}>
         <ResumoDocumentosCliente
           clientId={id as string}
           clientName={client.name}
           phone={client.whatsapp || client.phone}
-          tipoBeneficio={client.zone === 'rural' ? 'rural' : client.zone === 'urban' || client.zone === 'urbano' ? 'urbano' : null}
+          tipoBeneficio={tipoBeneficioFicha}
           documentos={metaDocs(docs)}
           isLight={isLight}
           onTipoBeneficioChange={() => {
@@ -510,6 +562,7 @@ export default function ClienteDetalhesPage() {
             })
           }}
         />
+        </div>
 
         {/* Extração de sentenças / acórdãos / petições longas */}
         <div className="mb-6">
@@ -571,16 +624,47 @@ export default function ClienteDetalhesPage() {
           </GlassCard>
         )}
 
-        {/* AÇÕES RÁPIDAS */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <button onClick={gerarPeticao} className="btn-gold flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold">
-            <Bot size={18}/> Gerar Petição
+        {/* AÇÕES RÁPIDAS — geração por modelo + atalhos */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+          <button
+            type="button"
+            onClick={() => setGerarModeloTipo('peticao')}
+            className="btn-gold flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold"
+          >
+            <Scale size={17}/> Gerar petição
           </button>
-          <Link href={`/ia?cliente=${encodeURIComponent(client.name)}`} className="flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold transition-all hover:bg-white/5" style={{ border: '1px solid rgba(212,175,55,0.3)', color: '#D4AF37' }}>
-            <Sparkles size={18}/> Consultar IA
+          <button
+            type="button"
+            onClick={() => setGerarModeloTipo('contrato_servicos')}
+            className="flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold transition-all hover:bg-white/5"
+            style={{ border: '1px solid rgba(212,175,55,0.35)', color: '#D4AF37' }}
+          >
+            <Handshake size={17}/> Gerar contrato
+          </button>
+          <button
+            type="button"
+            onClick={() => setGerarModeloTipo('contrato_honorarios')}
+            className="flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold transition-all hover:bg-white/5"
+            style={{ border: '1px solid rgba(212,175,55,0.35)', color: '#D4AF37' }}
+          >
+            <Briefcase size={17}/> Gerar honorários
+          </button>
+          <button
+            type="button"
+            onClick={gerarPeticao}
+            className="flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold transition-all hover:bg-white/5"
+            style={{ border: '1px solid rgba(255,255,255,0.1)', color: '#888' }}
+            title="Fluxo com agentes de IA"
+          >
+            <Bot size={17}/> Petição com IA
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-3 mb-6">
+          <Link href={`/ia?cliente=${encodeURIComponent(client.name)}`} className="flex items-center justify-center gap-2 py-2.5 rounded-2xl text-sm font-medium transition-all hover:bg-white/5" style={{ border: '1px solid rgba(212,175,55,0.25)', color: '#D4AF37' }}>
+            <Sparkles size={16}/> Consultar IA
           </Link>
-          <Link href={`/jurisprudencia`} className="flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold transition-all hover:bg-white/5" style={{ border: '1px solid rgba(255,255,255,0.1)', color: '#888' }}>
-            <FileText size={18}/> Jurisprudência
+          <Link href={`/jurisprudencia`} className="flex items-center justify-center gap-2 py-2.5 rounded-2xl text-sm font-medium transition-all hover:bg-white/5" style={{ border: '1px solid rgba(255,255,255,0.1)', color: '#888' }}>
+            <FileText size={16}/> Jurisprudência
           </Link>
         </div>
 
@@ -592,17 +676,25 @@ export default function ClienteDetalhesPage() {
             <h3 className="font-bold flex items-center gap-2" style={{ color: isLight ? '#1E1E1E' : '#fff' }}>
               <Briefcase size={18} color="#D4AF37"/> Contratos Salvos ({contratos.length})
             </h3>
-            <Link href="/honorarios" className="btn-gold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setGerarModeloTipo('contrato_honorarios')}
+              className="btn-gold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1"
+            >
               <Plus size={13}/> Gerar novo contrato
-            </Link>
+            </button>
           </div>
           {contratos.length === 0 ? (
             <div className="text-center py-8">
               <Briefcase size={32} color="#333" className="mx-auto mb-2"/>
               <p className="text-sm text-gray-500 mb-3">Nenhum contrato salvo ainda</p>
-              <Link href="/honorarios" className="btn-gold px-5 py-2 rounded-xl text-sm inline-block">
+              <button
+                type="button"
+                onClick={() => setGerarModeloTipo('contrato_honorarios')}
+                className="btn-gold px-5 py-2 rounded-xl text-sm inline-block"
+              >
                 Gerar contrato de honorários →
-              </Link>
+              </button>
             </div>
           ) : (
             <div className="space-y-2">
@@ -627,6 +719,7 @@ export default function ClienteDetalhesPage() {
         </GlassCard>
 
         {/* HISTÓRICO DE PETIÇÕES — centralizado por protocolo */}
+        <div ref={peticoesSectionRef}>
         <GlassCard intensity={0.3} style={{ padding: 24 }}>
           <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
             <h3 className="font-bold flex items-center gap-2" style={{ color: isLight ? '#1E1E1E' : '#fff' }}>
@@ -668,6 +761,16 @@ export default function ClienteDetalhesPage() {
             />
           )}
         </GlassCard>
+        </div>
+
+        {/* Histórico de ações / anotações */}
+        <div className="mt-5">
+          <ObservacoesHistoricoCliente
+            clientId={String(id)}
+            membros={membros}
+            isLight={isLight}
+          />
+        </div>
 
         <HistoricoAprovacoesCliente clientId={id as string} isLight={isLight} />
       </motion.div>
@@ -749,6 +852,31 @@ export default function ClienteDetalhesPage() {
             )}
           </div>
         </div>
+      )}
+
+      {gerarModeloTipo && (
+        <GerarDocumentoModelo
+          open={Boolean(gerarModeloTipo)}
+          onClose={() => setGerarModeloTipo(null)}
+          tipo={gerarModeloTipo}
+          cliente={client}
+          isLight={isLight}
+          onSalvo={(doc) => {
+            setDocs((prev) => [
+              {
+                id: doc.id,
+                title: doc.title,
+                agent_type: doc.agent_type,
+                created_at: new Date().toISOString(),
+                client_id: id,
+                client_name: client.name,
+                status: 'generated',
+              },
+              ...prev.filter((d: any) => d.id !== doc.id),
+            ])
+            mostrarFeedback('sucesso', 'Documento gerado e salvo no histórico.')
+          }}
+        />
       )}
 
       <FeedbackToast feedback={feedback} />

@@ -1,0 +1,5 @@
+export * from './variaveis'
+export * from './tipos'
+export * from './padrao'
+export * from './substituir'
+export * from './repositorio'

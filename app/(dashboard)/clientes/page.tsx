@@ -430,8 +430,7 @@ export default function ClientesPage() {
     outline: 'none',
   }
 
-  // Reservados para uso futuro (ações por cliente: visualizar, gerar doc, arquivar, ver no mapa)
-  void Eye; void FileText; void Archive; void MapPin
+  void Eye; void Archive; void MapPin
 
   return (
     <div className="p-8 max-w-7xl mx-auto" style={{ background: isLight ? '#F8F8F8' : 'transparent' }}>
@@ -623,17 +622,24 @@ export default function ClientesPage() {
                   ))}
                 </div>
 
-                {/* Botão */}
-                <Link
-                  href={`/clientes/${client.id}`}
-                  className="w-full py-2 rounded-xl text-xs font-bold transition-all hover:opacity-80 text-center block"
-                  style={{ border: '1px solid rgba(212,175,55,0.25)', color: '#D4AF37', background: 'rgba(212,175,55,0.05)' }}
-                >
-                  Acessar Formulário →
-                </Link>
-                <Link href={`/clientes/${client.id}`} className="flex items-center gap-1 text-[10px] mt-2" style={{ color: '#D4AF37' }}>
-                  Ver detalhes →
-                </Link>
+                {/* Ações */}
+                <div className="flex flex-col gap-2">
+                  <Link
+                    href={`/agentes?clienteId=${encodeURIComponent(client.id)}&clienteNome=${encodeURIComponent(client.name || '')}&clienteCPF=${encodeURIComponent(client.cpf || '')}`}
+                    className="w-full py-2 rounded-xl text-xs font-bold transition-all hover:opacity-90 text-center flex items-center justify-center gap-1.5"
+                    style={{ background: 'linear-gradient(135deg,#D4AF37,#F0D060)', color: '#000' }}
+                  >
+                    <FileText size={13} aria-hidden />
+                    Gerar petição
+                  </Link>
+                  <Link
+                    href={`/clientes/${client.id}`}
+                    className="w-full py-2 rounded-xl text-xs font-bold transition-all hover:opacity-80 text-center block"
+                    style={{ border: '1px solid rgba(212,175,55,0.25)', color: '#D4AF37', background: 'rgba(212,175,55,0.05)' }}
+                  >
+                    Ver ficha →
+                  </Link>
+                </div>
               </motion.div>
             )
           })}

@@ -5,8 +5,24 @@ import {
 import {
   FUND_ADI_2110_2111,
   FUND_TEMA_533_STJ,
+  TESE_CARENCIA_SM_RURAL,
+  motivoIndeferimentoEhCarencia,
+  CITACOES_PERMITIDAS_SM,
+  REF_SM_ART_71,
+  REF_SM_ART_39_PU,
+  REF_SM_CF_7_XVIII,
 } from '@/lib/peticoes/fundamentos'
-import { valorCausaSalarioMaternidade } from '@/lib/salario-minimo'
+import { textoQualificacaoInssFixa } from '@/lib/peticoes/inss'
+import {
+  blocoPromptDocsProvaRural,
+  detectarDocsProvaAtividadeRural,
+  type DocProvaRural,
+} from '@/lib/peticoes/provas-rurais-sm'
+import { textoPromptCitacoesPermitidas } from '@/lib/legal/referencias'
+import {
+  ERRO_DATA_FATO_AUSENTE,
+  valorCausaSalarioMaternidade,
+} from '@/lib/salario-minimo'
 import {
   bairroJaContidoNoLogradouro,
   formatarEnderecoAutorPeticao,
@@ -121,6 +137,12 @@ DOMICÍLIO DA PARTE AUTORA (qualificação e competência territorial JEF):
   )
     .trim()
     .toLowerCase()
+  const docsProvaRural = detectarDocsProvaAtividadeRural(
+    fd.provas,
+    fd.docs_anexados,
+    fd.documentos_anexados,
+    fd.anexos_cliente,
+  )
   const prompts: Record<string, string> = {
     'salario-maternidade-rural':
       advDados +
@@ -134,6 +156,9 @@ DOMICÍLIO DA PARTE AUTORA (qualificação e competência territorial JEF):
         zonaAutor,
         bairroDuplicadoNoLogradouro,
         municipioUfAutor,
+        motivoInss: lerCampo(fd, 'motivo_inss', 'motivo_indeferimento', 'motivo'),
+        nomeParteAutora: lerCampo(fd, 'nome', 'nome_completo', 'name'),
+        docsProvaRural,
       }),
   }
 
@@ -301,9 +326,17 @@ function buildPromptSalMatRural(
     zonaAutor: string
     bairroDuplicadoNoLogradouro?: boolean
     municipioUfAutor?: string
+    motivoInss?: string
+    nomeParteAutora?: string
+    docsProvaRural?: readonly DocProvaRural[]
   },
 ): string {
-  const smValor = valorCausaSalarioMaternidade(dataParto)
+  if (!dataParto) {
+    throw new Error(ERRO_DATA_FATO_AUSENTE)
+  }
+  const smValor = valorCausaSalarioMaternidade(dataParto, {
+    exigirDataDoFato: true,
+  })
   const generoCrianca = instrucaoGeneroCrianca(sexoCriancaRaw)
   const generoAutor = instrucaoGeneroParteAutora(sexoAutorRaw)
   const munUf =
@@ -326,20 +359,71 @@ function buildPromptSalMatRural(
   const enderecoFixo =
     ctx.enderecoAutor ||
     'logradouro, número, bairro/comunidade (se não redundante), zona se rural, município/UF, CEP 00000-000'
+  const motivoInss = String(ctx.motivoInss || '').trim()
+  const teseCarencia = motivoIndeferimentoEhCarencia(motivoInss)
+  const nomeParte = String(ctx.nomeParteAutora || '').trim()
+  const listaCitacoes =
+    textoPromptCitacoesPermitidas() ||
+    CITACOES_PERMITIDAS_SM.map((c) => `  - ${c}`).join('\n')
+  const docsProva = ctx.docsProvaRural || []
+  const blocoDocsRurais = blocoPromptDocsProvaRural(docsProva)
+  const blocoTeseCarencia = teseCarencia
+    ? `
+TESE DE CARÊNCIA (OBRIGATÓRIA NESTE CASO — indeferimento por falta de carência):
+- Este caso é salário-maternidade RURAL com indeferimento por falta de carência (ação direta).
+- A argumentação DEVE atacar exatamente o motivo informado pelo INSS: "${motivoInss}".
+- Desenvolva e sustente a tese de forma bem fundamentada. Inclua OBRIGATORIAMENTE o trecho abaixo (sem alterar o sentido; pode encadear em parágrafos):
+"""
+${TESE_CARENCIA_SM_RURAL}
+"""
+- Ideia central: antes de 2024 a trabalhadora rural precisava comprovar o exercício de atividade rural no período anterior ao benefício; após as ADIs 2.110 e 2.111 (28/03/2024), essa comprovação não se exige da mesma forma e a carência não pode fundamentar o indeferimento; a trabalhadora não precisa provar que “estará” trabalhando como condição de carência.
+- Dispositivos que sustentam a tese: ${REF_SM_ART_71}; ${REF_SM_ART_39_PU}; ${REF_SM_CF_7_XVIII}; ADIs 2.110/2.111.
+- NÃO aplique esta tese a outros benefícios — ela vale APENAS para salário-maternidade rural.
+`
+    : `
+TESE DE CARÊNCIA (NÃO APLICAR NESTE CASO):
+- O motivo do indeferimento NÃO é falta de carência${motivoInss ? ` (motivo informado: "${motivoInss}")` : ' (motivo não informado)'}.
+- NÃO desenvolva tese de dispensa/afastamento de carência como eixo da petição.
+- Ataque o motivo efetivamente informado pelo INSS (prova, qualidade de segurado etc.).
+- Ainda assim cite o trecho curto fixo das ADIs apenas como proteção à maternidade (não como tese de carência).
+`
 
   return `
 Você é um advogado previdenciarista especializado com 20 anos de experiência.
 Gere uma PETIÇÃO INICIAL COMPLETA para Salário-Maternidade — Segurado Especial no JEF.
+Modelo-base editável (conteúdo Fernando): lib/templates/peticao-salario-maternidade.md
 
 ${generoAutor.bloco}
 
 ${generoCrianca}
 
-SALÁRIO MÍNIMO / VALOR DA CAUSA (obrigatório):
+ABERTURA DA PEÇA (clareza obrigatória — ordem fixa):
+1) <<<QUALIFICACAO>>>: um único parágrafo corrido com qualificação COMPLETA da autora — nome, nacionalidade, estado civil, profissão, data de nascimento, CPF, RG (só se informado), endereço completo, menção aos procuradores, e pedido para propor a presente ação. Sem frases soltas ou trechos incoerentes.
+2) <<<EM_FACE>>>: qualificação COMPLETA do réu (INSS) — use EXATAMENTE o texto fixo abaixo.
+3) <<<TITULO>>>/<<<SUBTITULO>>>: nome da ação = salário-maternidade rural (segurada especial).
+4) Na síntese (após timeline): 1–2 parágrafos resumindo o pedido e o motivo do indeferimento do INSS — a argumentação ataca exatamente esse motivo.
+
+QUALIFICAÇÃO FIXA DO INSS (copie em <<<EM_FACE>>>, sem alterar dados cadastrais):
+${textoQualificacaoInssFixa()}
+
+FORMATAÇÃO DE NOMES (obrigatório no texto gerado):
+- Escreva o nome completo da parte autora${nomeParte ? ` ("${nomeParte}")` : ''} em caixa de título (não em CAIXA ALTA), em todas as menções.
+- Escreva "INSS" e "Instituto Nacional do Seguro Social" sempre nessas formas (o sistema aplica negrito na renderização).
+- Texto corrido em caixa de sentença. NUNCA parágrafos inteiros em CAIXA ALTA (exceto título da ação, títulos de seção FATOS/DIREITO/PEDIDOS e subtítulos "DA …:").
+
+SALÁRIO MÍNIMO / VALOR DA CAUSA (obrigatório — valores oficiais do sistema, NÃO invente):
 - Use o salário mínimo vigente na DATA DO PARTO (fato gerador): ${smValor.mensalFmt} (vigência desde ${smValor.dataVigenciaFmt}).
 - Valor da causa = 4 × esse salário = ${smValor.totalFmt}.
 - NÃO use o salário mínimo de ${new Date().getFullYear()} se a data do parto for anterior.
 - Na PLANILHA, a nota deve indicar a data de vigência ${smValor.dataVigenciaFmt} (não só o ano).
+- Fonte: lib/legal/salario-minimo.json (já consultada pelo sistema).
+
+CITAÇÕES LEGAIS PERMITIDAS (lista fechada — NÃO invente lei, súmula, tema ou acórdão fora desta lista; catálogo em lib/legal/referencias.ts):
+${listaCitacoes}
+
+${blocoDocsRurais}
+
+${blocoTeseCarencia}
 
 FORMATO OBRIGATÓRIO (PRIORIDADE MÁXIMA — sobrescreve as regras genéricas de hierarquia/fechamento abaixo):
 A saída DEVE começar com <<<SM_RURAL_V2>>> e usar EXATAMENTE os marcadores abaixo, nesta ordem.
@@ -372,19 +456,20 @@ AO JUÍZO FEDERAL DO JUIZADO ESPECIAL FEDERAL DA SUBSEÇÃO JUDICIÁRIA DE ${ctx
 <<<END_QUALIFICACAO>>>
 
 <<<TITULO>>>
-AÇÃO PREVIDENCIÁRIA DE CONCESSÃO DE SALÁRIO-MATERNIDADE
+AÇÃO ORDINÁRIA DE CONCESSÃO DE BENEFÍCIO PREVIDENCIÁRIO — SALÁRIO-MATERNIDADE RURAL
 <<<SUBTITULO>>>
 ${generoAutor.subtitulo}
 <<<END_TITULO>>>
 
 IMPORTANTE SOBRE TÍTULO (OBRIGATÓRIO):
-- Em <<<TITULO>>> coloque APENAS a linha da ação, SEM subtítulo e SEM artefatos << >> ou <<>>.
+- Em <<<TITULO>>> coloque APENAS a linha da ação (CAIXA ALTA permitida), SEM subtítulo e SEM artefatos << >> ou <<>>.
+- Preferir exatamente: "AÇÃO ORDINÁRIA DE CONCESSÃO DE BENEFÍCIO PREVIDENCIÁRIO — SALÁRIO-MATERNIDADE RURAL"
 - O subtítulo "${generoAutor.subtitulo}" vai SOMENTE em <<<SUBTITULO>>>, UMA única vez.
 - NÃO repita o subtítulo dentro de <<<TITULO>>> nem cole título+subtítulo no mesmo bloco.
 - NÃO invente << >> / marcadores extras entre título e subtítulo.
 
 <<<EM_FACE>>>
-[Parágrafo: "Em face do INSTITUTO NACIONAL DO SEGURO SOCIAL – INSS, autarquia federal, a ser citado na pessoa de seu representante legal, por meio da Procuradoria Federal..." — redação NEUTRA via Procuradoria. Se o sistema injetar endereço de citação, o pós-processamento completa com "Procuradoria Federal Especializada junto ao INSS, com endereço em …, nos termos do art. 17 da Lei nº 10.259/2001". NUNCA invente agência municipal, endereço postal nem e-mail.]
+[Cole AQUI a QUALIFICAÇÃO FIXA DO INSS fornecida acima — autarquia federal, sede em Brasília/DF, CNPJ e endereço das constantes, citação via Procuradoria Federal. NUNCA invente agência municipal, CNPJ, endereço postal nem e-mail.]
 <<<END_EM_FACE>>>
 
 <<<I_PRELIMINARES>>>
@@ -433,8 +518,12 @@ DA PRIORIDADE DE TRAMITAÇÃO:
 <<<END_TIMELINE>>>
 
 <<<III_SINTESE_DEPOIS>>>
-[Parágrafos após a timeline: nascimento do filho/filha conforme gênero (data e nome informados), requerimento administrativo, indeferimento e motivo conforme informados, e crítica jurídica à decisão]
-[Período gestacional/carência: só afirme trabalho durante a gestação ou nos meses anteriores ao parto se as fontes informarem (ex.: campo tempo_trabalho_parto, contexto). Caso contrário, trate a carência apenas como requisito legal a ser demonstrado pelas provas — sem narrá-la como fato.]
+[Parágrafos após a timeline, nesta ordem mínima:
+1) nascimento do filho/filha conforme gênero (data e nome informados);
+2) requerimento administrativo (data/NB se informados);
+3) resumo claro do indeferimento e do motivo informado pelo INSS${motivoInss ? ` ("${motivoInss}")` : ''};
+4) crítica jurídica que ataque ESSE motivo (não outro).]
+[Período gestacional: só afirme trabalho durante a gestação ou nos meses anteriores ao parto se as fontes informarem (ex.: campo tempo_trabalho_parto, contexto). Não narre carência como fato se não estiver nas fontes.]
 [PROIBIDO listar provas aqui. NÃO escreva linhas "Documento — explicação". Provas vão SOMENTE em <<<IV_PROVAS>>>]
 <<<END_III_DEPOIS>>>
 
@@ -457,10 +546,14 @@ Se houver declaração de sindicato rural, descreva-a como prova complementar (N
 <<<END_IV_FECHO>>>
 
 <<<V_FUNDAMENTACAO>>>
-[4–6 parágrafos: art. 71 e art. 39 p.u. Lei 8.213/91; CF/88 art. 7º, XVIII; conclusão.
-Inclua obrigatoriamente estes trechos (sem alterar):
-"${FUND_ADI_2110_2111}"
-"${FUND_TEMA_533_STJ}"]
+[4–6 parágrafos ancorados no motivo do indeferimento.
+Cite apenas as normas da lista fechada acima. Use obrigatoriamente:
+- ${REF_SM_ART_71}; ${REF_SM_ART_39_PU}; ${REF_SM_CF_7_XVIII}
+- Trecho fixo: "${FUND_ADI_2110_2111}"
+- Trecho fixo: "${FUND_TEMA_533_STJ}"
+${teseCarencia ? `- Desenvolva a TESE DE CARÊNCIA (trecho obrigatório já fornecido neste prompt).` : `- NÃO construa tese de dispensa de carência; ataque o motivo informado.`}
+${docsProva.length ? `- Cite EXPRESSAMENTE na fundamentação os documentos-chave anexados: ${docsProva.map((d) => d.nomePeticao).join('; ')}.` : '- Não cite Certidão de Nascido Vivo / CadÚnico / Bolsa Família se não estiverem anexados.'}
+Não invente número de lei, súmula, tema ou acórdão.]
 <<<END_V>>>
 
 <<<VI_PEDIDOS>>>
@@ -502,8 +595,9 @@ REGRAS:
 - Endereço da parte autora na qualificação: reproduzir EXATAMENTE "${enderecoFixo}" (sem reescrever). CEP sempre no formato 00000-000 (sem ponto).
 - Após a qualificação (síntese fática, provas, fundamentação): citar só o município ${munUf}; não repetir o endereço completo nem o nome do povoado em toda frase.
 - Endereçamento SEM "Comarca"; juízo = "${ctx.juizoCompetente}" (NUNCA "${ctx.cidadeEscritorio || 'cidade do escritório'}" no endereçamento)
-- Citação INSS: redação neutra via Procuradoria Federal (o sistema pode completar com endereço da Procuradoria Especializada se configurado) — NUNCA invente agência da Previdência Social nem endereço/e-mail
-- Sempre citar STF ADIs 2110 e 2111, j. 28/03/2024 (texto fixo acima)
+- Qualificação do INSS: use a redação FIXA fornecida (autarquia federal, sede Brasília/DF, CNPJ/endereço das constantes, Procuradoria Federal) — NUNCA invente agência, CNPJ, endereço ou e-mail
+- Cite STF ADIs 2.110 e 2.111, julgamento 28/03/2024, com o texto fixo acima; ${teseCarencia ? 'desenvolva a tese de carência neste caso' : 'NÃO desenvolva tese de carência neste caso'}
+- Cite SOMENTE normas da lista fechada deste prompt
 - Declaração de sindicato: prova complementar — NÃO mencionar art. 106, III, Lei 8.213
 - Incluir checklist "Autodeclaração de segurado especial (art. 38-B, §2º, Lei 8.213/91)" nas provas
 - Em <<<IV_PROVAS>>>: SOMENTE lista com ✓ no formato "Nome do documento — explicação". Nunca parágrafos. Renderizadas em caixas cinza com check verde DENTRO da seção IV.
@@ -512,7 +606,7 @@ REGRAS:
 - prioridade_menor: true se a parte autora for menor de 18 anos
 - Local/data da assinatura: o sistema completa com a cidade do escritório (${ctx.cidadeEscritorio || '[Cidade]/[UF]'}) — no FECHAMENTO NÃO escreva a linha de cidade/data
 - Valor da causa: ${smValor.totalFmt} (4 × salário mínimo ${smValor.mensalFmt} vigente desde ${smValor.dataVigenciaFmt} na data do parto)
-- Texto corrido em caixa de sentença (primeira letra maiúscula, resto minúsculo conforme o português). NUNCA escreva parágrafos inteiros em CAIXA ALTA.
+- Texto corrido em caixa de sentença. NUNCA escreva parágrafos inteiros em CAIXA ALTA (exceto títulos/cabeçalhos).
 - Copie os nomes dos marcadores EXATAMENTE, com underscores: <<<END_III_ANTES>>> (nunca <<<ENDIIANTES>>>). Todo bloco aberto DEVE ser fechado.
 - Os marcadores são instruções internas do sistema: não os explique, não os repita fora do formato e não os deixe no meio do texto jurídico.
 - Na TIMELINE escreva APENAS um objeto JSON válido (sem markdown, sem texto antes ou depois do JSON).
@@ -523,16 +617,3 @@ REGRAS:
 
 // Mantém referência para compatibilidade de imports acidentais
 void _smValor
-
-const PROMPT_SAL_MAT_RURAL = buildPromptSalMatRural(null, '', '', {
-  juizoCompetente: '[Subseção]/[UF]',
-  cidadeEscritorio: 'São Luís/MA',
-  enderecoAutor: '',
-  municipioAutor: '',
-  ufAutor: '',
-  bairroAutor: '',
-  zonaAutor: '',
-  bairroDuplicadoNoLogradouro: false,
-  municipioUfAutor: '',
-})
-void PROMPT_SAL_MAT_RURAL

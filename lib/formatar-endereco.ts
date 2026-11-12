@@ -56,6 +56,32 @@ export function inteiramenteMinusculo(texto: string): boolean {
   return temMinuscula(s) && !temMaiuscula(s)
 }
 
+/** True se o texto tem letras e todas estão em maiúsculas. */
+export function inteiramenteMaiusculo(texto: string): boolean {
+  const s = String(texto || '')
+  return temMaiuscula(s) && !temMinuscula(s)
+}
+
+/**
+ * Caixa de título se o texto veio todo em minúsculas OU todo em maiúsculas
+ * (comum na qualificação gerada pela IA: "ANA LÚCIA FERREIRA").
+ */
+export function caixaTituloSeUniforme(texto: string): string {
+  const s = String(texto || '')
+  const comUf = s.match(/^(.*?)(\s*\/\s*[A-Z]{2})$/)
+  if (comUf) {
+    const base = comUf[1]
+    if (inteiramenteMinusculo(base) || inteiramenteMaiusculo(base)) {
+      return caixaTitulo(base.toLocaleLowerCase('pt-BR')) + comUf[2]
+    }
+    return s
+  }
+  if (inteiramenteMinusculo(s) || inteiramenteMaiusculo(s)) {
+    return caixaTitulo(s.toLocaleLowerCase('pt-BR'))
+  }
+  return s
+}
+
 /**
  * Caixa de título pt-BR ("rua sao vicente" → "Rua Sao Vicente"): só muda a caixa,
  * nunca acentos/grafia. Palavras que já têm maiúscula (siglas, "XV", "MA") ficam

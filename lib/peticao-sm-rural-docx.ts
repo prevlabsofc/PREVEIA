@@ -43,6 +43,7 @@ import {
   ASSINATURA_ESPACO_CM,
   type AssinaturaEscritorio,
 } from '@/lib/assinatura-escritorio'
+import { segmentarNegritoNomeInss } from '@/lib/peticoes/formatacao-peticao'
 
 const FONT = 'Times New Roman'
 const SIZE = 24 // 12pt
@@ -173,8 +174,18 @@ class BodyBuilder {
 
 function optsCorpo(
   text: string,
-  opts: { indent?: boolean; spacingAfter?: number; bold?: boolean } = {},
+  opts: {
+    indent?: boolean
+    spacingAfter?: number
+    bold?: boolean
+    nomeCliente?: string | null
+  } = {},
 ): IParagraphOptions {
+  const segs = segmentarNegritoNomeInss(text, opts.nomeCliente)
+  const children =
+    segs.length > 0
+      ? segs.map((s) => run(s.text, { bold: opts.bold || s.bold }))
+      : [run(text, { bold: opts.bold })]
   return {
     alignment: AlignmentType.BOTH,
     keepLines: true,
@@ -185,18 +196,22 @@ function optsCorpo(
       lineRule: LineRuleType.AUTO,
     },
     indent: opts.indent === false ? undefined : { firstLine: INDENT_1A },
-    children: [run(text, { bold: opts.bold })],
+    children,
   }
 }
 
-function parasDeTexto(b: BodyBuilder, raw: string) {
+function parasDeTexto(
+  b: BodyBuilder,
+  raw: string,
+  nomeCliente?: string | null,
+) {
   const text = limparMarkdownResidual(String(raw || '')).trim()
   if (!text) return
   text
     .split(/\n+/)
     .map((l) => l.trim())
     .filter(Boolean)
-    .forEach((l) => b.p(optsCorpo(l)))
+    .forEach((l) => b.p(optsCorpo(l, { nomeCliente })))
 }
 
 /** Folga interna da faixa (pt): bordas na cor do fundo funcionam como padding. */
@@ -751,7 +766,8 @@ async function buildBody(
 
   b.table(metaBox(c), { before: 200, after: 200 })
 
-  parasDeTexto(b, c.qualificacao)
+  const nome = c.nomeCliente
+  parasDeTexto(b, c.qualificacao, nome)
 
   b.p({
     alignment: AlignmentType.CENTER,
@@ -768,29 +784,29 @@ async function buildBody(
     children: [run(c.subtitulo, { bold: true })],
   })
 
-  parasDeTexto(b, c.emFace)
+  parasDeTexto(b, c.emFace, nome)
 
   b.p(sectionBar('I – PRELIMINARMENTE'))
   for (const pre of c.preliminares) {
     if (pre.titulo) b.p(subheadPreliminar(pre.titulo))
-    parasDeTexto(b, pre.corpo)
+    parasDeTexto(b, pre.corpo, nome)
   }
 
   b.p(sectionBar('II – QUADRO SINÓPTICO'))
   b.table(tabelaDuasColunas('RESUMO DAS PRINCIPAIS INFORMAÇÕES DO PROCESSO', c.quadro))
 
   b.p(sectionBar('III – SÍNTESE DO CONTEXTO FÁTICO'))
-  parasDeTexto(b, c.sinteseAntes)
+  parasDeTexto(b, c.sinteseAntes, nome)
   await blocosTimeline(b, c.timeline, pngCliente)
-  parasDeTexto(b, c.sinteseDepois)
+  parasDeTexto(b, c.sinteseDepois, nome)
 
   b.p(sectionBar('IV – DAS PROVAS JUNTADAS AOS AUTOS'))
   const provasTable = tabelaProvas(estruturarProvasSm(c.provas))
   if (provasTable) b.table(provasTable)
-  parasDeTexto(b, c.provasFecho)
+  parasDeTexto(b, c.provasFecho, nome)
 
   b.p(sectionBar('V – FUNDAMENTAÇÃO JURÍDICA'))
-  parasDeTexto(b, c.fundamentacao)
+  parasDeTexto(b, c.fundamentacao, nome)
 
   b.p(sectionBar('VI – PEDIDO / REQUERIMENTOS'))
   b.p(optsCorpo('Diante do exposto, requer:', { indent: false }))
@@ -1054,6 +1070,7 @@ export async function montarDocxSmRural(opts: {
   text: string
   adv: DadosAdvogadoPeticao
   sexoParteAutora?: string | null
+  nomeCliente?: string | null
   timelinePng?: TimelinePngCliente | null
   assinatura?: AssinaturaDocx | null
 }): Promise<Buffer | null> {

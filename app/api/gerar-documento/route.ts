@@ -131,7 +131,7 @@ export async function POST(request: Request) {
 
     if (!user) return Response.json({ error: 'unauthorized' }, { status: 401 })
 
-    // SM rural: exige subseção judiciária (competência pelo domicílio da autora)
+    // SM rural: exige subseção + data do parto (valor da causa / salário mínimo)
     if (agentType === AGENT_SM_RURAL) {
       const sub = String(
         normalizedFormData.subsecao_judiciaria ||
@@ -153,6 +153,20 @@ export async function POST(request: Request) {
           {
             error:
               'Informe o endereço completo da parte autora e a subseção judiciária competente antes de gerar.',
+          },
+          { status: 400 },
+        )
+      }
+      const dataParto = String(
+        normalizedFormData.data_nascimento_crianca ||
+          normalizedFormData.data_parto ||
+          '',
+      ).trim()
+      if (!dataParto) {
+        return Response.json(
+          {
+            error:
+              'Informe a data do parto / nascimento da criança para calcular o salário mínimo e o valor da causa.',
           },
           { status: 400 },
         )
@@ -331,12 +345,35 @@ export async function POST(request: Request) {
       formComSexo.cpf_crianca = cliForPrompt.cpf_crianca
     }
 
-    const systemPrompt = getSystemPrompt(
-      agentType,
-      lawyerForPrompt,
-      cliForPrompt,
-      formComSexo,
-    )
+    // Anexos do cliente (checklist) → detecção de provas rurais no prompt SM
+    if (agentType === AGENT_SM_RURAL && resolvedClientId) {
+      const { data: docsCliente } = await supabaseAdmin
+        .from('documents')
+        .select('title, agent_type, form_data')
+        .eq('client_id', resolvedClientId)
+        .eq('lawyer_id', user.id)
+        .limit(200)
+      if (docsCliente?.length) {
+        formComSexo.docs_anexados = docsCliente.map((d) => ({
+          title: d.title,
+          agent_type: d.agent_type,
+          form_data: d.form_data,
+        }))
+      }
+    }
+
+    let systemPrompt: string
+    try {
+      systemPrompt = getSystemPrompt(
+        agentType,
+        lawyerForPrompt,
+        cliForPrompt,
+        formComSexo,
+      )
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Erro ao montar o prompt.'
+      return Response.json({ error: msg }, { status: 400 })
+    }
     const anthropic = new Anthropic({ apiKey })
     const encoder = new TextEncoder()
     const formJson = `DADOS DO CASO — única fonte dos fatos do caso concreto: campos do formulário, dados extraídos do PDF importado, provas marcadas ("provas") e instruções/observações do usuário ("contexto", "observacoes", "extras"). Não afirme como fato nada que não conste aqui (regra FATOS vs. ARGUMENTAÇÃO).

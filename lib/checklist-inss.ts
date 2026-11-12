@@ -34,6 +34,9 @@ export const CHECKLIST_INSS: Record<string, string[]> = {
   'Salário-Maternidade': [
     'RG e CPF',
     'Certidão de nascimento da criança',
+    'Certidão de Nascido Vivo com profissão da mãe AGRICULTORA',
+    'CadÚnico com endereço rural',
+    'Espelho ou Relatório do Bolsa Família com endereço rural',
     'Carteira de trabalho',
     'Declaração de sindicato rural (segurada especial)',
     'Registro na colônia de pescadores (pescadora)',
@@ -90,11 +93,12 @@ export const CHECKLIST_INSS: Record<string, string[]> = {
 }
 
 export const CARENCIAS_INSS: Record<string, string> = {
+  // ADIs 2.110/2.111 (tese de carência) valem APENAS para salário-maternidade — não usar em aposentadoria.
   'Aposentadoria por Idade (Rural)':
-    '180 meses de atividade rural (15 anos) — STF dispensou carência para segurado especial (ADIs 2110 e 2111)',
+    '180 meses de atividade rural (15 anos) para segurado especial',
   'Aposentadoria por Idade (Urbana)': '180 contribuições mensais (15 anos)',
   'Salário-Maternidade':
-    'Dispensada para segurada especial — STF ADIs 2110 e 2111 (28/03/2024)',
+    'Segurada especial: carência não pode indeferir o benefício — STF ADIs 2.110 e 2.111 (28/03/2024)',
   'BPC/LOAS (Idoso)':
     'Não exige carência — apenas 65 anos + renda familiar per capita ≤ 1/4 do salário mínimo',
   'BPC/LOAS (Deficiência)':

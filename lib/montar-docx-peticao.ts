@@ -172,6 +172,7 @@ export async function montarDocxPeticao(opts: {
   estilo?: EstiloPeticao
   agentType?: string | null
   sexoParteAutora?: string | null
+  nomeCliente?: string | null
   timelinePng?: TimelinePngCliente | null
   assinatura?: AssinaturaDocx | null
 }): Promise<Buffer> {
@@ -183,6 +184,7 @@ export async function montarDocxPeticao(opts: {
       text: opts.text,
       adv: opts.adv,
       sexoParteAutora: opts.sexoParteAutora,
+      nomeCliente: opts.nomeCliente,
       timelinePng: opts.timelinePng,
       assinatura: opts.assinatura,
     })

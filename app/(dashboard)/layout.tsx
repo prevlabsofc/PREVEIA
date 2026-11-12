@@ -12,6 +12,7 @@ import {
   Briefcase,
   CreditCard,
   BookOpen,
+  BookTemplate,
   MapPin,
   Bell,
   Search,
@@ -458,6 +459,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           { href: '/dashboard', icon: LayoutGrid, label: 'Início' },
           { href: '/documentos', icon: FileText, label: 'Documentos' },
           { href: '/clientes', icon: Users, label: 'Clientes' },
+          { href: '/modelos', icon: BookTemplate, label: 'Modelos' },
         ],
         modulosAtivos
       ),

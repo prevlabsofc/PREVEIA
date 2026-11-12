@@ -5,10 +5,9 @@ import { motion } from 'framer-motion'
 import { FileText, Search, Eye, Plus, Trash2, X, Link2, User, FileSearch } from 'lucide-react'
 import Link from 'next/link'
 import { GlassCard } from '@/components/GlassCard'
-import { DownloadButtons } from '@/components/DownloadButtons'
-import { AvisoCitacao } from '@/components/AvisoCitacao'
 import { PastasDocumentos } from '@/components/documentos/PastasDocumentos'
 import { ExtracaoPdfDocumento } from '@/components/documentos/ExtracaoPdfDocumento'
+import { PeticaoEditorComPreview } from '@/components/peticao/PeticaoEditorComPreview'
 import { carregarMembrosEscritorio } from '@/lib/equipe'
 import { extrairNumeroProtocoloDoc, formatarCpfExibicao } from '@/lib/documentos-pastas'
 import type { ProcessoParaPasta } from '@/lib/documentos-pastas'
@@ -17,6 +16,7 @@ import {
   normalizarExtracao,
   type ExtracaoDocumentoPdf,
 } from '@/lib/extracao-documento-pdf'
+import { normalizarEstiloPeticao, type EstiloPeticao } from '@/lib/peticao-export'
 
 const supabase = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
 
@@ -68,6 +68,11 @@ export default function DocumentosPage() {
     clientId?: string | null
     clientName?: string | null
   } | null>(null)
+  const [selectedContent, setSelectedContent] = useState('')
+  const [selectedTitle, setSelectedTitle] = useState('')
+  const [loadingDocContent, setLoadingDocContent] = useState(false)
+  const [estiloPeticao, setEstiloPeticao] = useState<EstiloPeticao>('moderno')
+  const [corPeticao, setCorPeticao] = useState('#1d4ed8')
 
   const [isLight, setIsLight] = useState(false)
   useEffect(() => {
@@ -105,9 +110,10 @@ export default function DocumentosPage() {
           .in('lawyer_id', memberIds)
           .order('created_at', { ascending: false })
 
-        const [{ data, error: docsError }, { data: procs }] = await Promise.all([
+        const [{ data, error: docsError }, { data: procs }, { data: lawyer }] = await Promise.all([
           docsQuery,
           supabase.from('processos').select('id, numero, tribunal, cliente_id').in('lawyer_id', memberIds),
+          supabase.from('lawyers').select('estilo_peticao, cor_peticao').eq('id', user.id).maybeSingle(),
         ])
 
         if (docsError) {
@@ -120,6 +126,10 @@ export default function DocumentosPage() {
 
         setClients(clientList)
         setProcessos((procs as ProcessoParaPasta[]) || [])
+        if (lawyer) {
+          setEstiloPeticao(normalizarEstiloPeticao((lawyer as { estilo_peticao?: string }).estilo_peticao))
+          setCorPeticao((lawyer as { cor_peticao?: string }).cor_peticao || '#1d4ed8')
+        }
       } catch (err) {
         console.error('[documentos] load:', err)
         setDocs([])
@@ -147,6 +157,25 @@ export default function DocumentosPage() {
     setDocs(prev => prev.filter(d => d.id !== id))
     if (selected?.id === id) setSelected(null)
     if (linkingDoc?.id === id) setLinkingDoc(null)
+  }
+
+  async function abrirDocumento(doc: Doc) {
+    setSelected(doc)
+    setSelectedTitle(doc.title || doc.agent_type || doc.type || 'Petição')
+    setSelectedContent(doc.content || '')
+    setLoadingDocContent(true)
+    // Garante conteúdo completo (listagens às vezes vêm só com metadados).
+    const { data, error } = await supabase
+      .from('documents')
+      .select('content, title, agent_type, client_id, client_name')
+      .eq('id', doc.id)
+      .maybeSingle()
+    setLoadingDocContent(false)
+    if (error || !data) return
+    const full = { ...doc, ...data } as Doc
+    setSelected(full)
+    setSelectedTitle(full.title || full.agent_type || full.type || 'Petição')
+    setSelectedContent(full.content || '')
   }
 
   function abrirVinculo(doc: Doc, e: React.MouseEvent) {
@@ -469,7 +498,7 @@ export default function DocumentosPage() {
                       <Link2 size={14}/>
                     </button>
                   )}
-                  <button onClick={() => setSelected(d as Doc)} className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:bg-white/5" style={{ border: '1px solid rgba(212,175,55,0.3)', color: '#D4AF37' }}>
+                  <button onClick={() => void abrirDocumento(d as Doc)} className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:bg-white/5" style={{ border: '1px solid rgba(212,175,55,0.3)', color: '#D4AF37' }}>
                     <Eye size={14}/>
                   </button>
                   <button onClick={(e) => excluirDoc(d.id, e)} className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:bg-red-500/10" style={{ border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444' }}>
@@ -483,17 +512,32 @@ export default function DocumentosPage() {
       )}
 
       {selected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)' }} onClick={() => setSelected(null)}>
-          <div className="w-full max-w-3xl max-h-[85vh] overflow-auto rounded-2xl p-8" style={{ background: '#0A0A0A', border: '1px solid rgba(212,175,55,0.2)' }} onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-xl font-bold" style={{ color: isLight ? '#1E1E1E' : '#fff' }}>{docTypeLabel(selected)}</h2>
-                <p className="text-xs mt-1" style={{ color: '#888' }}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4"
+          style={{ background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)' }}
+          onClick={() => setSelected(null)}
+        >
+          <div
+            className="w-full max-w-6xl max-h-[92vh] overflow-auto rounded-2xl p-4 sm:p-6"
+            style={{
+              background: isLight ? '#FFFFFF' : '#0A0A0A',
+              border: '1px solid rgba(212,175,55,0.2)',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <div className="min-w-0">
+                <p className="text-xs" style={{ color: '#888' }}>
                   {selected.client_name ? `Cliente: ${selected.client_name}` : 'Sem cliente vinculado'}
                   {!selected.client_id && selected.client_name ? ' (nome manual)' : ''}
+                  {' · '}
+                  {selected.agent_type || selected.type || 'Petição'}
+                </p>
+                <p className="text-[11px] mt-1" style={{ color: isLight ? '#6B7280' : '#666' }}>
+                  Edite o texto e o nome sem regerar. Autosave grava no banco; as alterações permanecem ao fechar e reabrir.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-shrink-0">
                 {!selected.client_id && (
                   <button
                     onClick={() => { setLinkingDoc(selected); setLinkClientId(''); setLinkManualName(selected.client_name || '') }}
@@ -503,14 +547,46 @@ export default function DocumentosPage() {
                     Vincular cliente
                   </button>
                 )}
-                <DownloadButtons text={selected.content || ''} fileName={(selected.title || 'peticao').replace(/\s+/g, '-').toLowerCase()} />
-                <button onClick={() => setSelected(null)} className="hover:text-white text-lg ml-2" style={{ color: isLight ? '#5E5E5E' : undefined }}>X</button>
+                <button
+                  type="button"
+                  onClick={() => setSelected(null)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium"
+                  style={{ border: '1px solid rgba(255,255,255,0.12)', color: '#888' }}
+                >
+                  Fechar
+                </button>
               </div>
             </div>
-            <AvisoCitacao text={selected.content || ''} className="mb-4"/>
-            <div className="font-mono text-xs leading-relaxed whitespace-pre-wrap" style={{ color: '#ccc' }}>
-              {selected.content || 'Conteudo nao disponivel.'}
-            </div>
+
+            {loadingDocContent ? (
+              <div className="py-16 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-full border-2 animate-spin" style={{ borderColor: '#D4AF37', borderTopColor: 'transparent' }} />
+              </div>
+            ) : (
+              <PeticaoEditorComPreview
+                text={selectedContent}
+                onChange={setSelectedContent}
+                fileName={selectedTitle}
+                onFileNameChange={setSelectedTitle}
+                estilo={estiloPeticao}
+                editable
+                isLight={isLight}
+                corPeticao={corPeticao}
+                agentType={selected.agent_type || null}
+                clientId={selected.client_id || null}
+                clientName={selected.client_name || null}
+                documentId={selected.id}
+                layoutMode="split"
+                onSaved={({ title, content }) => {
+                  setDocs(prev =>
+                    prev.map(d =>
+                      d.id === selected.id ? { ...d, title, content } : d,
+                    ),
+                  )
+                  setSelected(prev => (prev ? { ...prev, title, content } : prev))
+                }}
+              />
+            )}
           </div>
         </div>
       )}

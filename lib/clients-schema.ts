@@ -1,18 +1,18 @@
 /**
  * Schema canônico de `public.clients` (produção Supabase).
  *
- * Colunas EXATAS:
+ * Colunas principais:
  * id, lawyer_id, name, cpf, rg, birth_date, data_nascimento, estado_civil,
  * cpf_crianca, phone, whatsapp, email, profession, zone, cep, address, rua,
- * numero, bairro, city, state, notes, sexo, status, created_at,
- * ultimo_contato, lembrete_enviado_em
+ * numero, bairro, city, state, notes, observacoes_relevantes, sexo, status,
+ * tipo_beneficio, etapa_funil, arquivado, created_at, ultimo_contato,
+ * lembrete_enviado_em
  *
- * NÃO existem: nome, telefone, tipo_beneficio, etapa_funil, stage, arquivado,
- * last_contact_at, office_id, assigned_lawyer_id…
+ * Aliases de UI (não são colunas): nome, telefone, stage, last_contact_at…
  */
 
 export const CLIENTS_COLUMNS =
-  'id, lawyer_id, name, cpf, rg, birth_date, data_nascimento, estado_civil, cpf_crianca, phone, whatsapp, email, profession, zone, cep, address, rua, numero, bairro, city, state, notes, sexo, status, created_at, ultimo_contato, lembrete_enviado_em' as const
+  'id, lawyer_id, name, cpf, rg, birth_date, data_nascimento, estado_civil, cpf_crianca, phone, whatsapp, email, profession, zone, cep, address, rua, numero, bairro, city, state, notes, observacoes_relevantes, sexo, status, tipo_beneficio, etapa_funil, arquivado, created_at, ultimo_contato, lembrete_enviado_em' as const
 
 export const CLIENTS_SELECT_SAFE = CLIENTS_COLUMNS
 
@@ -58,8 +58,9 @@ export type ClienteNormalizado = Record<string, unknown> & {
   last_contact_at: string | null
   ultimo_contato: string | null
   lembrete_enviado_em: string | null
-  /** Sem coluna no banco — derivado de zone ou null. */
   tipo_beneficio: string | null
+  /** Contexto interno — não alimenta a petição da IA. */
+  observacoes_relevantes?: string | null
   lawyer_id?: string | null
   created_at?: string | null
 }
@@ -102,6 +103,9 @@ export function normalizeCliente(row: Record<string, unknown> | null | undefined
   const bairro = String(r.bairro ?? '').trim()
   // Sem campos estruturados: usa address legado como rua
   const rua = ruaDb || (!numero && !bairro ? address : '')
+  const etapa =
+    String(r.etapa_funil ?? r.stage ?? '').trim() || 'atendimento_triagem'
+  const tipoBeneficio = String(r.tipo_beneficio ?? r.benefit_type ?? '').trim() || null
 
   return {
     ...r,
@@ -112,9 +116,8 @@ export function normalizeCliente(row: Record<string, unknown> | null | undefined
     phone: telefone,
     telefone,
     email: String(r.email ?? ''),
-    // Funil não existe no remoto — UI usa default sem gravar.
-    stage: 'atendimento_triagem',
-    etapa_funil: 'atendimento_triagem',
+    stage: etapa,
+    etapa_funil: etapa,
     status: arquivado ? STATUS_ARQUIVADO : STATUS_ATIVO,
     arquivado,
     address,
@@ -129,7 +132,8 @@ export function normalizeCliente(row: Record<string, unknown> | null | undefined
     last_contact_at: ultimo,
     ultimo_contato: ultimo,
     lembrete_enviado_em: (r.lembrete_enviado_em as string | null) ?? null,
-    tipo_beneficio: null,
+    tipo_beneficio: tipoBeneficio,
+    observacoes_relevantes: String(r.observacoes_relevantes ?? ''),
     lawyer_id: (r.lawyer_id as string | null) ?? null,
     created_at: (r.created_at as string | null) ?? null,
     whatsapp: String(r.whatsapp ?? telefone ?? ''),
@@ -151,8 +155,12 @@ export async function fetchClientsByLawyer(
   try {
     const attempts = [
       CLIENTS_SELECT_SAFE,
-      CLIENTS_COLUMNS.replace(/, sexo/, ''),
-      CLIENTS_COLUMNS.replace(/, rua, numero, bairro/, '').replace(/, sexo/, ''),
+      CLIENTS_COLUMNS.replace(/, observacoes_relevantes/, ''),
+      CLIENTS_COLUMNS.replace(/, observacoes_relevantes/, '')
+        .replace(/, tipo_beneficio, etapa_funil, arquivado/, ''),
+      CLIENTS_COLUMNS.replace(/, observacoes_relevantes/, '')
+        .replace(/, tipo_beneficio, etapa_funil, arquivado/, '')
+        .replace(/, sexo/, ''),
       '*',
     ] as const
     for (const cols of attempts) {

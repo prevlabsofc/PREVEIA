@@ -376,6 +376,35 @@ export function parseMarkdownToHtml(
   html = html.replace(/<<<BOX_START>>>/g, '<div class="doc-box keep-together">')
   html = fecharBoxes(html)
 
+  // Alinhamento manual do editor (:::center / :::right)
+  html = html.replace(
+    /^:::center\n([\s\S]*?)\n:::$/gm,
+    (_m, body) =>
+      `<div class="doc-align-center">${String(body)
+        .split(/\n{2,}/)
+        .map((bloco: string) => {
+          const t = bloco.trim()
+          if (!t) return ''
+          if (t.startsWith('<')) return t
+          return `<p class="doc-para doc-align-center">${t.replace(/\n/g, '<br/>')}</p>`
+        })
+        .join('')}</div>`,
+  )
+  html = html.replace(
+    /^:::right\n([\s\S]*?)\n:::$/gm,
+    (_m, body) =>
+      `<div class="doc-align-right">${String(body)
+        .split(/\n{2,}/)
+        .map((bloco: string) => {
+          const t = bloco.trim()
+          if (!t) return ''
+          if (t.startsWith('<')) return t
+          return `<p class="doc-para doc-align-right">${t.replace(/\n/g, '<br/>')}</p>`
+        })
+        .join('')}</div>`,
+  )
+
+  html = html.replace(/__(.+?)__/g, '<u>$1</u>')
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
   html = html.replace(/^---$/gm, '<hr class="divider"/>')
@@ -385,12 +414,40 @@ export function parseMarkdownToHtml(
   )
   html = html.replace(/^>\s?(.+)$/gm, '<blockquote class="doc-quote">$1</blockquote>')
 
+  // Listas com marcadores / numeradas (bloco contínuo)
+  html = html.replace(
+    /(?:^|\n)((?:[ \t]*[-*+][ \t]+.+(?:\n|$))+)/g,
+    (_m, block: string) => {
+      const items = block
+        .trim()
+        .split('\n')
+        .map((line) => line.replace(/^[ \t]*[-*+][ \t]+/, '').trim())
+        .filter(Boolean)
+        .map((item) => `<li>${item}</li>`)
+        .join('')
+      return `\n<ul class="doc-list">${items}</ul>\n`
+    },
+  )
+  html = html.replace(
+    /(?:^|\n)((?:[ \t]*\d+\.[ \t]+.+(?:\n|$))+)/g,
+    (_m, block: string) => {
+      const items = block
+        .trim()
+        .split('\n')
+        .map((line) => line.replace(/^[ \t]*\d+\.[ \t]+/, '').trim())
+        .filter(Boolean)
+        .map((item) => `<li>${item}</li>`)
+        .join('')
+      return `\n<ol class="doc-list">${items}</ol>\n`
+    },
+  )
+
   html = html
     .split('\n\n')
     .map((p) => {
-      if (p.startsWith('<') || p.includes('<div')) return p
+      if (p.startsWith('<') || p.includes('<div') || p.includes('<ul') || p.includes('<ol')) return p
       if (!p.trim()) return ''
-      if (/<(?:div|table|hr|blockquote)/.test(p)) {
+      if (/<(?:div|table|hr|blockquote|ul|ol)/.test(p)) {
         return p
           .split('\n')
           .map((line) => {
@@ -468,8 +525,8 @@ export function cssPeticao(opts: {
     .sub-sub-title { font-weight: bold; font-size: 11px; margin: 10px 0 4px 28px; color:#000; page-break-after: avoid; break-after: avoid; }
     .main-title { text-align:center; font-weight:bold; font-size:15px; text-transform:uppercase; margin: 18px 0; color:${moderno ? '#0A2540' : '#000'}; page-break-after: avoid; break-after: avoid; }
     p, .doc-para {
-      font-size: 12px;
-      line-height: 1.65;
+      font-size: 12pt;
+      line-height: 1.5;
       text-align: justify;
       margin: 0 0 10px;
       orphans: 3;
@@ -480,7 +537,18 @@ export function cssPeticao(opts: {
       word-wrap: break-word;
       text-transform: none;
     }
+    .doc-align-center, .doc-align-center p { text-align: center; }
+    .doc-align-right, .doc-align-right p { text-align: right; }
+    ul.doc-list, ol.doc-list {
+      font-size: 12pt;
+      line-height: 1.5;
+      margin: 0 0 12px 1.2cm;
+      padding: 0;
+      text-align: justify;
+    }
+    ul.doc-list li, ol.doc-list li { margin: 0 0 4px; }
     strong { color: ${moderno ? '#0A2540' : '#000'}; }
+    u { text-decoration: underline; }
     .divider { border: none; border-top: 1px solid #ccc; margin: 16px 0; }
     table.doc-table { width: 100%; border-collapse: collapse; margin: 12px 0 18px; font-size: 11px; }
     table.doc-table th { background: ${moderno ? '#0A2540' : '#000'}; color: #fff; padding: 7px 10px; text-align:left; font-size:10px; text-transform:uppercase; }

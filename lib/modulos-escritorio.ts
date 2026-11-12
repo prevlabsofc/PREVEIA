@@ -7,6 +7,7 @@ export type ModuloId =
   | 'dashboard'
   | 'documentos'
   | 'clientes'
+  | 'modelos'
   | 'equipe'
   | 'chat'
   | 'agentes'
@@ -52,6 +53,7 @@ export const MODULOS_CATALOGO: DefinicaoModulo[] = [
   },
   { id: 'documentos', href: '/documentos', label: 'Documentos', locked: false, secao: 'PRINCIPAL' },
   { id: 'clientes', href: '/clientes', label: 'Clientes', locked: false, secao: 'PRINCIPAL' },
+  { id: 'modelos', href: '/modelos', label: 'Modelos', locked: false, secao: 'PRINCIPAL' },
   { id: 'equipe', href: '/equipe', label: 'Minha Equipe', locked: false, secao: 'GESTÃO' },
   { id: 'chat', href: '/chat', label: 'Chat Interno', locked: false, secao: 'GESTÃO' },
   { id: 'agentes', href: '/agentes', label: 'Agentes IA', locked: false, secao: 'SISTEMA' },

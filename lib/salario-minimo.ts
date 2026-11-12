@@ -1,48 +1,31 @@
 /**
  * Salário mínimo nacional vigente na data de referência (fato gerador / parto).
- * Valores nominais oficiais (R$), com vigência por data de INÍCIO.
- * Fontes: Decretos/MPs/Leis federais; série histórica Senado/Ipeadata.
+ *
+ * Fonte de dados EDITÁVEL: `lib/legal/salario-minimo.json`
+ * A IA NÃO inventa o valor: o prompt injeta o resultado de
+ * `valorCausaSalarioMaternidade(dataDoParto)`.
+ *
+ * SM rural: se a data do parto não estiver preenchida, NÃO chute — use
+ * `exigirDataDoFato: true` (retorna erro) e peça ao usuário.
  */
 
+import tabela from '@/lib/legal/salario-minimo.json'
+
+type VigenciaJson = { inicio: string; valor: number }
+
+const VIGENCIAS_RAW = (tabela.vigencias || []) as VigenciaJson[]
+
 /** Pares [ano, mês 1–12, dia, valor mensal R$], ordenados do mais antigo ao mais recente. */
-const VIGENCIAS: ReadonlyArray<readonly [number, number, number, number]> = [
-  [1994, 9, 1, 70],
-  [1995, 5, 1, 100],
-  [1996, 5, 1, 112],
-  [1997, 5, 1, 120],
-  [1998, 5, 1, 130],
-  [1999, 5, 1, 136],
-  [2000, 4, 3, 151],
-  [2001, 4, 1, 180],
-  [2002, 4, 1, 200],
-  [2003, 4, 1, 240],
-  [2004, 5, 1, 260],
-  [2005, 5, 1, 300],
-  [2006, 4, 1, 350],
-  [2007, 4, 1, 380],
-  [2008, 3, 1, 415],
-  [2009, 2, 1, 465],
-  [2010, 1, 1, 510],
-  [2011, 1, 1, 540],
-  [2011, 3, 1, 545],
-  [2012, 1, 1, 622],
-  [2013, 1, 1, 678],
-  [2014, 1, 1, 724],
-  [2015, 1, 1, 788],
-  [2016, 1, 1, 880],
-  [2017, 1, 1, 937],
-  [2018, 1, 1, 954],
-  [2019, 1, 1, 998],
-  [2020, 1, 1, 1039],
-  [2020, 2, 1, 1045],
-  [2021, 1, 1, 1100],
-  [2022, 1, 1, 1212],
-  [2023, 1, 1, 1302],
-  [2023, 5, 1, 1320],
-  [2024, 1, 1, 1412],
-  [2025, 1, 1, 1518],
-  [2026, 1, 1, 1621],
-]
+export const VIGENCIAS_SALARIO_MINIMO: ReadonlyArray<
+  readonly [number, number, number, number]
+> = VIGENCIAS_RAW.map((v) => {
+  const [y, m, d] = v.inicio.split('-').map(Number)
+  return [y, m, d, v.valor] as const
+})
+
+/** Mapa ano → valor (consulta rápida; preferir vigências para data exata). */
+export const SALARIO_MINIMO_POR_ANO: Readonly<Record<string, number>> =
+  (tabela.por_ano || {}) as Record<string, number>
 
 /**
  * Parse local por componentes (ano/mês/dia).
@@ -102,29 +85,43 @@ function formatarDataVigenciaBr(v: readonly [number, number, number, number]): s
   return `${dd}/${mm}/${v[0]}`
 }
 
+export const ERRO_DATA_FATO_AUSENTE =
+  'Informe a data do parto / fato gerador para calcular o salário mínimo e o valor da causa.'
+
 /**
  * Salário mínimo vigente na data de referência.
- * Sem data → mínimo vigente (hoje).
- * Ex.: parto 12/02/2000 → R$ 136 (vigência desde 01/05/1999; antes de 03/04/2000).
+ * Sem data e sem exigir → mínimo vigente (hoje).
+ * Com `exigirDataDoFato: true` e sem data → lança Error (petição SM).
  */
-export function getSalarioMinimo(dataReferencia?: Date | string | null): number {
-  const info = resolverSalarioMinimo(dataReferencia)
+export function getSalarioMinimo(
+  dataReferencia?: Date | string | null,
+  opts?: { exigirDataDoFato?: boolean },
+): number {
+  const info = resolverSalarioMinimo(dataReferencia, opts)
   return info.mensal
 }
 
 /** Resolve valor + data de início da vigência aplicada (para nota da planilha). */
-export function resolverSalarioMinimo(dataReferencia?: Date | string | null): {
+export function resolverSalarioMinimo(
+  dataReferencia?: Date | string | null,
+  opts?: { exigirDataDoFato?: boolean },
+): {
   mensal: number
   anoVigencia: number
   /** Data de início da vigência usada (dd/mm/aaaa). */
   dataVigenciaFmt: string
   dataRef: Date
 } {
-  const ref = parseDataRef(dataReferencia) ?? new Date()
+  const parsed = parseDataRef(dataReferencia)
+  if (!parsed) {
+    if (opts?.exigirDataDoFato) {
+      throw new Error(ERRO_DATA_FATO_AUSENTE)
+    }
+  }
+  const ref = parsed ?? new Date()
   const key = ymd(ref)
-  let escolhida = VIGENCIAS[0]
-  // Último reajuste com vigência <= data do parto (nunca < exclusivo).
-  for (const v of VIGENCIAS) {
+  let escolhida = VIGENCIAS_SALARIO_MINIMO[0]
+  for (const v of VIGENCIAS_SALARIO_MINIMO) {
     if (vigenciaYmd(v) <= key) escolhida = v
     else break
   }
@@ -144,10 +141,7 @@ export function formatarSalarioMinimo(valor: number): string {
   })
 }
 
-/** Valor da causa padrão SM (4 × salário mínimo na data do parto). */
-export function valorCausaSalarioMaternidade(
-  dataReferencia?: Date | string | null,
-): {
+export type ValorCausaSm = {
   mensal: number
   total: number
   mensalFmt: string
@@ -155,8 +149,20 @@ export function valorCausaSalarioMaternidade(
   anoVigencia: number
   dataVigenciaFmt: string
   nota: string
-} {
-  const { mensal, anoVigencia, dataVigenciaFmt } = resolverSalarioMinimo(dataReferencia)
+}
+
+/**
+ * Valor da causa padrão SM (4 × salário mínimo na data do parto).
+ * Em geração de petição, passe `exigirDataDoFato: true`.
+ */
+export function valorCausaSalarioMaternidade(
+  dataReferencia?: Date | string | null,
+  opts?: { exigirDataDoFato?: boolean },
+): ValorCausaSm {
+  const { mensal, anoVigencia, dataVigenciaFmt } = resolverSalarioMinimo(
+    dataReferencia,
+    opts,
+  )
   const total = mensal * 4
   return {
     mensal,
@@ -166,5 +172,18 @@ export function valorCausaSalarioMaternidade(
     anoVigencia,
     dataVigenciaFmt,
     nota: `Referência do valor: salário mínimo vigente desde ${dataVigenciaFmt} (data do parto/fato gerador); quantia devida por fato gerador (cada nascimento)`,
+  }
+}
+
+/** Tentativa segura — retorna null se a data do fato estiver ausente/inválida. */
+export function tentarValorCausaSalarioMaternidade(
+  dataReferencia?: Date | string | null,
+): ValorCausaSm | null {
+  try {
+    return valorCausaSalarioMaternidade(dataReferencia, {
+      exigirDataDoFato: true,
+    })
+  } catch {
+    return null
   }
 }

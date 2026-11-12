@@ -79,3 +79,13 @@ export function deInputDate(valor: string): string | null {
   const d = new Date(ano, mes - 1, dia, 12, 0, 0)
   return Number.isNaN(d.getTime()) ? null : d.toISOString()
 }
+
+/** Idade em anos completos a partir de data de nascimento (ISO ou Date). */
+export function calcularIdade(valor?: string | Date | null, base: Date = new Date()): number | null {
+  const d = paraData(valor)
+  if (!d) return null
+  let idade = base.getFullYear() - d.getFullYear()
+  const m = base.getMonth() - d.getMonth()
+  if (m < 0 || (m === 0 && base.getDate() < d.getDate())) idade -= 1
+  return idade >= 0 && idade < 130 ? idade : null
+}

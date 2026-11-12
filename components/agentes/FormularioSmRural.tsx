@@ -3,7 +3,7 @@
 /**
  * Formulário SM rural em 3 blocos (mesmo formulário / mesmas chaves de payload).
  * Redesign visual: hierarquia tipográfica + camadas (modal/card/campo).
- * Provas: edição inline, adição custom e restauração dos 11 padrões (imutáveis no parent).
+ * Provas: edição inline, adição custom e restauração dos padrões (imutáveis no parent).
  */
 
 import {
@@ -334,7 +334,7 @@ export function FormularioSmRural({
   function restaurarProvasPadrao() {
     if (
       !window.confirm(
-        'Restaurar as 11 provas padrão?\n\nTextos editados voltarão ao original e provas adicionadas serão removidas.',
+        `Restaurar as ${provasOpcoes.length} provas padrão?\n\nTextos editados voltarão ao original e provas adicionadas serão removidas.`,
       )
     ) {
       return

@@ -20,6 +20,7 @@ import { ASSINATURA_ESPACO_CM, ASSINATURA_MAX_ALTURA_CM } from '@/lib/assinatura
 import {
   caixaTitulo,
   caixaTituloSeMinusculo,
+  caixaTituloSeUniforme,
   chaveEnderecoComparavel,
   inteiramenteMinusculo,
   normalizarCepEmTexto,
@@ -28,6 +29,12 @@ import {
   textoCitacaoInss,
   CITACAO_INSS_SEM_ENDERECO,
 } from '@/lib/peticoes/fundamentos'
+import { textoQualificacaoInssFixa } from '@/lib/peticoes/inss'
+import {
+  htmlComNegritoNomeInss,
+  normalizarCaixaAltaEmBloco,
+  normalizarNomeAberturaQualificacao,
+} from '@/lib/peticoes/formatacao-peticao'
 
 export type TimelineLabelLayout = {
   i: number
@@ -93,6 +100,8 @@ export type ConteudoSmRural = {
   localData: string
   assinaturas: { nome: string; oab: string }[]
   planilha: { rows: QuadroRow[]; nota: string }
+  /** Nome da parte autora — negrito no HTML/DOCX. */
+  nomeCliente: string
 }
 
 function escapar(s: string): string {
@@ -513,16 +522,13 @@ const CAMPO_QUADRO_NOME_LOCAL_RE =
   /^(nome|criança|crianca|município|municipio|cidade|bairro|comunidade|povoado|endereço|endereco)\b/i
 
 /**
- * Endereço/nome da qualificação digitados em minúsculas → caixa de título.
- * Só altera trechos inteiramente minúsculos (nome antes da 1ª vírgula e cada
- * parte do endereço após "domiciliado(a) na/no/em"); "nº", "s/n", CEP e
- * "zona rural" ficam como estão.
+ * Endereço/nome da qualificação em minúsculas OU CAIXA ALTA → caixa de título.
+ * Só altera trechos uniformes (nome antes da 1ª vírgula e cada parte do
+ * endereço após "domiciliado(a) na/no/em"); "nº", "s/n", CEP e "zona rural"
+ * ficam como estão.
  */
 export function normalizarCaixaQualificacao(texto: string): string {
-  let s = String(texto || '')
-  s = s.replace(/^(\s*)([^,]+)(?=,)/, (_m, sp: string, nome: string) =>
-    `${sp}${caixaTituloSeMinusculo(nome)}`,
-  )
+  let s = normalizarNomeAberturaQualificacao(String(texto || ''))
   s = s.replace(
     /(domiciliad[oa]\s+(?:na|no|em)\s+)([^,]+(?:,\s*[^,]+){0,8}?)(?=\s*,\s*(?:por\s+interm[eé]dio|por\s+meio|representad|vem\b|neste\s+ato|por\s+seus?))/i,
     (_m, pre: string, end: string) => {
@@ -533,7 +539,7 @@ export function normalizarCaixaQualificacao(texto: string): string {
         if (!t) return p
         if (/^CEP\b/i.test(t) || /^n[º°ª.]/i.test(t) || /^s\/n\.?$/i.test(t)) return p
         if (/^zona\s+(rural|urbana)$/i.test(t)) return p
-        const novo = caixaTituloSeMinusculo(t)
+        const novo = caixaTituloSeUniforme(t)
         return novo !== t ? p.replace(t, novo) : p
       })
       return pre + out.join('')
@@ -560,7 +566,7 @@ function parseQuadro(md: string): QuadroRow[] {
         /^\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}$/.test(valor) ||
         /^\d{4}-\d{2}-\d{2}/.test(valor)
       if (pareceData) valor = sanitizarDataPeticao(valor)
-      if (CAMPO_QUADRO_NOME_LOCAL_RE.test(campo)) valor = caixaTituloSeMinusculo(valor)
+      if (CAMPO_QUADRO_NOME_LOCAL_RE.test(campo)) valor = caixaTituloSeUniforme(valor)
       rows.push({ campo, valor })
       continue
     }
@@ -698,11 +704,11 @@ export function garantirCitacaoInssNeutra(
   const base = canonicalizarMarcadoresSm(text)
   const re = /<<<EM_FACE>>>([\s\S]*?)<<<END_EM_FACE>>>/i
   if (re.test(base)) {
-    return base.replace(re, (_m, corpo: string) => {
-      return `<<<EM_FACE>>>\n${normalizarCitacaoInss(String(corpo).trim(), enderecoCitacao)}\n<<<END_EM_FACE>>>`
+    return base.replace(re, () => {
+      return `<<<EM_FACE>>>\n${textoQualificacaoInssFixa(enderecoCitacao)}\n<<<END_EM_FACE>>>`
     })
   }
-  return normalizarCitacaoInss(base, enderecoCitacao)
+  return textoQualificacaoInssFixa(enderecoCitacao)
 }
 
 /**
@@ -1554,20 +1560,25 @@ function normalizarEspacos(s: string): string {
     .trim()
 }
 
-function parasHtml(raw: string, extraClass = ''): string {
+function parasHtml(raw: string, extraClass = '', nomeCliente?: string | null): string {
   const cls = extraClass ? `sm-para ${extraClass}` : 'sm-para'
   return limparMarkdownResidual(stripMarcadoresSm(raw))
     .split(/\n\s*\n/)
     .map((p) => p.trim())
     .filter(Boolean)
     .map((p) => {
-      const limpo = normalizarEspacos(limparMarkdownResidual(p))
+      const limpo = normalizarEspacos(
+        normalizarCaixaAltaEmBloco(limparMarkdownResidual(p)),
+      )
       const comDatas = limpo
         .replace(/(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})/g, (piece) =>
           sanitizarDataPeticao(piece),
         )
         .replace(/(\d{4})-(\d{2})-(\d{2})/g, (piece) => sanitizarDataPeticao(piece))
-      const inner = escapar(comDatas).replace(/\n/g, '<br/>')
+      const inner = htmlComNegritoNomeInss(comDatas, escapar, nomeCliente).replace(
+        /\n/g,
+        '<br/>',
+      )
       return `<p class="${cls}" data-pdf-block="1" style="word-wrap:break-word;overflow-wrap:break-word;max-width:100%;white-space:normal;">${inner}</p>`
     })
     .join('')
@@ -2232,13 +2243,13 @@ export function parsePreliminaresBlocos(raw: string): PreliminarBloco[] {
 /**
  * Renderiza TODOS os subtítulos "DA …:" da seção I (negrito, esquerda, sem faixa azul).
  */
-function renderPreliminaresHtml(raw: string): string {
+function renderPreliminaresHtml(raw: string, nomeCliente?: string | null): string {
   const blocs = parsePreliminaresBlocos(raw)
   if (!blocs.length) return ''
   let html = ''
   for (const b of blocs) {
     if (b.titulo) html += subheadSimples(b.titulo)
-    if (b.corpo) html += parasHtml(b.corpo)
+    if (b.corpo) html += parasHtml(b.corpo, '', nomeCliente)
   }
   return html
 }
@@ -2280,10 +2291,11 @@ export function extrairConteudoSmRural(opts: {
   text: string
   adv: DadosAdvogadoPeticao
   sexoParteAutora?: string | null
+  nomeCliente?: string | null
 }): ConteudoSmRural | null {
   const s = lerSecoesSm(corrigirLocalNoTexto(opts.text, opts.adv))
   if (!s) return null
-  const { meta, endereco, qualificacao, emFace, preliminaresRaw, quadro, provas, provasFecho } = s
+  const { meta, endereco, qualificacao, preliminaresRaw, quadro, provas, provasFecho } = s
   const { pedidos, fechamento, planilhaRaw } = s
   const fund = s.fundamentacao
   let { titulo, subtitulo, sinteseAntes, sinteseDepois, timeline } = s
@@ -2335,26 +2347,34 @@ export function extrairConteudoSmRural(opts: {
     .replace(/^[A-Za-zÀ-ÿ ].*\/[A-Z]{2},?\s+\d{1,2}\s+de\s+\w+.*/gim, '')
     .trim()
 
+  const qualificacaoNorm = normalizarCaixaQualificacao(
+    limparRgNaQualificacao(qualificacao || ''),
+  )
+  const nomeCliente =
+    String(opts.nomeCliente || '').trim() ||
+    inferirNomeClienteSm(qualificacaoNorm, quadro)
+
   return {
     meta,
     enderecoTexto,
-    qualificacao: normalizarCaixaQualificacao(limparRgNaQualificacao(qualificacao || '')),
+    qualificacao: qualificacaoNorm,
     titulo: titulo.replace(/\s*SALÁRIO-MATERNIDADE\s*/gi, ' SALÁRIO-MATERNIDADE ').trim(),
     subtitulo,
-    emFace: normalizarCitacaoInss(emFace || '', opts.adv?.endereco_citacao_inss),
+    emFace: textoQualificacaoInssFixa(opts.adv?.endereco_citacao_inss),
     preliminares: parsePreliminaresBlocos(preliminaresRaw),
     quadro,
-    sinteseAntes,
+    sinteseAntes: normalizarCaixaAltaEmBloco(sinteseAntes),
     timeline: temTimeline ? timeline : null,
-    sinteseDepois,
+    sinteseDepois: normalizarCaixaAltaEmBloco(sinteseDepois),
     provas,
-    provasFecho,
-    fundamentacao: fund,
+    provasFecho: normalizarCaixaAltaEmBloco(provasFecho),
+    fundamentacao: normalizarCaixaAltaEmBloco(fund),
     pedidos,
     fechamentoExtra,
     localData: formatarLocalData(opts.adv),
     assinaturas: extrairAssinaturasSm(opts.adv, fechamento),
     planilha: normalizarPlanilhaPorParto(planilhaRaw || '', dataParto),
+    nomeCliente,
   }
 }
 
@@ -2892,6 +2912,17 @@ export function cssSmRural(comMargens: boolean): string {
  * Monta o HTML do modelo Custódio a partir dos marcadores da IA.
  * Tags e JSON cru nunca entram no HTML — só o conteúdo parseado.
  */
+/** Infere o nome da parte autora pelo quadro ou pela abertura da qualificação. */
+function inferirNomeClienteSm(
+  qualificacao: string,
+  quadro: QuadroRow[],
+): string {
+  const doQuadro = quadro.find((r) => /^nome$/i.test(r.campo))?.valor
+  if (doQuadro?.trim()) return caixaTituloSeUniforme(doQuadro.trim())
+  const m = String(qualificacao || '').match(/^([^,]+)/)
+  return m?.[1] ? caixaTituloSeUniforme(m[1].trim()) : ''
+}
+
 export function montarHtmlSmRural(opts: {
   text: string
   adv: DadosAdvogadoPeticao
@@ -2899,10 +2930,12 @@ export function montarHtmlSmRural(opts: {
   estilo?: EstiloPeticao
   /** Sexo da parte autora (masculino/feminino) — define subtítulo canônico. */
   sexoParteAutora?: string | null
+  /** Nome da cliente — negrito em todo o texto corrido. */
+  nomeCliente?: string | null
 }): string | null {
   const s = lerSecoesSm(corrigirLocalNoTexto(opts.text, opts.adv))
   if (!s) return null
-  const { meta, endereco, qualificacao, emFace, quadro, provas, provasFecho, fechamento } = s
+  const { meta, endereco, qualificacao, quadro, provas, provasFecho, fechamento } = s
   const preliminares = s.preliminaresRaw
   const fund = s.fundamentacao
   const pedidosAll = s.pedidos
@@ -2915,10 +2948,6 @@ export function montarHtmlSmRural(opts: {
   // Divide pedidos: i–vii no bloco principal; viii+ (honorários) junto das assinaturas
   const pedidosP4 = pedidosAll.filter((p) => !/^viii\./i.test(p.trim()))
   const pedidosP5 = pedidosAll.filter((p) => /^viii\./i.test(p.trim()))
-
-  const preliminaresHtml = renderPreliminaresHtml(preliminares)
-
-  const assinaturas = assinaturasHtml(opts.adv, fechamento)
 
   // Endereçamento = subseção do texto (domicílio da autora), nunca cidade do escritório.
   const enderecoTexto = normalizarEnderecoJef(
@@ -2933,10 +2962,12 @@ export function montarHtmlSmRural(opts: {
   const qualificacaoLimpa = normalizarCaixaQualificacao(
     limparRgNaQualificacao(qualificacao || ''),
   )
-  const emFaceLimpo = normalizarCitacaoInss(
-    emFace || '',
-    opts.adv?.endereco_citacao_inss,
-  )
+  const emFaceLimpo = textoQualificacaoInssFixa(opts.adv?.endereco_citacao_inss)
+  const nomeCliente =
+    String(opts.nomeCliente || '').trim() ||
+    inferirNomeClienteSm(qualificacaoLimpa, quadro)
+  const preliminaresHtml = renderPreliminaresHtml(preliminares, nomeCliente)
+  const assinaturas = assinaturasHtml(opts.adv, fechamento)
 
   let tituloBruto = ''
   {
@@ -2980,24 +3011,24 @@ export function montarHtmlSmRural(opts: {
     <div data-pdf-block="1">${cabecalhoSm(opts.adv)}</div>
     <div class="sm-endereco" data-pdf-block="1">${escapar(enderecoTexto)}</div>
     <div data-pdf-block="atomic" data-pdf-nome="prioridade legal">${metaBoxHtml(meta.tipoAcao, meta.juizoDigital, meta.prioridades)}</div>
-    ${parasHtml(qualificacaoLimpa, 'sm-para-qualif')}
+    ${parasHtml(qualificacaoLimpa, 'sm-para-qualif', nomeCliente)}
     <div class="sm-main-title" data-pdf-block="1" data-pdf-keep-with-next="1">${tituloHtml}</div>
     <div class="sm-sub-title" data-pdf-block="1">${escapar(subtitulo)}</div>
-    ${parasHtml(emFaceLimpo)}
+    ${parasHtml(emFaceLimpo, '', nomeCliente)}
     ${sectionBar('I – PRELIMINARMENTE')}
     ${preliminaresHtml}
     ${quadroHtml('II – QUADRO SINÓPTICO', quadro)}
     ${sectionBar('III – SÍNTESE DO CONTEXTO FÁTICO')}
-    ${parasHtml(sinteseAntesLimpa)}
+    ${parasHtml(sinteseAntesLimpa, '', nomeCliente)}
     ${temTimeline ? timelineHtml : ''}
-    ${parasHtml(sinteseDepoisLimpa)}
+    ${parasHtml(sinteseDepoisLimpa, '', nomeCliente)}
     <div class="sm-provas-bloco" data-pdf-block="atomic" data-pdf-quebra="provas" data-pdf-nome="lista de provas">
       ${sectionBar('IV – DAS PROVAS JUNTADAS AOS AUTOS')}
       ${provasHtml(estruturarProvasSm(provas))}
     </div>
-    ${parasHtml(provasFecho)}
+    ${parasHtml(provasFecho, '', nomeCliente)}
     ${sectionBar('V – FUNDAMENTAÇÃO JURÍDICA')}
-    ${parasHtml(fund)}
+    ${parasHtml(fund, '', nomeCliente)}
     <div class="sm-secao-vi" style="height:auto;max-height:none;overflow:visible;margin-top:0;padding-top:0;page-break-inside:auto;break-inside:auto;">
       <div class="sm-section-bar" data-pdf-block="1" data-pdf-keep-with-next="1">${escapar('VI – PEDIDO / REQUERIMENTOS')}</div>
       ${pedidosHtml(pedidosP4.length ? pedidosP4 : pedidosAll, true)}

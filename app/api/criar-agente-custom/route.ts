@@ -1,5 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
+import {
+  isTipoDocumentoAgente,
+  tipoDocumentoAgentePorId,
+} from '@/lib/agentes/tipos-documento-agente'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -17,8 +21,23 @@ export async function POST(req: Request) {
     const file = formData.get('file') as File
     const name = formData.get('name') as string
     const instrucoes = formData.get('instrucoes') as string || ''
+    const documentTypeRaw = String(formData.get('document_type') || '').trim()
+    const documentTypeLabel = String(formData.get('document_type_label') || '').trim()
 
     if (!file || !name) return Response.json({ error: 'Arquivo e nome são obrigatórios' }, { status: 400 })
+    if (!isTipoDocumentoAgente(documentTypeRaw)) {
+      return Response.json(
+        { error: 'Selecione o tipo de documento que este agente gera' },
+        { status: 400 }
+      )
+    }
+    const tipoMeta = tipoDocumentoAgentePorId(documentTypeRaw)
+    if (tipoMeta?.textoLivre && !documentTypeLabel) {
+      return Response.json(
+        { error: 'Especifique o tipo de documento (texto livre)' },
+        { status: 400 }
+      )
+    }
 
     // Converter PDF para base64
     const arrayBuffer = await file.arrayBuffer()
@@ -87,6 +106,8 @@ Responda APENAS em JSON válido, sem markdown, neste formato exato:
       template_text: parsed.template,
       fields: parsed.fields,
       instrucoes: instrucoes,
+      document_type: documentTypeRaw,
+      document_type_label: documentTypeLabel || null,
     }).select().single()
 
     if (insertErr) throw new Error(insertErr.message)

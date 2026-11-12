@@ -26,9 +26,17 @@ export function montarHtmlPeticao(opts: {
   agentType?: string | null
   /** Sexo da parte autora — flexiona subtítulo e atividade da timeline. */
   sexoParteAutora?: string | null
+  /** Nome da cliente — negrito no texto corrido da petição SM. */
+  nomeCliente?: string | null
+  /**
+   * Preview durante streaming: força o template genérico (marcadores SM
+   * removidos) para não alternar genérico ↔ Custódio a cada chunk.
+   */
+  estabilizarPreview?: boolean
 }): string {
   const useSmRural =
-    opts.agentType === AGENT_SM_RURAL || isSmRuralStructured(opts.text)
+    !opts.estabilizarPreview &&
+    (opts.agentType === AGENT_SM_RURAL || isSmRuralStructured(opts.text))
   if (useSmRural) {
     const dedicated = montarHtmlSmRural({
       text: opts.text,
@@ -36,6 +44,7 @@ export function montarHtmlPeticao(opts: {
       comMargens: opts.comMargens,
       estilo: opts.estilo,
       sexoParteAutora: opts.sexoParteAutora,
+      nomeCliente: opts.nomeCliente,
     })
     if (dedicated) return dedicated
   }

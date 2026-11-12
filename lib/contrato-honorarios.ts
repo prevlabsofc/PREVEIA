@@ -20,12 +20,30 @@ export function agentTypeContratoHonorarios(tipoHonorario: string): string {
 
 /** Identifica qualquer documento de contrato de honorários, de qualquer origem. */
 export function ehContratoHonorarios(agentType?: string | null): boolean {
-  return typeof agentType === 'string' && agentType.startsWith('contrato-honorarios')
+  return (
+    typeof agentType === 'string' &&
+    (agentType.startsWith('contrato-honorarios') || agentType === 'modelo-contrato-honorarios')
+  )
+}
+
+/** Contratos gerados a partir de modelos editáveis (serviços ou honorários). */
+export function ehContratoModelo(agentType?: string | null): boolean {
+  return (
+    typeof agentType === 'string' &&
+    (agentType === 'modelo-contrato-servicos' || agentType === 'modelo-contrato-honorarios')
+  )
+}
+
+/** Qualquer contrato (honorários clássicos ou modelos). */
+export function ehContratoDocumento(agentType?: string | null): boolean {
+  return ehContratoHonorarios(agentType) || ehContratoModelo(agentType)
 }
 
 export function rotuloTipoContratoHonorarios(agentType?: string | null): string {
   if (agentType === CONTRATO_HONORARIOS_FIXO_AGENT_TYPE) return 'Valor Fixo'
   if (agentType === CONTRATO_HONORARIOS_MISTO_AGENT_TYPE) return 'Misto'
   if (agentType === CONTRATO_HONORARIOS_EXITO_AGENT_TYPE) return 'Percentual (Êxito)'
+  if (agentType === 'modelo-contrato-servicos') return 'Prestação de serviços'
+  if (agentType === 'modelo-contrato-honorarios') return 'Honorários (modelo)'
   return 'Contrato'
 }

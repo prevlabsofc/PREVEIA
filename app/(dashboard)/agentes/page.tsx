@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useState, useEffect, useRef, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ChevronDown,
@@ -31,14 +31,24 @@ import {
 import { createBrowserClient } from '@supabase/ssr'
 import { SeletorModelo } from '@/components/SeletorModelo'
 import { MeusAgentesCard, type AgenteCardItem } from '@/components/agentes/MeusAgentesCard'
+import { AgenteCatalogCard } from '@/components/agentes/AgenteCatalogCard'
+import { AgentesEstado } from '@/components/agentes/AgentesEstado'
 import { FormularioSmRural } from '@/components/agentes/FormularioSmRural'
 import { PeticaoEditorComPreview } from '@/components/peticao/PeticaoEditorComPreview'
 import { ConfigurarTimelineSm } from '@/components/peticao/ConfigurarTimelineSm'
 import type { DadosAdvogadoPeticao, EstiloPeticao } from '@/lib/peticao-export'
 import { normalizarEstiloPeticao } from '@/lib/peticao-export'
 import { canonicalizarMarcadoresSm, flexionarAtividadeTimeline, injetarTimelineNoTexto, posProcessarPeticaoSmRural, slugArquivoPeticaoSm, type TimelineData } from '@/lib/peticao-sm-rural'
+import {
+  ALERTA_SEM_PROVA_ATIVIDADE_RURAL,
+  detectarDocsProvaAtividadeRural,
+} from '@/lib/peticoes/provas-rurais-sm'
 import { marcarPeticaoAtiva, consumirFilaPeticao, PETICAO_INSERIR_EVENT, PETICAO_CHANNEL } from '@/lib/peticao-sessao'
 import { consumirContextoPeticao } from '@/lib/extracao-documento-pdf'
+import {
+  extrairContextoDoCaso,
+  validarClienteParaPeticao,
+} from '@/lib/cliente-peticao'
 import { formatarEnderecoAutorPeticao, formatarEnderecoQualificacao, formatarMunicipioUfAutor, mascaraCEP } from '@/lib/formatar-endereco'
 import { ESTADOS_BRASIL } from '@/lib/estados-brasil'
 import {
@@ -56,6 +66,13 @@ import {
   avisoPrescricaoQuinquenal,
   type ErrosFormSm,
 } from '@/lib/validar-form-peticao'
+import {
+  TIPOS_DOCUMENTO_AGENTE,
+  isTipoDocumentoAgente,
+  rotuloTipoDocumentoAgente,
+  tipoDocumentoAgentePorId,
+  type TipoDocumentoAgenteId,
+} from '@/lib/agentes/tipos-documento-agente'
 
 const supabase = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
 
@@ -176,6 +193,7 @@ export default function AgentesPage() {
 }
 
 function AgentesPageContent() {
+  const router = useRouter()
   const [openGroups, setOpenGroups] = useState<number[]>([1])
   const [search, setSearch] = useState('')
   const [categoriaFiltro, setCategoriaFiltro] = useState('Todos')
@@ -199,6 +217,8 @@ function AgentesPageContent() {
   const [showCustomForm, setShowCustomForm] = useState(false)
   const [customName, setCustomName] = useState('')
   const [customInstrucoes, setCustomInstrucoes] = useState('')
+  const [customDocType, setCustomDocType] = useState<TipoDocumentoAgenteId | ''>('')
+  const [customDocTypeLabel, setCustomDocTypeLabel] = useState('')
   const [customFile, setCustomFile] = useState<File | null>(null)
   const [uploadingCustom, setUploadingCustom] = useState(false)
   const [customError, setCustomError] = useState('')
@@ -212,6 +232,12 @@ function AgentesPageContent() {
   const [showTimelineConfig, setShowTimelineConfig] = useState(false)
   const [cepLoading, setCepLoading] = useState(false)
   const [subsecaoManual, setSubsecaoManual] = useState(false)
+  const [carregandoLista, setCarregandoLista] = useState(true)
+  const [clienteLinkErro, setClienteLinkErro] = useState<string | null>(null)
+  const [clienteLinkAviso, setClienteLinkAviso] = useState<string | null>(null)
+  const [docFileName, setDocFileName] = useState('peticao')
+  const pendingClienteIdRef = useRef('')
+  const clienteAplicadoRef = useRef(false)
 
   const searchParams = useSearchParams()
 
@@ -277,6 +303,8 @@ function AgentesPageContent() {
       } catch (err) {
         console.error('[agentes] loadUserAndCustomAgents:', err)
         setCustomAgents([])
+      } finally {
+        setCarregandoLista(false)
       }
     }
     loadUserAndCustomAgents()
@@ -285,15 +313,18 @@ function AgentesPageContent() {
   useEffect(() => {
     const clienteNome = searchParams.get('clienteNome')
     const clienteCPF = searchParams.get('clienteCPF')
-    const clienteId = searchParams.get('clienteId')
+    const clienteId = searchParams.get('clienteId') || searchParams.get('cliente')
     const numeroProcesso = searchParams.get('numeroProcesso')
     const ctx = consumirContextoPeticao()
+    const idPendente = clienteId || ctx?.clientId || ''
+    if (idPendente) pendingClienteIdRef.current = idPendente
+
     setFormData((prev: Record<string, string>) => ({
       ...prev,
       ...(ctx?.formPrefill || {}),
       nome: clienteNome || ctx?.formPrefill?.nome || prev.nome || '',
       cpf: clienteCPF || ctx?.formPrefill?.cpf || prev.cpf || '',
-      clienteId: clienteId || ctx?.clientId || ctx?.formPrefill?.clienteId || prev.clienteId || '',
+      clienteId: idPendente || ctx?.formPrefill?.clienteId || prev.clienteId || '',
       ...(numeroProcesso
         ? { numero_processo: numeroProcesso, nb: numeroProcesso }
         : {}),
@@ -301,8 +332,57 @@ function AgentesPageContent() {
     if (ctx?.texto) {
       setResult((prev) => (prev ? `${prev.trim()}\n\n${ctx.texto}` : ctx.texto))
     }
-    if (ctx?.clientId) setSelectedClientId(ctx.clientId)
+    if (idPendente) setSelectedClientId(idPendente)
   }, [searchParams])
+
+  // Abre agente próprio vindo da ficha do cliente (?custom=id)
+  useEffect(() => {
+    const customId = searchParams.get('custom')
+    if (!customId || carregandoLista || customAgents.length === 0) return
+    const agent = customAgents.find((a) => a.id === customId)
+    if (!agent) return
+    setSelectedCustom(agent)
+    setCustomFormData({})
+    setCustomResult('')
+    setDocFileName(`peticao-${agent.name?.replace(/\s/g, '-').toLowerCase() || 'custom'}`)
+  }, [searchParams, customAgents, carregandoLista])
+
+  // Após carregar clientes: aplica seleção da URL/contexto uma vez, ou mostra erro amigável.
+  useEffect(() => {
+    const id = pendingClienteIdRef.current
+    if (!id || carregandoLista || clienteAplicadoRef.current) return
+    if (clientes.length === 0) {
+      setClienteLinkErro(
+        'Cliente não encontrado. Cadastre o cliente ou confira se o link está correto.',
+      )
+      clienteAplicadoRef.current = true
+      return
+    }
+    const cli = clientes.find((c) => c.id === id)
+    if (!cli) {
+      setClienteLinkErro(
+        'Cliente não encontrado ou sem permissão de acesso. Volte para Clientes e escolha outro cadastro.',
+      )
+      setSelectedClientId('')
+      setSelectedClient('')
+      clienteAplicadoRef.current = true
+      return
+    }
+    const validacao = validarClienteParaPeticao(cli)
+    if (!validacao.ok) {
+      setClienteLinkErro(validacao.mensagem)
+      setClienteLinkAviso(null)
+      setSelectedClientId('')
+      setSelectedClient('')
+      clienteAplicadoRef.current = true
+      return
+    }
+    setClienteLinkErro(null)
+    setClienteLinkAviso(validacao.mensagem)
+    clienteAplicadoRef.current = true
+    selecionarCliente(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- aplica só na carga inicial da lista
+  }, [clientes, carregandoLista])
 
   // A10 — sessão ativa de petição: permanece marcada enquanto o modal estiver
   // aberto (mesmo se o advogado navegar para /jurisprudencia e voltar).
@@ -347,16 +427,23 @@ function AgentesPageContent() {
   }
 
   function openAgent(agent: any, grupo: any) {
+    const keepClientId = selectedClientId || pendingClienteIdRef.current
     setSelectedAgent({ ...agent, grupo })
     setResult('')
     setContexto('')
     setFormData({})
     setFormErrors({})
     setProvas([])
-    setSelectedClientId('')
-    setSelectedClient('')
+    setDocFileName(slugArquivoPeticaoSm('cliente'))
     setTab('form')
     marcarPeticaoAtiva(true)
+    if (keepClientId) {
+      // Reaplica dados do cliente após limpar o formulário do agente anterior.
+      queueMicrotask(() => selecionarCliente(keepClientId))
+    } else {
+      setSelectedClientId('')
+      setSelectedClient('')
+    }
   }
 
   function selecionarCliente(clienteId: string) {
@@ -368,6 +455,11 @@ function AgentesPageContent() {
     const cli = clientes.find(c => c.id === clienteId)
     if (!cli) return
     setSelectedClient(clienteId)
+    setClienteLinkErro(null)
+    const validacaoManual = validarClienteParaPeticao(cli)
+    if (validacaoManual.ok) {
+      setClienteLinkAviso(validacaoManual.mensagem)
+    }
     const sexoCli = cli.sexo || cli.genero || ''
     const zonaCli =
       cli.zone === 'urban' || cli.zone === 'urbano' || cli.zone === 'Urbano'
@@ -377,6 +469,10 @@ function AgentesPageContent() {
     const uf = String(cli.state || '').trim().toUpperCase()
     const subMap = buscarSubsecao(mun, uf)
     setSubsecaoManual(!subMap)
+    const caso = extrairContextoDoCaso(cli.notes)
+    if (caso.contexto) {
+      setContexto((prev) => prev || caso.contexto)
+    }
     setFormData(prev => {
       const nascCli = String(cli.data_nascimento || cli.birth_date || '')
         .trim()
@@ -419,9 +515,36 @@ function AgentesPageContent() {
           cli.profession || prev.profissao || prev.profession || '',
           sexoCli,
         ),
+        motivo_inss: caso.motivo_inss || prev.motivo_inss || '',
+        clienteId,
       }
       return next
     })
+
+    // Documentos anexados do cliente → contexto (não bloqueia a UI).
+    void (async () => {
+      try {
+        const { data: docs } = await supabase
+          .from('documents')
+          .select('title, agent_type, created_at')
+          .eq('client_id', clienteId)
+          .order('created_at', { ascending: false })
+          .limit(20)
+        if (!docs?.length) return
+        const lista = docs
+          .map((d) => String(d.title || d.agent_type || '').trim())
+          .filter(Boolean)
+          .slice(0, 12)
+        if (!lista.length) return
+        const bloco = `Documentos anexados: ${lista.join('; ')}`
+        setContexto((prev) => {
+          if (prev.includes('Documentos anexados:')) return prev
+          return prev ? `${prev.trim()}\n\n${bloco}` : bloco
+        })
+      } catch {
+        /* ignore */
+      }
+    })()
   }
 
   async function buscarCepAutor(cepRaw: string) {
@@ -487,6 +610,9 @@ function AgentesPageContent() {
   }
 
   const provasOpcoes = [
+    'Certidão de Nascido Vivo com profissão da mãe constando como AGRICULTORA',
+    'CadÚnico com endereço rural',
+    'Espelho ou Relatório do Bolsa Família com endereço rural',
     'Certidão de nascimento da criança (zona rural)',
     'Certidão eleitoral (endereço rural)',
     'Declaração de sindicato rural',
@@ -681,6 +807,9 @@ function AgentesPageContent() {
       } else {
         setResult(acumulado)
       }
+      setDocFileName(
+        slugArquivoPeticaoSm((formData.nome || '').trim() || selectedAgent.nome || 'cliente'),
+      )
     } catch {
       setResult('Erro ao gerar petição. Tente novamente.')
     }
@@ -705,7 +834,19 @@ function AgentesPageContent() {
   }
 
   async function uploadCustomAgent() {
-    if (!customName || !customFile) { setCustomError('Preencha o nome e selecione um PDF'); return }
+    if (!customName || !customFile) {
+      setCustomError('Preencha o nome e selecione um PDF')
+      return
+    }
+    if (!customDocType || !isTipoDocumentoAgente(customDocType)) {
+      setCustomError('Selecione o tipo de documento que este agente gera')
+      return
+    }
+    const tipoMeta = tipoDocumentoAgentePorId(customDocType)
+    if (tipoMeta?.textoLivre && !customDocTypeLabel.trim()) {
+      setCustomError('Especifique o tipo de documento (texto livre)')
+      return
+    }
     setUploadingCustom(true)
     setCustomError('')
     try {
@@ -714,6 +855,8 @@ function AgentesPageContent() {
       fd.append('file', customFile)
       fd.append('name', customName)
       fd.append('instrucoes', customInstrucoes)
+      fd.append('document_type', customDocType)
+      if (customDocTypeLabel.trim()) fd.append('document_type_label', customDocTypeLabel.trim())
       const res = await fetch('/api/criar-agente-custom', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${session?.access_token}` },
@@ -725,6 +868,8 @@ function AgentesPageContent() {
       setShowCustomForm(false)
       setCustomName('')
       setCustomInstrucoes('')
+      setCustomDocType('')
+      setCustomDocTypeLabel('')
       setCustomFile(null)
     } catch (e: any) {
       setCustomError(e.message || 'Erro ao processar PDF')
@@ -741,14 +886,21 @@ function AgentesPageContent() {
     if (selectedCustom?.id === id) setSelectedCustom(null)
   }
 
-  const itensCustomAgents: AgenteCardItem[] = customAgents.map(agent => ({
-    id: agent.id,
-    nome: agent.name,
-    resumo: `${(agent.fields || []).length} campos identificados`,
-    meta: agent.created_at
-      ? `Criado em ${new Date(agent.created_at).toLocaleDateString('pt-BR')}`
-      : undefined,
-  }))
+  const itensCustomAgents: AgenteCardItem[] = customAgents.map(agent => {
+    const tipoMeta = tipoDocumentoAgentePorId(agent.document_type)
+    const tipoRotulo = rotuloTipoDocumentoAgente(agent.document_type, agent.document_type_label)
+    return {
+      id: agent.id,
+      nome: agent.name,
+      resumo: `${(agent.fields || []).length} campos identificados`,
+      meta: agent.created_at
+        ? `Criado em ${new Date(agent.created_at).toLocaleDateString('pt-BR')}`
+        : undefined,
+      tipoDocumento: agent.document_type ? tipoRotulo : 'Tipo não informado',
+      tipoDocumentoCor: tipoMeta?.cor || '#888',
+      tags: agent.document_type ? [tipoRotulo] : undefined,
+    }
+  })
 
   function alternarCustomAgent(item: AgenteCardItem) {
     if (selectedCustom?.id === item.id) {
@@ -760,6 +912,7 @@ function AgentesPageContent() {
     setSelectedCustom(agent)
     setCustomFormData({})
     setCustomResult('')
+    setDocFileName(`peticao-${agent.name?.replace(/\s/g, '-').toLowerCase() || 'custom'}`)
   }
 
   async function gerarComCustom() {
@@ -804,12 +957,28 @@ function AgentesPageContent() {
     ? { background: '#FFFFFF', color: '#1E1E1E' }
     : { background: '#111', color: '#ccc' }
 
-  // Suprimir warnings de imports reservados para uso futuro
-  void CheckCircle2; void Trash2
+  void Trash2
 
   const SelectedAgentIcon = selectedAgent
     ? iconeDoAgente(selectedAgent.key, selectedAgent.nome)
     : Scale
+
+  const clientePreselecionado = selectedClientId
+    ? clientes.find(c => c.id === selectedClientId)
+    : null
+
+  const resultEhErro = Boolean(result && (result.startsWith('⚠️') || result.startsWith('Erro') || result.startsWith('Sua sessão')))
+  const resultConcluido = Boolean(result && !streaming && !resultEhErro)
+  const docsProvaRuralDetectados =
+    selectedAgent?.key === 'salario-maternidade-rural'
+      ? detectarDocsProvaAtividadeRural(provas)
+      : []
+  const alertaProvasRurais =
+    selectedAgent?.key === 'salario-maternidade-rural' &&
+    (streaming || resultConcluido) &&
+    docsProvaRuralDetectados.length === 0
+      ? ALERTA_SEM_PROVA_ATIVIDADE_RURAL
+      : null
 
   return (
     <div className={`p-8 max-w-7xl mx-auto ${isLight ? 'bg-[#F8F8F8]' : 'bg-transparent'}`}>
@@ -817,14 +986,68 @@ function AgentesPageContent() {
       {/* HEADER */}
       <div className="flex flex-col gap-4 mb-8 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className={`text-3xl font-black mb-1 ${isLight ? 'text-gray-900' : 'text-white'}`}>Agentes de Inteligência Artificial</h1>
-          <p className={`text-sm ${isLight ? 'text-gray-500' : 'text-gray-500'}`}>Selecione um agente para iniciar ou gerencie os agentes disponíveis.</p>
+          <h1 className={`text-3xl font-black mb-1 ${isLight ? 'text-gray-900' : 'text-white'}`}>
+            Agentes de <span className="text-gradient-gold">Inteligência Artificial</span>
+          </h1>
+          <p className={`text-sm ${isLight ? 'text-gray-500' : 'text-gray-500'}`}>
+            Escolha um agente, preencha os dados e gere a petição — cada card tem a ação principal à vista.
+          </p>
         </div>
         <button onClick={() => setShowCustomForm(true)} className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap flex-shrink-0 transition-all hover:opacity-90"
           style={{ background: 'linear-gradient(135deg,#D4AF37,#F0D060)', color: '#000' }}>
           <Plus size={16}/> Novo Agente
         </button>
       </div>
+
+      {clienteLinkErro && (
+        <div className="mb-6">
+          <AgentesEstado
+            variant="erro"
+            titulo="Não foi possível selecionar o cliente"
+            mensagem={clienteLinkErro}
+            isLight={isLight}
+            acao={{
+              label: 'Voltar para Clientes',
+              onClick: () => router.push('/clientes'),
+            }}
+          />
+        </div>
+      )}
+
+      {!clienteLinkErro && clienteLinkAviso && (
+        <div className="mb-6">
+          <AgentesEstado
+            variant="vazio"
+            titulo="Cadastro com dados pendentes"
+            mensagem={clienteLinkAviso}
+            isLight={isLight}
+            acao={{
+              label: 'Voltar para Clientes',
+              onClick: () => router.push('/clientes'),
+            }}
+          />
+        </div>
+      )}
+
+      {!clienteLinkErro && !clienteLinkAviso && clientePreselecionado && (
+        <div
+          className="mb-6 flex flex-wrap items-center gap-3 px-4 py-3 rounded-2xl"
+          style={{
+            background: 'rgba(34,197,94,0.08)',
+            border: '1px solid rgba(34,197,94,0.28)',
+          }}
+        >
+          <CheckCircle2 size={16} color="#22C55E" aria-hidden />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold" style={{ color: isLight ? '#1E1E1E' : '#fff' }}>
+              Cliente pronto: {clientePreselecionado.name}
+            </p>
+            <p className="text-xs" style={{ color: isLight ? '#6B7280' : '#888' }}>
+              Ao abrir um agente, os dados serão preenchidos automaticamente — sem escolher de novo.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* BUSCA + FILTRO DE CATEGORIA */}
       <div className="flex flex-col gap-3 mb-8 sm:flex-row sm:items-center sm:gap-4">
@@ -875,20 +1098,76 @@ function AgentesPageContent() {
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold flex items-center gap-2" style={{ color: isLight ? '#1E1E1E' : '#fff' }}>
-              ⭐ Meus Agentes Personalizados
+              Meus agentes personalizados
               <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(212,175,55,0.12)', color: '#D4AF37' }}>{customAgents.length}</span>
             </h2>
           </div>
 
+          {carregandoLista && (
+            <div className="mb-4">
+              <AgentesEstado
+                variant="carregando"
+                titulo="Carregando seus agentes…"
+                mensagem="Buscando agentes personalizados e clientes vinculados."
+                isLight={isLight}
+              />
+            </div>
+          )}
+
           {showCustomForm && (
             <div className="p-5 rounded-2xl mb-4" style={{ background: 'rgba(212,175,55,0.05)', border: '1px solid rgba(212,175,55,0.2)' }}>
               <h3 className="text-sm font-bold mb-3" style={{ color: '#D4AF37' }}>Criar Agente Personalizado</h3>
-              <div className="grid grid-cols-2 gap-3 mb-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Nome do agente *</label>
                   <input value={customName} onChange={e => setCustomName(e.target.value)} placeholder="Ex: Meu modelo de aposentadoria" className="input-glass w-full px-3 text-sm" style={{ height: 40 }} spellCheck={true} />
                 </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Tipo de documento que este agente gera *</label>
+                  <select
+                    value={customDocType}
+                    onChange={e => {
+                      const v = e.target.value
+                      setCustomDocType(isTipoDocumentoAgente(v) ? v : '')
+                      if (!tipoDocumentoAgentePorId(v)?.textoLivre) setCustomDocTypeLabel('')
+                    }}
+                    className="input-glass w-full px-3 text-sm"
+                    style={{ height: 40 }}
+                  >
+                    <option value="" style={{ background: '#111' }}>Selecione…</option>
+                    {TIPOS_DOCUMENTO_AGENTE.map(t => (
+                      <option key={t.id} value={t.id} style={{ background: '#111' }}>
+                        {t.rotulo}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
+              {customDocType && tipoDocumentoAgentePorId(customDocType)?.textoLivre && (
+                <div className="mb-3">
+                  <label className="block text-xs text-gray-400 mb-1">Especifique o tipo *</label>
+                  <input
+                    value={customDocTypeLabel}
+                    onChange={e => setCustomDocTypeLabel(e.target.value)}
+                    placeholder="Ex: Petição de revisão de auxílio-acidente"
+                    className="input-glass w-full px-3 text-sm"
+                    style={{ height: 40 }}
+                    spellCheck
+                  />
+                </div>
+              )}
+              {customDocType && (
+                <p className="text-[10px] mb-3" style={{ color: '#888' }}>
+                  Nome + tipo aparecem juntos na listagem. Este tipo associa o agente ao botão correspondente na ficha do cliente
+                  ({tipoDocumentoAgentePorId(customDocType)?.botaoCliente === 'peticao'
+                    ? 'Gerar petição'
+                    : tipoDocumentoAgentePorId(customDocType)?.botaoCliente === 'contrato'
+                      ? 'Gerar contrato'
+                      : tipoDocumentoAgentePorId(customDocType)?.botaoCliente === 'honorarios'
+                        ? 'Gerar honorários'
+                        : 'Outros'}).
+                </p>
+              )}
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Instruções do escritório (opcional)</label>
                 <textarea value={customInstrucoes} onChange={e => setCustomInstrucoes(e.target.value)}
@@ -905,7 +1184,7 @@ function AgentesPageContent() {
                 <button onClick={uploadCustomAgent} disabled={uploadingCustom} className="btn-gold flex items-center gap-2 px-4 py-2 rounded-xl text-sm">
                   {uploadingCustom ? <><Loader size={14} className="animate-spin"/> Analisando PDF...</> : <><Upload size={14}/> Criar Agente</>}
                 </button>
-                <button onClick={() => { setShowCustomForm(false); setCustomError('') }} className="px-4 py-2 rounded-xl text-sm" style={{ border: '1px solid rgba(255,255,255,0.1)', color: '#888' }}>Cancelar</button>
+                <button onClick={() => { setShowCustomForm(false); setCustomError(''); setCustomDocType(''); setCustomDocTypeLabel('') }} className="px-4 py-2 rounded-xl text-sm" style={{ border: '1px solid rgba(255,255,255,0.1)', color: '#888' }}>Cancelar</button>
               </div>
               {uploadingCustom && <p className="text-xs text-gray-500 mt-2">⏳ A IA está analisando seu PDF e identificando os campos... isso pode levar alguns segundos.</p>}
             </div>
@@ -931,13 +1210,18 @@ function AgentesPageContent() {
                     ))}
                   </div>
                   <button onClick={gerarComCustom} disabled={loadingCustom} className="btn-gold flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold mb-4">
-                    {loadingCustom ? <><Loader size={15} className="animate-spin"/> Gerando...</> : '⚡ Gerar Petição'}
+                    {loadingCustom ? (
+                      <><Loader size={15} className="animate-spin"/> Gerando...</>
+                    ) : (
+                      `⚡ Gerar ${rotuloTipoDocumentoAgente(selectedCustom.document_type, selectedCustom.document_type_label)}`
+                    )}
                   </button>
-                  {customResult && (
+                  {(loadingCustom || customResult) && (
                     <PeticaoEditorComPreview
                       text={customResult}
                       onChange={setCustomResult}
-                      fileName={`peticao-${selectedCustom?.name?.replace(/\s/g, '-').toLowerCase() || 'custom'}`}
+                      fileName={docFileName || `peticao-${selectedCustom?.name?.replace(/\s/g, '-').toLowerCase() || 'custom'}`}
+                      onFileNameChange={setDocFileName}
                       estilo={estiloPeticao}
                       streaming={loadingCustom}
                       editable
@@ -998,42 +1282,21 @@ function AgentesPageContent() {
                     exit={{ height: 0, opacity: 0 }}
                     transition={{ duration: 0.25 }}
                     className="overflow-hidden">
-                    <div className="grid grid-cols-4 gap-4 p-5 pt-0"
-                      style={{ background: isLight ? '#FFFFFF' : 'rgba(0,0,0,0.2)', border: isLight ? '1px solid #EDEDED' : 'none' }}>
+                    <div
+                      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-5 pt-0"
+                      style={{ background: isLight ? '#FFFFFF' : 'rgba(0,0,0,0.2)', border: isLight ? '1px solid #EDEDED' : 'none' }}
+                    >
                       {grupo.agentes.map(agent => {
                         const AgentIcon = iconeDoAgente(agent.key, agent.nome)
                         return (
-                        <motion.div key={agent.key}
-                          whileHover={{ scale: 1.02, borderColor: grupo.color }}
-                          className="p-4 rounded-xl cursor-pointer transition-all"
-                          style={{
-                            background: isLight ? '#F8F8F8' : 'rgba(255,255,255,0.03)',
-                            border: isLight ? '1px solid #EDEDED' : '1px solid rgba(255,255,255,0.07)',
-                          }}
-                          onClick={() => openAgent(agent, grupo)}>
-                          <div className="flex items-start justify-between mb-3">
-                            <div className="w-9 h-9 rounded-lg flex items-center justify-center relative"
-                              style={{ background: `${grupo.color}15`, border: `1px solid ${grupo.color}25` }}>
-                              <AgentIcon size={16} color={grupo.color}/>
-                              <div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-green-500"/>
-                            </div>
-                          </div>
-                          <div className={`text-sm font-bold mb-1 leading-snug ${isLight ? 'text-gray-900' : 'text-white'}`}>{agent.nome}</div>
-                          <div className={`text-xs mb-3 leading-relaxed ${isLight ? 'text-gray-500' : 'text-gray-500'}`}>{agent.desc}</div>
-                          <div className="flex flex-wrap gap-1 mb-3">
-                            {agent.tags.map(tag => (
-                              <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full"
-                                style={{ background: `${grupo.color}10`, color: grupo.color, border: `1px solid ${grupo.color}20` }}>
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                          <button className="w-full py-1.5 rounded-lg text-xs font-bold transition-all hover:opacity-90"
-                            style={{ border: `1px solid ${grupo.color}40`, color: grupo.color,
-                                     background: `${grupo.color}08` }}>
-                            Iniciar Agente →
-                          </button>
-                        </motion.div>
+                          <AgenteCatalogCard
+                            key={agent.key}
+                            agent={agent}
+                            color={grupo.color}
+                            Icon={AgentIcon}
+                            isLight={isLight}
+                            onStart={() => openAgent(agent, grupo)}
+                          />
                         )
                       })}
                     </div>
@@ -1045,14 +1308,16 @@ function AgentesPageContent() {
         })}
 
         {filteredGroups.length === 0 && (
-          <div className="p-8 rounded-2xl text-center" style={{ border: '1px dashed rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}>
-            <p className="text-sm mb-3" style={{ color: '#888' }}>Nenhum agente encontrado com os filtros atuais.</p>
-            <button onClick={() => { setCategoriaFiltro('Todos'); setSearch('') }}
-              className="px-4 py-1.5 rounded-lg text-xs font-bold transition-colors hover:bg-white/5"
-              style={{ border: '1px solid rgba(212,175,55,0.3)', color: '#D4AF37' }}>
-              Limpar filtros
-            </button>
-          </div>
+          <AgentesEstado
+            variant="vazio"
+            titulo="Nenhum agente encontrado"
+            mensagem="Ajuste a busca ou limpe o filtro de categoria para ver o catálogo completo."
+            isLight={isLight}
+            acao={{
+              label: 'Limpar filtros',
+              onClick: () => { setCategoriaFiltro('Todos'); setSearch('') },
+            }}
+          />
         )}
       </div>
 
@@ -1119,6 +1384,37 @@ function AgentesPageContent() {
               </div>
 
               <div className="p-6">
+                {streaming && (
+                  <div className="mb-4">
+                    <AgentesEstado
+                      variant="gerando"
+                      titulo="Gerando petição…"
+                      mensagem="A IA está redigindo o documento. Você poderá editar o texto e o nome assim que concluir."
+                      isLight={isLight}
+                    />
+                  </div>
+                )}
+                {resultEhErro && (
+                  <div className="mb-4">
+                    <AgentesEstado
+                      variant="erro"
+                      titulo="Não foi possível gerar"
+                      mensagem={result.replace(/^⚠️\s*/, '')}
+                      isLight={isLight}
+                    />
+                  </div>
+                )}
+                {resultConcluido && (
+                  <div className="mb-4">
+                    <AgentesEstado
+                      variant="concluido"
+                      titulo="Petição gerada"
+                      mensagem="Edite o texto ou renomeie o documento abaixo — as alterações permanecem ao navegar entre as abas do formulário."
+                      isLight={isLight}
+                    />
+                  </div>
+                )}
+
                 {/* ABA PDF */}
                 {tab === 'pdf' && (
                   <div>
@@ -1900,15 +2196,14 @@ function AgentesPageContent() {
                   </div>
                 )}
 
-                {/* EDITOR + PRÉVIA PDF */}
-                {result && (
+                {/* EDITOR + PRÉVIA PDF — monta ao iniciar o stream (evita remount no 1º token) */}
+                {(streaming || (result && !resultEhErro)) && (
                   <div className="mt-6">
                     <PeticaoEditorComPreview
                       text={result}
                       onChange={setResult}
-                      fileName={slugArquivoPeticaoSm(
-                        (formData.nome || '').trim() || 'cliente',
-                      )}
+                      fileName={docFileName}
+                      onFileNameChange={setDocFileName}
                       estilo={estiloPeticao}
                       streaming={streaming}
                       editable
@@ -1918,6 +2213,7 @@ function AgentesPageContent() {
                       agentType={selectedAgent?.key || null}
                       clientId={selectedClient || null}
                       clientName={(formData.nome || '').trim() || null}
+                      alertaAmarelo={alertaProvasRurais}
                     />
                   </div>
                 )}

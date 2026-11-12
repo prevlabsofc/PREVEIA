@@ -13,6 +13,9 @@ export interface AgenteCardItem {
   meta?: string
   /** Etiquetas curtas exibidas no painel expandido. */
   tags?: string[]
+  /** Badge do tipo de documento que o agente gera. */
+  tipoDocumento?: string
+  tipoDocumentoCor?: string
   /**
    * Reservado para a hierarquia "Agente Principal" › "Tipos de Documento":
    * quando presente, os filhos são listados dentro do painel expandido.
@@ -103,8 +106,22 @@ export function MeusAgentesCard({
                   ⭐
                 </span>
                 <span className="flex-1 min-w-0">
-                  <span id={tituloId} className="block text-sm font-bold truncate" style={{ color: textColor }}>
-                    {item.nome}
+                  <span className="flex items-center gap-2 flex-wrap min-w-0">
+                    <span id={tituloId} className="text-sm font-bold truncate" style={{ color: textColor }}>
+                      {item.nome}
+                    </span>
+                    {item.tipoDocumento && (
+                      <span
+                        className="text-[10px] px-2 py-0.5 rounded-full font-bold flex-shrink-0"
+                        style={{
+                          background: `${item.tipoDocumentoCor || '#D4AF37'}22`,
+                          color: item.tipoDocumentoCor || '#D4AF37',
+                          border: `1px solid ${item.tipoDocumentoCor || '#D4AF37'}55`,
+                        }}
+                      >
+                        {item.tipoDocumento}
+                      </span>
+                    )}
                   </span>
                   {item.resumo && (
                     <span className="block text-[11px] truncate" style={{ color: mutedColor }}>

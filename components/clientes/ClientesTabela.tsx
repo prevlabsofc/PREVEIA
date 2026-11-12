@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { AlertCircle, Check, ExternalLink, Loader2, Lock, Users } from 'lucide-react'
+import { AlertCircle, Check, ExternalLink, FileText, Loader2, Lock, Users } from 'lucide-react'
 import {
   CAMPOS_CLIENTE,
   type CampoCliente,
@@ -217,14 +217,15 @@ export default function ClientesTabela({
               })}
               <th
                 scope="col"
-                className="px-3 py-2.5"
+                className="px-3 py-2.5 text-[10px] font-bold tracking-widest"
                 style={{
                   borderBottom: `1px solid ${corBorda}`,
                   background: isLight ? '#FAFAFA' : 'rgba(0,0,0,0.2)',
-                  width: 50,
+                  width: 140,
+                  color: 'rgba(212,175,55,0.75)',
                 }}
               >
-                <span className="sr-only">Abrir cliente</span>
+                AÇÕES
               </th>
             </tr>
           </thead>
@@ -383,16 +384,27 @@ export default function ClientesTabela({
                     </td>
                   )
                 })}
-                <td className="px-3 py-1.5 text-center" style={{ borderBottom: `1px solid ${corBorda}` }}>
-                  <Link
-                    href={`/clientes/${cliente.id}`}
-                    title={`Abrir ficha de ${cliente.name}`}
-                    className="inline-flex transition-colors duration-200"
-                    style={{ color: '#D4AF37' }}
-                  >
-                    <ExternalLink size={14} />
-                    <span className="sr-only">Ver detalhes de {cliente.name}</span>
-                  </Link>
+                <td className="px-3 py-1.5" style={{ borderBottom: `1px solid ${corBorda}` }}>
+                  <div className="flex items-center justify-end gap-1.5">
+                    <Link
+                      href={`/agentes?clienteId=${encodeURIComponent(cliente.id)}&clienteNome=${encodeURIComponent(cliente.name || '')}&clienteCPF=${encodeURIComponent(String(cliente.cpf || ''))}`}
+                      title={`Gerar petição para ${cliente.name}`}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-opacity hover:opacity-90"
+                      style={{ background: 'rgba(212,175,55,0.15)', color: '#D4AF37', border: '1px solid rgba(212,175,55,0.3)' }}
+                    >
+                      <FileText size={11} aria-hidden />
+                      Gerar petição
+                    </Link>
+                    <Link
+                      href={`/clientes/${cliente.id}`}
+                      title={`Abrir ficha de ${cliente.name}`}
+                      className="inline-flex p-1.5 rounded-lg transition-colors duration-200 hover:bg-white/5"
+                      style={{ color: '#D4AF37' }}
+                    >
+                      <ExternalLink size={14} />
+                      <span className="sr-only">Ver detalhes de {cliente.name}</span>
+                    </Link>
+                  </div>
                 </td>
               </tr>
             ))}

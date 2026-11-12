@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { GripVertical, Loader2, MapPin, Users } from 'lucide-react'
+import { FileText, GripVertical, Loader2, MapPin, Users } from 'lucide-react'
 import {
   CAMPOS_CLIENTE,
   type Cliente,
@@ -308,35 +308,45 @@ export default function ClientesKanban({
                         </div>
                       )}
 
-                      <div className="flex items-center gap-2 mt-3">
-                        <label className="sr-only" htmlFor={`mover-${cliente.id}`}>
-                          Mover {cliente.name} para outra etapa
-                        </label>
-                        <select
-                          id={`mover-${cliente.id}`}
-                          value={etapa.id}
-                          disabled={!podeMover || emMovimento}
-                          onChange={(e) => mover(cliente.id, e.target.value as ClientStage)}
-                          className="flex-1 h-7 px-2 rounded-lg text-[10px] outline-none transition-colors duration-200"
-                          style={{
-                            background: isLight ? '#FFF' : 'rgba(0,0,0,0.35)',
-                            border: `1px solid ${isLight ? '#E4E4E4' : 'rgba(255,255,255,0.1)'}`,
-                            color: podeMover ? corTexto : '#666',
-                            cursor: podeMover ? 'pointer' : 'not-allowed',
-                          }}
-                        >
-                          {STAGES.map((s) => (
-                            <option key={s.id} value={s.id} style={{ background: isLight ? '#FFF' : '#111' }}>
-                              Mover para: {s.label}
-                            </option>
-                          ))}
-                        </select>
+                      <div className="flex flex-col gap-2 mt-3">
+                        <div className="flex items-center gap-2">
+                          <label className="sr-only" htmlFor={`mover-${cliente.id}`}>
+                            Mover {cliente.name} para outra etapa
+                          </label>
+                          <select
+                            id={`mover-${cliente.id}`}
+                            value={etapa.id}
+                            disabled={!podeMover || emMovimento}
+                            onChange={(e) => mover(cliente.id, e.target.value as ClientStage)}
+                            className="flex-1 h-7 px-2 rounded-lg text-[10px] outline-none transition-colors duration-200"
+                            style={{
+                              background: isLight ? '#FFF' : 'rgba(0,0,0,0.35)',
+                              border: `1px solid ${isLight ? '#E4E4E4' : 'rgba(255,255,255,0.1)'}`,
+                              color: podeMover ? corTexto : '#666',
+                              cursor: podeMover ? 'pointer' : 'not-allowed',
+                            }}
+                          >
+                            {STAGES.map((s) => (
+                              <option key={s.id} value={s.id} style={{ background: isLight ? '#FFF' : '#111' }}>
+                                Mover para: {s.label}
+                              </option>
+                            ))}
+                          </select>
+                          <Link
+                            href={`/clientes/${cliente.id}`}
+                            className="text-[10px] font-bold whitespace-nowrap transition-colors duration-200"
+                            style={{ color: '#D4AF37' }}
+                          >
+                            Detalhes →
+                          </Link>
+                        </div>
                         <Link
-                          href={`/clientes/${cliente.id}`}
-                          className="text-[10px] font-bold whitespace-nowrap transition-colors duration-200"
-                          style={{ color: '#D4AF37' }}
+                          href={`/agentes?clienteId=${encodeURIComponent(cliente.id)}&clienteNome=${encodeURIComponent(cliente.name || '')}&clienteCPF=${encodeURIComponent(String(cliente.cpf || ''))}`}
+                          className="w-full h-7 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-opacity hover:opacity-90"
+                          style={{ background: 'rgba(212,175,55,0.15)', color: '#D4AF37', border: '1px solid rgba(212,175,55,0.3)' }}
                         >
-                          Detalhes →
+                          <FileText size={11} aria-hidden />
+                          Gerar petição
                         </Link>
                       </div>
                     </article>
