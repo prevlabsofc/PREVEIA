@@ -445,7 +445,7 @@ DA PRIORIDADE DE TRAMITAÇÃO:
 ✓ Autodeclaração de segurado especial — art. 38-B, §2º, Lei 8.213/91
 ✓ [outras provas no mesmo formato]
 <<<END_IV>>>
-[Liste SOMENTE as provas marcadas no campo "provas" do formulário, as de "outras_provas" e documentos expressamente mencionados no contexto/extras — nunca acrescente documento não informado. A explicação diz o que o documento é apto a provar em tese (ex.: "início de prova material da atividade rural"), sem inventar seu conteúdo (datas, nomes, endereços nele constantes).]
+[Liste SOMENTE as provas marcadas no campo "provas" do formulário e documentos expressamente mencionados no contexto/extras — nunca acrescente documento não informado. A explicação diz o que o documento é apto a provar em tese (ex.: "início de prova material da atividade rural"), sem inventar seu conteúdo (datas, nomes, endereços nele constantes).]
 [OBRIGATÓRIO: cada prova em UMA linha, começando com ✓, formato "Nome — explicação".
 NUNCA escreva provas em parágrafos corridos. NUNCA coloque a lista antes da seção IV.
 NUNCA coloque provas em <<<III_SINTESE_DEPOIS>>> — o sistema renderiza as caixas com check somente dentro de IV.]

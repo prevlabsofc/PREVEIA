@@ -3,11 +3,19 @@
 /**
  * Formulário SM rural em 3 blocos (mesmo formulário / mesmas chaves de payload).
  * Redesign visual: hierarquia tipográfica + camadas (modal/card/campo).
- * Sem alteração de lógica, campos, validações ou integrações.
+ * Provas: edição inline, adição custom e restauração dos 11 padrões (imutáveis no parent).
  */
 
-import type { CSSProperties, Dispatch, ReactNode, SetStateAction } from 'react'
-import { Upload } from 'lucide-react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from 'react'
+import { Pencil, Trash2, Upload } from 'lucide-react'
 import { ESTADOS_BRASIL } from '@/lib/estados-brasil'
 import {
   buscarSubsecao,
@@ -29,6 +37,29 @@ import {
   type ErrosFormSm,
 } from '@/lib/validar-form-peticao'
 import type { EstiloPeticao } from '@/lib/peticao-export'
+
+type ProvaItem = {
+  id: string
+  texto: string
+  /** Texto original dos 11 padrão; undefined se custom. */
+  padrao?: string
+  custom: boolean
+}
+
+function criarItensPadrao(opcoes: string[]): ProvaItem[] {
+  return opcoes.map((texto, i) => ({
+    id: `padrao-${i}`,
+    texto,
+    padrao: texto,
+    custom: false,
+  }))
+}
+
+function idCustom(): string {
+  return `custom-${typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`}`
+}
 
 function chaveProfissao(v: string): string {
   const s = v.toLowerCase()
@@ -152,8 +183,167 @@ export function FormularioSmRural({
     formData.profession || formData.profissao || formData.atividade || '',
   )
 
+  const [itensProva, setItensProva] = useState<ProvaItem[]>(() =>
+    criarItensPadrao(provasOpcoes),
+  )
+  const [marcadosProva, setMarcadosProva] = useState<string[]>([])
+  const [editandoId, setEditandoId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState('')
+  const [editOriginal, setEditOriginal] = useState('')
+  const editInputRef = useRef<HTMLInputElement>(null)
+  const ignorarBlurRef = useRef(false)
+
   function setCampo(patch: Record<string, string>) {
     setFormData(p => ({ ...p, ...patch }))
+  }
+
+  // Sincroniza textos marcados → parent (`provas` = textos atuais marcados).
+  useEffect(() => {
+    const textos = itensProva
+      .filter(i => marcadosProva.includes(i.id))
+      .map(i => i.texto)
+    setProvas(prev => {
+      if (
+        prev.length === textos.length &&
+        prev.every((t, i) => t === textos[i])
+      ) {
+        return prev
+      }
+      return textos
+    })
+  }, [itensProva, marcadosProva, setProvas])
+
+  // Migra `outras_provas` (rascunhos/modelos) → itens custom marcados.
+  const ultimaMigracaoOutrasRef = useRef('')
+  useEffect(() => {
+    const raw = (formData.outras_provas || '').trim()
+    if (!raw) return
+    // Strict Mode / re-render: não duplicar a mesma carga.
+    if (ultimaMigracaoOutrasRef.current === raw) {
+      setFormData(p =>
+        (p.outras_provas || '').trim() ? { ...p, outras_provas: '' } : p,
+      )
+      return
+    }
+    ultimaMigracaoOutrasRef.current = raw
+    const linhas = raw
+      .split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(Boolean)
+    setFormData(p => {
+      if (!(p.outras_provas || '').trim()) return p
+      return { ...p, outras_provas: '' }
+    })
+    if (!linhas.length) return
+    const novos: ProvaItem[] = linhas.map(texto => ({
+      id: idCustom(),
+      texto,
+      custom: true,
+    }))
+    setItensProva(prev => [...prev, ...novos])
+    setMarcadosProva(prev => [...prev, ...novos.map(n => n.id)])
+  }, [formData.outras_provas, setFormData])
+
+  useEffect(() => {
+    if (!editandoId) return
+    const el = editInputRef.current
+    if (!el) return
+    el.focus()
+    el.select()
+  }, [editandoId])
+
+  function toggleProva(id: string) {
+    setMarcadosProva(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id],
+    )
+  }
+
+  function iniciarEdicao(item: ProvaItem) {
+    setEditandoId(item.id)
+    setEditDraft(item.texto)
+    setEditOriginal(item.texto)
+  }
+
+  function cancelarEdicao() {
+    const id = editandoId
+    if (!id) return
+    const item = itensProva.find(i => i.id === id)
+    const original = editOriginal
+    setEditandoId(null)
+    setEditDraft('')
+    setEditOriginal('')
+    // Nova linha ainda sem texto salvo: não persiste.
+    if (item?.custom && !original.trim()) {
+      setItensProva(prev => prev.filter(i => i.id !== id))
+      setMarcadosProva(prev => prev.filter(x => x !== id))
+      return
+    }
+    // Esc: restaura o texto de quando a edição começou.
+    setItensProva(prev =>
+      prev.map(i => (i.id === id ? { ...i, texto: original } : i)),
+    )
+  }
+
+  function salvarEdicao(abrirNova: boolean) {
+    const id = editandoId
+    if (!id) return
+    const texto = editDraft.trim()
+    const item = itensProva.find(i => i.id === id)
+    if (!texto) {
+      // Vazio: cancela (remove se era custom nova).
+      if (item?.custom && !editOriginal.trim()) {
+        setItensProva(prev => prev.filter(i => i.id !== id))
+        setMarcadosProva(prev => prev.filter(x => x !== id))
+      }
+      setEditandoId(null)
+      setEditDraft('')
+      setEditOriginal('')
+      return
+    }
+    setItensProva(prev =>
+      prev.map(i => (i.id === id ? { ...i, texto } : i)),
+    )
+    setEditandoId(null)
+    setEditDraft('')
+    setEditOriginal('')
+    if (abrirNova) {
+      // Abre outra linha nova após o commit (fluxo em sequência).
+      queueMicrotask(() => adicionarProva())
+    }
+  }
+
+  function adicionarProva() {
+    const id = idCustom()
+    setItensProva(prev => [...prev, { id, texto: '', custom: true }])
+    setMarcadosProva(prev => (prev.includes(id) ? prev : [...prev, id]))
+    setEditandoId(id)
+    setEditDraft('')
+    setEditOriginal('')
+  }
+
+  function removerProvaCustom(id: string) {
+    setItensProva(prev => prev.filter(i => i.id !== id))
+    setMarcadosProva(prev => prev.filter(x => x !== id))
+    if (editandoId === id) {
+      setEditandoId(null)
+      setEditDraft('')
+      setEditOriginal('')
+    }
+  }
+
+  function restaurarProvasPadrao() {
+    if (
+      !window.confirm(
+        'Restaurar as 11 provas padrão?\n\nTextos editados voltarão ao original e provas adicionadas serão removidas.',
+      )
+    ) {
+      return
+    }
+    setItensProva(criarItensPadrao(provasOpcoes))
+    setMarcadosProva(prev => prev.filter(id => id.startsWith('padrao-')))
+    setEditandoId(null)
+    setEditDraft('')
+    setEditOriginal('')
   }
 
   const optStyle: CSSProperties = optionStyle ?? (isLight
@@ -162,6 +352,9 @@ export function FormularioSmRural({
 
   const errBorder = (has?: string): CSSProperties | undefined =>
     has ? { borderColor: '#ef4444', borderWidth: 1 } : undefined
+
+  // `provas` prop espelha a seleção; mantido na assinatura para o parent.
+  void provas
 
   return (
     <div className="form-sm-rural space-y-5">
@@ -880,52 +1073,122 @@ export function FormularioSmRural({
           <div className="smr-fields">
             <SubTitle>Provas</SubTitle>
             <div>
-              <Label>Provas disponíveis</Label>
+              <div className="smr-provas-cabecalho">
+                <Label>Provas disponíveis</Label>
+                <button
+                  type="button"
+                  className="smr-provas-restaurar"
+                  onClick={restaurarProvasPadrao}
+                >
+                  Restaurar padrão
+                </button>
+              </div>
               <div className="smr-provas-box">
-                {provasOpcoes.map(prova => {
-                  const checked = provas.includes(prova)
+                {itensProva.map(item => {
+                  const checked = marcadosProva.includes(item.id)
+                  const editing = editandoId === item.id
+                  const edited =
+                    !item.custom &&
+                    item.padrao !== undefined &&
+                    item.texto !== item.padrao
                   return (
                     <div
-                      key={prova}
+                      key={item.id}
                       role="checkbox"
                       aria-checked={checked}
-                      tabIndex={0}
+                      tabIndex={editing ? -1 : 0}
                       className="smr-prova-item"
                       data-checked={checked ? 'true' : 'false'}
-                      onClick={() =>
-                        setProvas(p =>
-                          p.includes(prova) ? p.filter(x => x !== prova) : [...p, prova],
-                        )
-                      }
+                      data-editing={editing ? 'true' : 'false'}
+                      data-edited={edited ? 'true' : 'false'}
+                      onClick={() => toggleProva(item.id)}
                       onKeyDown={e => {
+                        if (editing) return
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault()
-                          setProvas(p =>
-                            p.includes(prova) ? p.filter(x => x !== prova) : [...p, prova],
-                          )
+                          toggleProva(item.id)
                         }
                       }}
                     >
                       <div className="smr-check" aria-hidden>
                         {checked ? <span className="smr-check-mark">✓</span> : null}
                       </div>
-                      <span>{prova}</span>
+                      {editing ? (
+                        <input
+                          ref={editInputRef}
+                          className="smr-prova-input"
+                          value={editDraft}
+                          placeholder="Nome do documento — o que ele comprova"
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => setEditDraft(e.target.value)}
+                          onBlur={() => {
+                            if (ignorarBlurRef.current) {
+                              ignorarBlurRef.current = false
+                              return
+                            }
+                            salvarEdicao(false)
+                          }}
+                          onKeyDown={e => {
+                            e.stopPropagation()
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              ignorarBlurRef.current = true
+                              // Fluxo "+ Adicionar": Enter salva e abre outra linha.
+                              const sequencia = item.custom && !editOriginal.trim()
+                              salvarEdicao(sequencia)
+                            } else if (e.key === 'Escape') {
+                              e.preventDefault()
+                              ignorarBlurRef.current = true
+                              cancelarEdicao()
+                            }
+                          }}
+                          spellCheck={true}
+                          aria-label="Editar prova"
+                        />
+                      ) : (
+                        <span className="smr-prova-texto">{item.texto}</span>
+                      )}
+                      {edited ? (
+                        <span className="smr-prova-editado" title="Texto editado" aria-hidden />
+                      ) : null}
+                      {item.custom ? (
+                        <button
+                          type="button"
+                          className="smr-prova-acao smr-prova-lixeira"
+                          aria-label="Remover prova"
+                          title="Remover"
+                          onClick={e => {
+                            e.stopPropagation()
+                            removerProvaCustom(item.id)
+                          }}
+                        >
+                          <Trash2 size={15} strokeWidth={1.75} />
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="smr-prova-acao smr-prova-lapis"
+                        aria-label="Editar prova"
+                        title="Editar"
+                        onClick={e => {
+                          e.stopPropagation()
+                          if (editing) return
+                          iniciarEdicao(item)
+                        }}
+                      >
+                        <Pencil size={15} strokeWidth={1.75} />
+                      </button>
                     </div>
                   )
                 })}
+                <button
+                  type="button"
+                  className="smr-prova-adicionar"
+                  onClick={adicionarProva}
+                >
+                  + Adicionar prova
+                </button>
               </div>
-            </div>
-
-            <div>
-              <Label>Outras provas / documentos</Label>
-              <textarea
-                placeholder="Documentos adicionais não listados acima…"
-                className="input-glass w-full"
-                style={{ height: 72, resize: 'none' }}
-                value={formData.outras_provas || ''}
-                onChange={e => setCampo({ outras_provas: e.target.value })}
-                spellCheck={true}
-              />
             </div>
           </div>
 

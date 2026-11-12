@@ -642,6 +642,35 @@ html.light .form-sm-rural input[type='date'].input-glass {
   color-scheme: light;
 }
 
+.form-sm-rural .smr-provas-cabecalho {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.form-sm-rural .smr-provas-cabecalho .smr-label {
+  margin-bottom: 0;
+}
+
+.form-sm-rural .smr-provas-restaurar {
+  border: none;
+  background: transparent;
+  padding: 4px 0;
+  font-size: 12px;
+  line-height: 1.3;
+  color: #A6A18F;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  flex-shrink: 0;
+}
+
+.form-sm-rural .smr-provas-restaurar:hover {
+  color: #D6AD32;
+}
+
 .form-sm-rural .smr-provas-box {
   background: var(--smr-provas);
   border: 1px solid var(--smr-border);
@@ -653,8 +682,8 @@ html.light .form-sm-rural input[type='date'].input-glass {
 .form-sm-rural .smr-prova-item {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  padding: 10px 10px;
+  gap: 10px;
+  padding: 10px 6px 10px 10px;
   border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s ease;
@@ -669,6 +698,120 @@ html.light .form-sm-rural input[type='date'].input-glass {
 
 .form-sm-rural .smr-prova-item[data-checked='true'] {
   background: var(--smr-selected);
+}
+
+.form-sm-rural .smr-prova-texto {
+  flex: 1;
+  min-width: 0;
+}
+
+.form-sm-rural .smr-prova-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(214, 173, 50, 0.45);
+  border-radius: 0;
+  padding: 0 0 2px;
+  margin: 0;
+  color: var(--smr-text);
+  font-size: 14px;
+  line-height: 1.45;
+  outline: none;
+  width: 100%;
+}
+
+.form-sm-rural .smr-prova-input::placeholder {
+  color: #A6A18F;
+  opacity: 0.85;
+}
+
+.form-sm-rural .smr-prova-editado {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #D6AD32;
+  flex-shrink: 0;
+  margin-top: 7px;
+  opacity: 0.9;
+}
+
+.form-sm-rural .smr-prova-acao {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: -6px 0;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #A6A18F;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s ease, opacity 0.15s ease, background 0.15s ease;
+}
+
+.form-sm-rural .smr-prova-lapis {
+  opacity: 0;
+}
+
+.form-sm-rural .smr-prova-item:hover .smr-prova-lapis,
+.form-sm-rural .smr-prova-item[data-editing='true'] .smr-prova-lapis,
+.form-sm-rural .smr-prova-item[data-edited='true'] .smr-prova-lapis {
+  opacity: 1;
+}
+
+.form-sm-rural .smr-prova-item:hover .smr-prova-lapis {
+  color: #D6AD32;
+}
+
+.form-sm-rural .smr-prova-lixeira {
+  opacity: 0.7;
+}
+
+.form-sm-rural .smr-prova-item:hover .smr-prova-lixeira {
+  opacity: 1;
+  color: #C45C5C;
+}
+
+.form-sm-rural .smr-prova-acao:hover {
+  background: rgba(214, 173, 50, 0.08);
+}
+
+@media (max-width: 767px) {
+  .form-sm-rural .smr-prova-lapis,
+  .form-sm-rural .smr-prova-lixeira {
+    opacity: 1;
+  }
+}
+
+.form-sm-rural .smr-prova-adicionar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px dashed var(--smr-border);
+  background: rgba(0, 0, 0, 0.12);
+  color: #A6A18F;
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+html.light .form-sm-rural .smr-prova-adicionar {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.form-sm-rural .smr-prova-adicionar:hover {
+  color: var(--smr-text);
+  border-color: rgba(214, 173, 50, 0.45);
+  background: var(--smr-hover);
 }
 
 .form-sm-rural .smr-check {
