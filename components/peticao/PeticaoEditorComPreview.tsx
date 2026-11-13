@@ -2,11 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
-import { Check, Eye, EyeOff, Loader2, Pencil } from 'lucide-react'
+import { Check, Loader2, Pencil } from 'lucide-react'
 import { DownloadButtons } from '@/components/DownloadButtons'
 import { AvisoCitacao } from '@/components/AvisoCitacao'
 import { PeticaoPreview } from '@/components/peticao/PeticaoPreview'
 import { PeticaoRichEditor } from '@/components/peticao/PeticaoRichEditor'
+import { PeticaoDadosCaso } from '@/components/peticao/PeticaoDadosCaso'
+import { PeticaoAssistente } from '@/components/peticao/PeticaoAssistente'
 import { SalvarAcessoPeticao } from '@/components/peticao/SalvarAcessoPeticao'
 import type { DadosAdvogadoPeticao, EstiloPeticao } from '@/lib/peticao-export'
 import {
@@ -23,6 +25,9 @@ const supabase = createBrowserClient(
 type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error'
 
 const AUTOSAVE_MS = 3000
+const BREAKPOINT_PREVIEW_FIXA = 1280
+
+type LeftTab = 'texto' | 'dados' | 'assistente' | 'previa'
 
 type Props = {
   text: string
@@ -43,21 +48,41 @@ type Props = {
   /** Persistir no banco (aba Documentos). */
   documentId?: string | null
   onSaved?: (payload: { title: string; content: string }) => void
-  /** Layout: lado a lado (desktop) ou alternância editar/visualizar. */
+  /**
+   * @deprecated Preferir o layout automático (&lt;1280px → prévia em aba).
+   * Mantido por compatibilidade: `tabs` força prévia em aba.
+   */
   layoutMode?: 'split' | 'tabs'
   /**
    * Alerta amarelo (ex.: ausência de prova rural). Só exibe se informado.
    * Não altera o layout geral — faixa discreta acima do editor.
    */
   alertaAmarelo?: string | null
+  /** Dados do formulário que geraram a petição (aba Dados do caso). */
+  formData?: Record<string, string> | null
+  /** Snapshot persistido em documents.form_data. */
+  formSnapshot?: Record<string, unknown> | null
+  onFormDataChange?: (data: Record<string, string>) => void
 }
 
 function formatarHoraSalvo(d: Date): string {
   return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 }
 
+function usePreviewFixa() {
+  const [fixa, setFixa] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia(`(min-width: ${BREAKPOINT_PREVIEW_FIXA}px)`)
+    const apply = () => setFixa(mq.matches)
+    apply()
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
+  }, [])
+  return fixa
+}
+
 /**
- * Área Documento: editor rich text + prévia PDF, rename, salvar/autosave.
+ * Área Documento: abas (Texto / Dados / Assistente) + prévia PDF, rename, autosave.
  * Edições do usuário têm prioridade; localStorage é fallback se o backend falhar.
  */
 export function PeticaoEditorComPreview({
@@ -78,18 +103,25 @@ export function PeticaoEditorComPreview({
   onSaved,
   layoutMode = 'split',
   alertaAmarelo = null,
+  formData = null,
+  formSnapshot = null,
+  onFormDataChange,
 }: Props) {
   const [advLoaded, setAdvLoaded] = useState<DadosAdvogadoPeticao>({})
-  const [showPreview, setShowPreview] = useState(true)
-  const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')
+  const [leftTab, setLeftTab] = useState<LeftTab>('texto')
   const [draft, setDraft] = useState(text)
   const [titleDraft, setTitleDraft] = useState(fileName)
   const [editingTitle, setEditingTitle] = useState(false)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [salvoEm, setSalvoEm] = useState<Date | null>(null)
+  const [dadosDirty, setDadosDirty] = useState(false)
+  const [dadosLocais, setDadosLocais] = useState<Record<string, string>>(formData || {})
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const titleInputRef = useRef<HTMLInputElement>(null)
   const hydratedRef = useRef(false)
+
+  const previewFixaMedia = usePreviewFixa()
+  const previewFixa = layoutMode === 'tabs' ? false : previewFixaMedia
 
   const draftKey = chaveRascunhoPeticao({
     documentId,
@@ -106,17 +138,19 @@ export function PeticaoEditorComPreview({
     setTitleDraft(fileName)
   }, [fileName])
 
-  // Restaura rascunho local (fallback) — só em documento persistido ou após refresh com texto.
+  useEffect(() => {
+    if (formData) setDadosLocais(formData)
+  }, [formData])
+
+  // Restaura rascunho local (fallback) — só em documento persistido.
   useEffect(() => {
     if (streaming || hydratedRef.current) return
     hydratedRef.current = true
-    // Evita sobrescrever petição recém-gerada com rascunho antigo da mesma chave.
     if (!documentId) return
     const local = lerRascunhoPeticao(draftKey)
     if (!local?.content?.trim()) return
     const externo = (text || '').trim()
     if (local.content === externo) return
-    // Preferir rascunho local se o usuário editou offline / deu refresh.
     if (local.updatedAt > Date.now() - 1000 * 60 * 60 * 24) {
       setDraft(local.content)
       onChange?.(local.content)
@@ -151,7 +185,6 @@ export function PeticaoEditorComPreview({
     }
   }, [])
 
-  // Persiste rascunho ao sair da página / ocultar aba.
   useEffect(() => {
     function flush() {
       if (streaming) return
@@ -169,10 +202,17 @@ export function PeticaoEditorComPreview({
     }
   }, [draft, titleDraft, draftKey, streaming])
 
+  // Se a prévia volta a ser coluna, sai da aba prévia
+  useEffect(() => {
+    if (previewFixa && leftTab === 'previa') setLeftTab('texto')
+  }, [previewFixa, leftTab])
+
   const adv = advProp || advLoaded
-  const useTabs = layoutMode === 'tabs'
-  // Texto vai direto; o debounce/batch fica no PeticaoPreview (bridge interno).
   const previewText = draft
+  const ehSm =
+    agentType === 'salario-maternidade-rural' ||
+    draft.includes('<<<SM_RURAL_V2>>>') ||
+    Boolean(formData || formSnapshot)
 
   async function persist(nextTitle: string, nextContent: string) {
     if (streaming) return
@@ -239,8 +279,10 @@ export function PeticaoEditorComPreview({
     await persist(titleDraft, draft)
   }
 
-  const showEditorPane = useTabs ? viewMode === 'edit' : true
-  const showPreviewPane = useTabs ? viewMode === 'preview' : showPreview
+  function handleFormDataChange(data: Record<string, string>) {
+    setDadosLocais(data)
+    onFormDataChange?.(data)
+  }
 
   const statusLabel =
     saveStatus === 'dirty'
@@ -254,6 +296,17 @@ export function PeticaoEditorComPreview({
             : saveStatus === 'error'
               ? 'Erro ao salvar — rascunho local mantido'
               : null
+
+  const textoDirty = saveStatus === 'dirty' || saveStatus === 'saving'
+  const tabs: Array<{ id: LeftTab; label: string; dirty?: boolean; hide?: boolean }> = [
+    { id: 'texto', label: 'Texto', dirty: textoDirty },
+    { id: 'dados', label: 'Dados do caso', dirty: dadosDirty, hide: !ehSm },
+    { id: 'assistente', label: 'Assistente' },
+    { id: 'previa', label: 'Prévia', hide: previewFixa },
+  ]
+
+  const showEditorPane = leftTab !== 'previa'
+  const showPreviewPane = previewFixa || leftTab === 'previa'
 
   return (
     <div className="mt-4">
@@ -349,38 +402,6 @@ export function PeticaoEditorComPreview({
             </button>
           )}
 
-          {useTabs ? (
-            <div
-              className="flex rounded-lg overflow-hidden"
-              style={{ border: '1px solid rgba(255,255,255,0.1)' }}
-            >
-              {(['edit', 'preview'] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setViewMode(m)}
-                  className="px-3 py-1.5 text-xs font-medium"
-                  style={{
-                    background: viewMode === m ? 'rgba(212,175,55,0.15)' : 'transparent',
-                    color: viewMode === m ? '#D4AF37' : '#888',
-                  }}
-                >
-                  {m === 'edit' ? 'Editar' : 'Visualizar'}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setShowPreview((v) => !v)}
-              className="lg:hidden px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all hover:bg-white/5"
-              style={{ border: '1px solid rgba(255,255,255,0.1)', color: '#888' }}
-            >
-              {showPreview ? <EyeOff size={12} /> : <Eye size={12} />}
-              {showPreview ? 'Ocultar prévia' : 'Ver prévia'}
-            </button>
-          )}
-
           <button
             type="button"
             onClick={() => navigator.clipboard.writeText(draft)}
@@ -403,12 +424,12 @@ export function PeticaoEditorComPreview({
 
       <div
         className={`grid gap-3 ${
-          useTabs ? 'grid-cols-1' : showPreviewPane ? 'lg:grid-cols-2' : 'grid-cols-1'
+          previewFixa && showPreviewPane ? 'grid-cols-2' : 'grid-cols-1'
         }`}
       >
         {showEditorPane && (
           <div
-            className="rounded-xl overflow-hidden"
+            className="rounded-xl overflow-hidden flex flex-col"
             style={{
               background: isLight ? '#fff' : '#050300',
               border: '1px solid rgba(212,175,55,0.15)',
@@ -428,27 +449,95 @@ export function PeticaoEditorComPreview({
                 {alertaAmarelo}
               </div>
             ) : null}
-            {editable ? (
-              <PeticaoRichEditor
-                value={draft}
-                onChange={handleEdit}
-                readOnly={Boolean(streaming)}
-                streaming={Boolean(streaming)}
-                isLight={isLight}
-                minHeight={420}
-              />
-            ) : (
-              <div
-                className="p-4 font-mono text-xs leading-relaxed overflow-auto max-h-[70vh] whitespace-pre-wrap"
-                style={{ color: isLight ? '#374151' : '#ccc' }}
-              >
-                {draft}
-                {streaming && (
-                  <span className="inline-block w-2 h-4 bg-yellow-500 ml-1 animate-pulse" />
-                )}
-              </div>
+
+            {/* Abas do painel esquerdo */}
+            <div
+              className="flex items-center gap-0 px-1 flex-shrink-0 overflow-x-auto"
+              style={{
+                borderBottom: isLight ? '1px solid #EDEDED' : '1px solid rgba(255,255,255,0.06)',
+                background: isLight ? '#FAFAFA' : 'rgba(255,255,255,0.02)',
+              }}
+              role="tablist"
+              aria-label="Painel do editor"
+            >
+              {tabs
+                .filter((t) => !t.hide)
+                .map((t) => {
+                  const active = leftTab === t.id
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => setLeftTab(t.id)}
+                      className="relative px-3 py-2.5 text-xs font-medium whitespace-nowrap transition-colors"
+                      style={{
+                        color: active ? '#D4AF37' : '#888',
+                        borderBottom: active
+                          ? '2px solid #D4AF37'
+                          : '2px solid transparent',
+                      }}
+                    >
+                      {t.label}
+                      {t.dirty ? (
+                        <span
+                          className="absolute top-1.5 right-1 w-1.5 h-1.5 rounded-full"
+                          style={{ background: '#D4AF37' }}
+                          aria-label="Alterações não salvas"
+                        />
+                      ) : null}
+                    </button>
+                  )
+                })}
+            </div>
+
+            {leftTab === 'texto' && (
+              editable ? (
+                <PeticaoRichEditor
+                  value={draft}
+                  onChange={handleEdit}
+                  readOnly={Boolean(streaming)}
+                  streaming={Boolean(streaming)}
+                  isLight={isLight}
+                  minHeight={420}
+                />
+              ) : (
+                <div
+                  className="p-4 font-mono text-xs leading-relaxed overflow-auto max-h-[70vh] whitespace-pre-wrap"
+                  style={{ color: isLight ? '#374151' : '#ccc' }}
+                >
+                  {draft}
+                  {streaming && (
+                    <span className="inline-block w-2 h-4 bg-yellow-500 ml-1 animate-pulse" />
+                  )}
+                </div>
+              )
             )}
-            {streaming && editable && (
+
+            {leftTab === 'dados' && ehSm && (
+              <PeticaoDadosCaso
+                text={draft}
+                onTextChange={handleEdit}
+                formData={dadosLocais}
+                formSnapshot={formSnapshot}
+                onFormDataChange={handleFormDataChange}
+                clientId={clientId}
+                isLight={isLight}
+                onDirtyChange={setDadosDirty}
+              />
+            )}
+
+            {leftTab === 'assistente' && (
+              <PeticaoAssistente
+                text={draft}
+                onTextChange={handleEdit}
+                dadosCaso={dadosLocais}
+                isLight={isLight}
+              />
+            )}
+
+            {streaming && editable && leftTab === 'texto' && (
               <div className="px-4 pb-2 text-[10px]" style={{ color: '#D4AF37' }}>
                 Gerando… a edição fica liberada ao concluir.
               </div>
@@ -458,13 +547,7 @@ export function PeticaoEditorComPreview({
 
         {showPreviewPane && (
           <div
-            className={
-              useTabs
-                ? 'rounded-xl overflow-hidden flex flex-col'
-                : showPreview
-                  ? 'rounded-xl overflow-hidden flex flex-col'
-                  : 'rounded-xl overflow-hidden hidden lg:flex lg:flex-col'
-            }
+            className="rounded-xl overflow-hidden flex flex-col"
             style={{
               background: isLight ? '#E8E8E8' : '#1a1a16',
               border: '1px solid rgba(212,175,55,0.15)',
@@ -473,6 +556,40 @@ export function PeticaoEditorComPreview({
               contain: 'content',
             }}
           >
+            {!previewFixa && (
+              <div
+                className="flex items-center gap-0 px-1 flex-shrink-0"
+                style={{
+                  borderBottom: '1px solid rgba(212,175,55,0.1)',
+                  background: 'rgba(0,0,0,0.15)',
+                }}
+                role="tablist"
+              >
+                {tabs
+                  .filter((t) => !t.hide)
+                  .map((t) => {
+                    const active = leftTab === t.id
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        onClick={() => setLeftTab(t.id)}
+                        className="relative px-3 py-2.5 text-xs font-medium whitespace-nowrap"
+                        style={{
+                          color: active ? '#D4AF37' : '#888',
+                          borderBottom: active
+                            ? '2px solid #D4AF37'
+                            : '2px solid transparent',
+                        }}
+                      >
+                        {t.label}
+                      </button>
+                    )
+                  })}
+              </div>
+            )}
             <div
               className="px-3 py-2 text-[10px] font-bold tracking-widest flex items-center justify-between gap-2 flex-shrink-0"
               style={{
@@ -495,7 +612,6 @@ export function PeticaoEditorComPreview({
                 </span>
               )}
             </div>
-            {/* Um único scroll: o host do PeticaoPreview (evita tremor por scroll aninhado). */}
             <div
               className="p-3 flex-1 min-h-0"
               style={{
@@ -519,7 +635,7 @@ export function PeticaoEditorComPreview({
         )}
       </div>
 
-      {!streaming && <AvisoCitacao text={draft} className="mt-2" />}
+      {!streaming && leftTab === 'texto' && <AvisoCitacao text={draft} className="mt-2" />}
 
       {!streaming && draft.trim().length > 40 && (
         <SalvarAcessoPeticao

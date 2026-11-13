@@ -577,6 +577,16 @@ export default function DocumentosPage() {
                 clientName={selected.client_name || null}
                 documentId={selected.id}
                 layoutMode="split"
+                formSnapshot={selected.form_data || null}
+                formData={
+                  selected.form_data
+                    ? Object.fromEntries(
+                        Object.entries(selected.form_data)
+                          .filter(([, v]) => v != null && (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'))
+                          .map(([k, v]) => [k, String(v)]),
+                      )
+                    : null
+                }
                 onSaved={({ title, content }) => {
                   setDocs(prev =>
                     prev.map(d =>

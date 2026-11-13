@@ -2214,6 +2214,8 @@ function AgentesPageContent() {
                       clientId={selectedClient || null}
                       clientName={(formData.nome || '').trim() || null}
                       alertaAmarelo={alertaProvasRurais}
+                      formData={formData}
+                      onFormDataChange={setFormData}
                     />
                   </div>
                 )}

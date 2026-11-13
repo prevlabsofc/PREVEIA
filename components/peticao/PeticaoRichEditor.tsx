@@ -1,6 +1,13 @@
 'use client'
 
-import { useRef } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from 'react'
 import {
   AlignCenter,
   AlignLeft,
@@ -11,6 +18,12 @@ import {
   ListOrdered,
   Pilcrow,
 } from 'lucide-react'
+import {
+  labelMarcador,
+  remontarPeticao,
+  segmentarPeticao,
+  type SegmentoPeticao,
+} from '@/lib/peticao-marcadores-ui'
 
 type Props = {
   value: string
@@ -23,8 +36,8 @@ type Props = {
 }
 
 /**
- * Editor com barra de formatação markdown-compatível com export PDF/DOCX
- * (negrito, itálico, listas, parágrafos, alinhamento via marcadores).
+ * Editor com barra de formatação markdown-compatível com export PDF/DOCX.
+ * Marcadores <<<TAG>>> viram divisores visuais não editáveis / não selecionáveis.
  */
 export function PeticaoRichEditor({
   value,
@@ -35,7 +48,26 @@ export function PeticaoRichEditor({
   streaming = false,
   'aria-label': ariaLabel = 'Editar conteúdo do documento',
 }: Props) {
-  const taRef = useRef<HTMLTextAreaElement>(null)
+  const segmentos = useMemo(() => segmentarPeticao(value), [value])
+  const textoRefs = useRef<Map<number, HTMLTextAreaElement>>(new Map())
+  const [localSegs, setLocalSegs] = useState<SegmentoPeticao[]>(segmentos)
+  const syncingFromProp = useRef(false)
+
+  useEffect(() => {
+    syncingFromProp.current = true
+    setLocalSegs(segmentos)
+    requestAnimationFrame(() => {
+      syncingFromProp.current = false
+    })
+  }, [segmentos])
+
+  const emitir = useCallback(
+    (next: SegmentoPeticao[]) => {
+      setLocalSegs(next)
+      if (!syncingFromProp.current) onChange(remontarPeticao(next))
+    },
+    [onChange],
+  )
 
   const btnStyle = {
     border: isLight ? '1px solid #EDEDED' : '1px solid rgba(255,255,255,0.1)',
@@ -43,17 +75,34 @@ export function PeticaoRichEditor({
     background: isLight ? '#fff' : 'rgba(255,255,255,0.03)',
   }
 
+  function indiceTextoAtivo(): number {
+    const active = document.activeElement
+    for (const [i, el] of textoRefs.current.entries()) {
+      if (el === active) return i
+    }
+    // primeiro segmento de texto
+    return localSegs.findIndex((s) => s.tipo === 'texto')
+  }
+
   function wrapSelection(before: string, after: string = before) {
-    const el = taRef.current
-    if (!el || readOnly) {
+    if (readOnly) return
+    const idx = indiceTextoAtivo()
+    if (idx < 0) {
       onChange(value + before + after)
       return
     }
+    const el = textoRefs.current.get(idx)
+    const seg = localSegs[idx]
+    if (!el || seg.tipo !== 'texto') return
     const start = el.selectionStart
     const end = el.selectionEnd
-    const selected = value.slice(start, end)
-    const next = value.slice(0, start) + before + selected + after + value.slice(end)
-    onChange(next)
+    const selected = seg.texto.slice(start, end)
+    const nextTexto =
+      seg.texto.slice(0, start) + before + selected + after + seg.texto.slice(end)
+    const next = localSegs.map((s, i) =>
+      i === idx && s.tipo === 'texto' ? { ...s, texto: nextTexto } : s,
+    )
+    emitir(next)
     requestAnimationFrame(() => {
       el.focus()
       const pos = start + before.length + selected.length + after.length
@@ -65,16 +114,18 @@ export function PeticaoRichEditor({
   }
 
   function prefixarLinhas(prefixo: string) {
-    const el = taRef.current
-    if (!el || readOnly) return
+    if (readOnly) return
+    const idx = indiceTextoAtivo()
+    const el = textoRefs.current.get(idx)
+    const seg = localSegs[idx]
+    if (!el || !seg || seg.tipo !== 'texto') return
     const start = el.selectionStart
     const end = el.selectionEnd
-    const before = value.slice(0, start)
-    const selected = value.slice(start, end) || ''
-    const after = value.slice(end)
-
+    const before = seg.texto.slice(0, start)
+    const selected = seg.texto.slice(start, end)
+    const after = seg.texto.slice(end)
     const lineStart = before.lastIndexOf('\n') + 1
-    const block = value.slice(lineStart, end || start)
+    const block = seg.texto.slice(lineStart, end || start)
     const lines = (selected || block || '').split('\n')
     const prefixed = lines
       .map((l) => {
@@ -84,12 +135,14 @@ export function PeticaoRichEditor({
         return `${prefixo}${l.replace(/^\s+/, '')}`
       })
       .join('\n')
-
-    const next =
-      value.slice(0, lineStart) +
+    const nextTexto =
+      seg.texto.slice(0, lineStart) +
       prefixed +
-      (selected ? after : value.slice(Math.max(end, lineStart + block.length)))
-    onChange(next)
+      (selected ? after : seg.texto.slice(Math.max(end, lineStart + block.length)))
+    const next = localSegs.map((s, i) =>
+      i === idx && s.tipo === 'texto' ? { ...s, texto: nextTexto } : s,
+    )
+    emitir(next)
     requestAnimationFrame(() => {
       el.focus()
       const pos = lineStart + prefixed.length
@@ -98,11 +151,14 @@ export function PeticaoRichEditor({
   }
 
   function alinhar(modo: 'left' | 'center' | 'right') {
-    const el = taRef.current
-    if (!el || readOnly) return
+    if (readOnly) return
+    const idx = indiceTextoAtivo()
+    const el = textoRefs.current.get(idx)
+    const seg = localSegs[idx]
+    if (!el || !seg || seg.tipo !== 'texto') return
     const start = el.selectionStart
     const end = el.selectionEnd
-    const selected = value.slice(start, end).trim()
+    const selected = seg.texto.slice(start, end).trim()
     if (!selected) {
       const marker =
         modo === 'center'
@@ -111,13 +167,12 @@ export function PeticaoRichEditor({
             ? ':::right\n\n:::'
             : ''
       if (!marker) return
-      const next = value.slice(0, start) + marker + value.slice(end)
-      onChange(next)
-      requestAnimationFrame(() => {
-        el.focus()
-        const caret = start + (modo === 'left' ? 0 : `:::${modo}\n`.length)
-        el.setSelectionRange(caret, caret)
-      })
+      const nextTexto = seg.texto.slice(0, start) + marker + seg.texto.slice(end)
+      emitir(
+        localSegs.map((s, i) =>
+          i === idx && s.tipo === 'texto' ? { ...s, texto: nextTexto } : s,
+        ),
+      )
       return
     }
     if (modo === 'left') {
@@ -125,31 +180,96 @@ export function PeticaoRichEditor({
         .replace(/^:::center\n?/i, '')
         .replace(/^:::right\n?/i, '')
         .replace(/\n?:::$/i, '')
-      const next = value.slice(0, start) + limpo + value.slice(end)
-      onChange(next)
+      const nextTexto = seg.texto.slice(0, start) + limpo + seg.texto.slice(end)
+      emitir(
+        localSegs.map((s, i) =>
+          i === idx && s.tipo === 'texto' ? { ...s, texto: nextTexto } : s,
+        ),
+      )
       return
     }
     const wrapped = `:::${modo}\n${selected}\n:::`
-    const next = value.slice(0, start) + wrapped + value.slice(end)
-    onChange(next)
+    const nextTexto = seg.texto.slice(0, start) + wrapped + seg.texto.slice(end)
+    emitir(
+      localSegs.map((s, i) =>
+        i === idx && s.tipo === 'texto' ? { ...s, texto: nextTexto } : s,
+      ),
+    )
   }
 
   function inserirParagrafo() {
-    const el = taRef.current
-    if (!el || readOnly) {
+    if (readOnly) return
+    const idx = indiceTextoAtivo()
+    const el = textoRefs.current.get(idx)
+    const seg = localSegs[idx]
+    if (!el || !seg || seg.tipo !== 'texto') {
       onChange(value + '\n\n')
       return
     }
     const start = el.selectionStart
     const end = el.selectionEnd
-    const next = value.slice(0, start) + '\n\n' + value.slice(end)
-    onChange(next)
+    const nextTexto = seg.texto.slice(0, start) + '\n\n' + seg.texto.slice(end)
+    emitir(
+      localSegs.map((s, i) =>
+        i === idx && s.tipo === 'texto' ? { ...s, texto: nextTexto } : s,
+      ),
+    )
     requestAnimationFrame(() => {
       el.focus()
-      const pos = start + 2
-      el.setSelectionRange(pos, pos)
+      el.setSelectionRange(start + 2, start + 2)
     })
   }
+
+  function onTextoChange(idx: number, texto: string) {
+    emitir(
+      localSegs.map((s, i) =>
+        i === idx && s.tipo === 'texto' ? { ...s, texto } : s,
+      ),
+    )
+  }
+
+  function onKeyDownTexto(
+    e: ReactKeyboardEvent<HTMLTextAreaElement>,
+    idx: number,
+  ) {
+    const el = e.currentTarget
+    const seg = localSegs[idx]
+    if (!seg || seg.tipo !== 'texto') return
+
+    // Impede Backspace/Delete de “pular” e apagar marcadores adjacentes
+    // (marcadores estão fora do textarea — só bloqueamos merge acidental).
+    if (e.key === 'Backspace' && el.selectionStart === 0 && el.selectionEnd === 0) {
+      const prev = localSegs[idx - 1]
+      if (prev?.tipo === 'marcador') {
+        e.preventDefault()
+        return
+      }
+    }
+    if (
+      e.key === 'Delete' &&
+      el.selectionStart === seg.texto.length &&
+      el.selectionEnd === seg.texto.length
+    ) {
+      const next = localSegs[idx + 1]
+      if (next?.tipo === 'marcador') {
+        e.preventDefault()
+        return
+      }
+    }
+  }
+
+  function autoGrow(el: HTMLTextAreaElement) {
+    el.style.height = 'auto'
+    el.style.height = `${Math.max(24, el.scrollHeight)}px`
+  }
+
+  useEffect(() => {
+    for (const el of textoRefs.current.values()) {
+      autoGrow(el)
+    }
+  }, [localSegs])
+
+  const temMarcadores = localSegs.some((s) => s.tipo === 'marcador')
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -246,21 +366,106 @@ export function PeticaoRichEditor({
         </div>
       )}
 
-      <textarea
-        ref={taRef}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        readOnly={readOnly || streaming}
+      <div
+        className="w-full flex-1 min-h-[420px] max-h-[70vh] overflow-y-auto p-3"
+        style={{ minHeight }}
         aria-label={ariaLabel}
-        className="w-full flex-1 min-h-[420px] max-h-[70vh] p-4 font-mono text-xs leading-relaxed resize-y outline-none"
-        style={{
-          minHeight,
-          background: 'transparent',
-          color: isLight ? '#374151' : '#ccc',
-          opacity: streaming ? 0.85 : 1,
-        }}
-        spellCheck={true}
-      />
+        role="textbox"
+        aria-multiline="true"
+      >
+        {!temMarcadores ? (
+          <textarea
+            ref={(el) => {
+              if (el) textoRefs.current.set(0, el)
+              else textoRefs.current.delete(0)
+            }}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            readOnly={readOnly || streaming}
+            className="w-full min-h-[380px] p-1 font-mono text-xs leading-relaxed resize-y outline-none bg-transparent"
+            style={{
+              color: isLight ? '#374151' : '#ccc',
+              opacity: streaming ? 0.85 : 1,
+            }}
+            spellCheck={true}
+          />
+        ) : (
+          localSegs.map((seg, idx) => {
+            if (seg.tipo === 'marcador') {
+              return (
+                <div
+                  key={`m-${idx}-${seg.tag}`}
+                  contentEditable={false}
+                  suppressContentEditableWarning
+                  role="separator"
+                  aria-label={labelMarcador(seg.tag)}
+                  aria-hidden={false}
+                  data-marcador={seg.tag}
+                  className="select-none pointer-events-none my-2 flex items-center gap-2 user-select-none"
+                  style={{
+                    userSelect: 'none',
+                    WebkitUserSelect: 'none',
+                  }}
+                  onMouseDown={(e) => e.preventDefault()}
+                >
+                  <span
+                    className="flex-1 h-px"
+                    style={{
+                      background: isLight
+                        ? 'rgba(212,175,55,0.35)'
+                        : 'rgba(212,175,55,0.28)',
+                    }}
+                  />
+                  <span
+                    className="text-[10px] tracking-wide whitespace-nowrap px-1"
+                    style={{
+                      color: isLight ? 'rgba(120,90,20,0.75)' : 'rgba(212,175,55,0.65)',
+                    }}
+                  >
+                    — {labelMarcador(seg.tag)} —
+                  </span>
+                  <span
+                    className="flex-1 h-px"
+                    style={{
+                      background: isLight
+                        ? 'rgba(212,175,55,0.35)'
+                        : 'rgba(212,175,55,0.28)',
+                    }}
+                  />
+                </div>
+              )
+            }
+            return (
+              <textarea
+                key={`t-${idx}`}
+                ref={(el) => {
+                  if (el) {
+                    textoRefs.current.set(idx, el)
+                    autoGrow(el)
+                  } else {
+                    textoRefs.current.delete(idx)
+                  }
+                }}
+                value={seg.texto}
+                onChange={(e) => {
+                  onTextoChange(idx, e.target.value)
+                  autoGrow(e.target)
+                }}
+                onKeyDown={(e) => onKeyDownTexto(e, idx)}
+                readOnly={readOnly || streaming}
+                className="w-full font-mono text-xs leading-relaxed resize-none outline-none bg-transparent overflow-hidden"
+                style={{
+                  color: isLight ? '#374151' : '#ccc',
+                  opacity: streaming ? 0.85 : 1,
+                  minHeight: seg.texto.trim() ? undefined : 8,
+                }}
+                spellCheck={true}
+                rows={1}
+              />
+            )
+          })
+        )}
+      </div>
     </div>
   )
 }
